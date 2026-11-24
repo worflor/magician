@@ -32,7 +32,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           python -m pip install --quiet pillow   # the bundler's and the mod source's images (CONTRIBUTING.md, rule 1)
-          $tests = "ingame\test_gamelock.py", "ingame\test_takes.py", "ingame\test_mod_session.py",
+          $tests = "ingame\test_gamelock.py", "ingame\test_takes.py", "ingame\test_mod_session.py", "ingame\test_logdiff.py",
                    "cinema\test_session.py", "cinema\test_replay.py", "mcp\test_server.py",
                    "tools\test_bundle.py", "tools\test_scene_install.py", "tools\test_source.py"
           foreach ($t in $tests) {

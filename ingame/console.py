@@ -225,6 +225,9 @@ def guard():
     return pid
 
 
+FOCUS_WAIT = 12.0   # seconds focus_game keeps trying before it gives up
+
+
 def focus_game():
     """Bring the game to the front and prove it is there. Called before a script and again before every command and
     key (ensure_focus): SendInput goes to whatever window is in front, so a window that takes the foreground mid-script
@@ -234,9 +237,14 @@ def focus_game():
         sys.exit("console: no Deadlock window")
     guard()
     user32.GetForegroundWindow.restype = wt.HWND
-    for _ in range(3):
+    # A shell flyout (the Start menu, Quick settings, a notification's panel) holds the foreground against every
+    # route below and lets go by itself within seconds, so three quick tries gave up on a window that was about to
+    # leave. Keep asking for FOCUS_WAIT seconds; nothing is typed until the game is in front.
+    deadline, tries = time.time() + FOCUS_WAIT, 0
+    while time.time() < deadline:
         if user32.GetForegroundWindow() == hwnd:
             break
+        tries += 1
         # Windows only lets the foreground thread hand focus over: join its input queue for the switch,
         # and tap Alt (which lifts the foreground lock) as a second route.
         kernel32 = ctypes.WinDLL("kernel32")
@@ -245,7 +253,8 @@ def focus_game():
         me = kernel32.GetCurrentThreadId()
         if fg_thread and fg_thread != me:
             user32.AttachThreadInput(me, fg_thread, True)
-        _send(_key(SC["alt"], False), _key(SC["alt"], True))
+        if tries <= 3:   # the Alt tap goes to whatever is in front: a few, not a stream into someone's window
+            _send(_key(SC["alt"], False), _key(SC["alt"], True))
         user32.ShowWindow(hwnd, 9)
         user32.BringWindowToTop(hwnd)
         user32.SetForegroundWindow(hwnd)

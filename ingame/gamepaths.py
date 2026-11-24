@@ -136,6 +136,18 @@ def citadel():
     return os.path.join(game(), "citadel")
 
 
+def build():
+    """The installed game's build number (`ClientVersion` in citadel/steam.inf), as text; None when it can't be read."""
+    try:
+        with open(os.path.join(citadel(), "steam.inf"), encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith("ClientVersion="):
+                    return line.split("=", 1)[1].strip() or None
+    except (OSError, LookupError):
+        pass
+    return None
+
+
 def console_log():
     """The log the game writes with -condebug."""
     return os.path.join(citadel(), "console.log")

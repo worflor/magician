@@ -96,6 +96,14 @@ pub fn cmd_patchday(args: &[String]) -> R {
         say!("  rig sidecar present: {}", rpath.display());
         "present"
     };
+    // The hero data as text, kept per build like the baseline: the next patch compares each mod's hero against it.
+    let hpath = patchday::hero_data_path(&reference, &installed);
+    if capture && !hpath.is_file() {
+        match grade_sources(args).and_then(|src| src.text("scripts/heroes.vdata_c")) {
+            Ok(_) => say!("  hero data captured: {}", hpath.display()),
+            Err(e) => say!("  hero data not captured ({e}): the next patch can't say what moved for a hero; it needs Source 2 Viewer"),
+        }
+    }
     let doc = doc.raw("baseline", baseline.build()).raw("rig", jsonout::Obj::new().str("state", rig_state).str("path", &rpath.display().to_string()).build());
 
     // 2. Install state.
@@ -173,7 +181,7 @@ pub fn cmd_patchday(args: &[String]) -> R {
     if previous != installed {
         if let Ok(then) = Baseline::load(default_baseline_path(&previous)) {
             if then.get("scripts/heroes.vdata_c").map(|f| f.crc) != now.get("scripts/heroes.vdata_c").map(|f| f.crc) {
-                say!("  note: scripts/heroes.vdata_c changed since {previous}: a hero's model, skeleton or ability list may have moved; run `magician footprint <hero>` for each skin and compare with its mod.toml targets");
+                say!("  note: scripts/heroes.vdata_c changed since {previous}: what moved for each mod's hero is under [4]");
             }
         }
     }
@@ -263,6 +271,7 @@ pub fn cmd_patchday(args: &[String]) -> R {
     }
     let mut unproven: Vec<String> = Vec::new();
     let mut manifests_json: Vec<String> = Vec::new();
+    let mut now_heroes: Option<Result<String, String>> = None;
     for m in &manifests {
         let is_installed = m.owners.iter().any(|o| by_owner.contains_key(o));
         let first = m.proven.first().map(|f| f.parse::<u64>().unwrap_or(0)).unwrap_or(0);
@@ -293,6 +302,58 @@ pub fn cmd_patchday(args: &[String]) -> R {
         if is_installed && !here {
             unproven.push(m.slug.clone());
         }
+        // The hero's own data: did anything the skin can lean on move since the build the mod is compared from?
+        let mut hero_json: Option<String> = None;
+        let (era, _) = patchday::era_for(&m.proven, &builds, &installed);
+        if let (Some(hero), true) = (patchday::mod_hero(&m.text), era != installed) {
+            if now_heroes.is_none() {
+                now_heroes = Some(std::fs::read_to_string(patchday::hero_data_path(&reference, &installed)).or_else(|_| grade_sources(args).and_then(|src| src.text("scripts/heroes.vdata_c"))));
+            }
+            let then_text = std::fs::read_to_string(patchday::hero_data_path(&reference, &era));
+            let mut j = jsonout::Obj::new().str("hero", &hero).str("from", &era);
+            match (then_text, now_heroes.as_ref().unwrap()) {
+                (Ok(then), Ok(now_text)) if then == *now_text => {
+                    j = j.str("state", "unchanged");
+                }
+                (Ok(then), Ok(now_text)) => match (patchday::hero_names(&then, &hero), patchday::hero_names(now_text, &hero)) {
+                    (Some(a), Some(b)) => {
+                        let c = patchday::hero_change(&a, &b);
+                        if c.moved() {
+                            say!("    hero data: {hero} since {era}: {} name(s) gone, {} new ({} the same). Check the skin still replaces what the hero uses: `magician footprint {hero}`", c.gone.len(), c.new.len(), c.same);
+                            for g in c.gone.iter().take(8) {
+                                say!("      - {g}");
+                            }
+                            for n in c.new.iter().take(8) {
+                                say!("      + {n}");
+                            }
+                            if c.gone.len() > 8 || c.new.len() > 8 {
+                                say!("      ... ({} gone, {} new in all; --json has every one)", c.gone.len(), c.new.len());
+                            }
+                        } else {
+                            say!("    hero data: {hero} was edited since {era}; none of the {} names a skin leans on moved (model, abilities, sounds, particles)", c.same);
+                        }
+                        j = j.str("state", if c.moved() { "moved" } else { "names-unchanged" }).int("same", c.same as i64).strs("gone", &c.gone).strs("new", &c.new);
+                    }
+                    (_, None) => {
+                        say!("    hero data: {hero} is not in build {installed}'s heroes.vdata: Valve removed or renamed the hero");
+                        j = j.str("state", "hero-missing");
+                    }
+                    (None, Some(_)) => {
+                        say!("    hero data: {hero} is new since {era}: nothing to compare");
+                        j = j.str("state", "hero-new");
+                    }
+                },
+                (Err(_), _) => {
+                    say!("    hero data: none on record for build {era} (`patchday --capture` keeps it from now on); compare by hand with `magician footprint {hero}`");
+                    j = j.str("state", "no-record");
+                }
+                (_, Err(e)) => {
+                    say!("    hero data: could not read build {installed}'s ({e}); compare by hand with `magician footprint {hero}`");
+                    j = j.str("state", "unreadable");
+                }
+            }
+            hero_json = Some(j.build());
+        }
         manifests_json.push(
             jsonout::Obj::new()
                 .str("slug", &m.slug)
@@ -302,6 +363,7 @@ pub fn cmd_patchday(args: &[String]) -> R {
                 .bool("proven_on_installed", here)
                 .bool("installed", is_installed)
                 .raw("missing_targets", jsonout::arr(missing))
+                .raw("hero_data", hero_json.unwrap_or_else(|| "null".to_string()))
                 .build(),
         );
     }

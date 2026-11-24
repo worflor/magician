@@ -343,6 +343,46 @@ pub fn mod_slug(toml: &str) -> Option<String> {
     grade::manifest::string(toml, "mod", "slug")
 }
 
+/// The heroes.vdata key a mod.toml names (`[mod] hero = "hero_lash"`), when it names one.
+pub fn mod_hero(toml: &str) -> Option<String> {
+    grade::manifest::string(toml, "mod", "hero")
+}
+
+// ------------------------------------------------------------------------------------------------ hero data
+
+/// Where a build's decompiled hero data is kept in the reference folder (the grader's cache; `patchday --capture`
+/// fills it so the next patch has a "before").
+pub fn hero_data_path(reference: &Path, build: &str) -> PathBuf {
+    reference.join(build).join("decompiled").join("scripts").join("heroes.vdata")
+}
+
+/// What a skin can lean on in a hero's block of heroes.vdata: every quoted value that names something (a file, an
+/// ability, a sound event, a particle, a localisation token), which is every quoted value with a `/`, `.` or `_` in
+/// it. Numbers are never quoted and a plain word ("Normal") names nothing, so a balance patch leaves this set alone
+/// however much of the block it rewrites. None when the hero has no block.
+pub fn hero_names(heroes_text: &str, hero_key: &str) -> Option<BTreeSet<String>> {
+    let block = grade::footprint::top_level_block(heroes_text, hero_key)?;
+    Some(grade::footprint::quoted(block).into_iter().filter(|s| s.contains(['/', '.', '_']) && !s.contains(char::is_whitespace)).collect())
+}
+
+/// A hero's names in two builds: how many stayed, which are gone, which are new.
+#[derive(Debug, PartialEq)]
+pub struct HeroChange {
+    pub same: usize,
+    pub gone: Vec<String>,
+    pub new: Vec<String>,
+}
+
+impl HeroChange {
+    pub fn moved(&self) -> bool {
+        !self.gone.is_empty() || !self.new.is_empty()
+    }
+}
+
+pub fn hero_change(then: &BTreeSet<String>, now: &BTreeSet<String>) -> HeroChange {
+    HeroChange { same: then.intersection(now).count(), gone: then.difference(now).cloned().collect(), new: now.difference(then).cloned().collect() }
+}
+
 /// The install-ledger owners a mod.toml speaks for: its slug (`maid-lash` installs as `maid_lash`) and any listed in
 /// `[mod] owners = [...]` (a voice pak or a showcase scene installed under a name of its own).
 pub fn mod_owners(toml: &str) -> Vec<String> {
@@ -546,6 +586,38 @@ mod tests {
         assert_eq!(t[0], ("model".to_string(), "models/heroes_wip/lash/lash.vmdl".to_string()));
         assert_eq!(compiled_target(&t[0].1), "models/heroes_wip/lash/lash.vmdl_c");
         assert!(is_game_resource(&t[0].1) && !is_game_resource("evidence/6861/asset-catalog.tsv") && !is_game_resource("models/heroes_wip/lash/materials"));
+    }
+
+    /// A heroes.vdata with one hero: `extra` goes into the block, `model` is its model.
+    fn heroes_text(model: &str, extra: &str) -> String {
+        format!(
+            "<!-- kv3 -->\n{{\n\thero_base = \n\t{{\n\t\tm_strModelName = resource_name:\"models/base.vmdl\"\n\t}}\n\thero_x = \n\t{{\n\t\t_class = \"CitadelHeroData_t\"\n\t\tm_strModelName = resource_name:\"{model}\"\n\t\tm_mapBoundAbilities = \n\t\t{{\n\t\t\tESlot_Signature_1 = \"citadel_ability_x_one\"\n\t\t}}\n\t\tm_flHealth = 550.0\n{extra}\t}}\n\thero_y = \n\t{{\n\t\tm_strModelName = resource_name:\"models/y.vmdl\"\n\t}}\n}}\n"
+        )
+    }
+
+    #[test]
+    fn a_balance_patch_changes_none_of_the_names_a_skin_leans_on() {
+        // The real 6865 -> 6866 patch: Valve took a table of item weights out of every hero's block. Half the block
+        // went, and nothing a skin names moved.
+        let table = "\t\tm_mapItemWeights = \n\t\t{\n\t\t\tupgrade_a = \n\t\t\t{\n\t\t\t\tm_strBucket = \"Normal\"\n\t\t\t\tm_flWeight = 1.0\n\t\t\t}\n\t\t}\n";
+        let then = hero_names(&heroes_text("models/x/x.vmdl", table), "hero_x").unwrap();
+        let now = hero_names(&heroes_text("models/x/x.vmdl", ""), "hero_x").unwrap();
+        assert!(then.contains("models/x/x.vmdl") && then.contains("citadel_ability_x_one") && !then.contains("Normal"), "{then:?}");
+        assert!(!then.contains("models/y.vmdl") && !then.contains("models/base.vmdl"), "only the hero's own block: {then:?}");
+        let c = hero_change(&then, &now);
+        assert!(!c.moved(), "{c:?}");
+        assert_eq!(c.same, then.len());
+    }
+
+    #[test]
+    fn a_moved_model_or_a_renamed_ability_is_named() {
+        let then = hero_names(&heroes_text("models/x/x.vmdl", ""), "hero_x").unwrap();
+        let now_text = heroes_text("models/x_v2/x.vmdl", "").replace("citadel_ability_x_one", "citadel_ability_x_uno");
+        let c = hero_change(&then, &hero_names(&now_text, "hero_x").unwrap());
+        assert_eq!(c.gone, ["citadel_ability_x_one", "models/x/x.vmdl"]);
+        assert_eq!(c.new, ["citadel_ability_x_uno", "models/x_v2/x.vmdl"]);
+        assert!(hero_names(&now_text, "hero_gone").is_none(), "a hero Valve removed has no block");
+        assert_eq!(mod_hero("[mod]\nslug = \"s\"\nhero    = \"hero_x\"   # key\n").as_deref(), Some("hero_x"));
     }
 
     #[test]

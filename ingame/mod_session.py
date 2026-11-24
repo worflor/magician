@@ -55,6 +55,7 @@ TOOLKIT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import gamelock  # noqa: E402
 import gamepaths  # noqa: E402
+import logdiff  # noqa: E402
 
 TV = ["+tv_enable", "1", "+tv_delay", "0", "+tv_transmitall", "1", "+tv_snapshotrate", "64"]
 SCENARIO_DIRS = ("source/ingame/scenarios", "source/ingame/plans", "source/ingame/takes", "ingame/scenarios", "scenarios")
@@ -319,11 +320,14 @@ def _up(st, o, mod):
         install_for(st, os.path.abspath(o["pak"]), slot, holder, bool(o.get("restore")))
     elif o.get("vanilla"):
         uninstall_mod(st, holder, bool(o.get("restore")))
+        st["vanilla"] = True
     save(st)
     extra = [] if o.get("no-tv") or o.get("menu") else list(TV)
     game_map = None if o.get("menu") else (o.get("map") or mod["map"] or "new_player_basics")
     if game_map:
         extra += ["+map", game_map]
+    st["map"] = game_map
+    st["build"] = gamepaths.build()
     w, h = (o.get("size") or "1920x1080").lower().split("x")
     st["launched_at"] = time.time()
     save(st)
@@ -583,11 +587,44 @@ def qa_findings(st):
     if os.path.exists(log):
         pat = re.compile(r'Failed loading resource "[^"]*(' + "|".join(map(re.escape, sorted(tokens) or [st["slug"]]))
                          + r')|AddTextureToSet|error texture|Missing|ERROR', re.I)
+        build, scene = st.get("build") or gamepaths.build() or "0", logdiff.scene_name(st.get("hero"), st.get("map"))
+        if st.get("vanilla"):
+            # A pass with the mod's paks out is the baseline every later pass on this build is read against.
+            dst = logdiff.save_vanilla(log, build, scene)
+            return out + ["", "## Vanilla baseline", "", f"- saved for build {build}, scene `{scene}`: {dst}"]
+        base = logdiff.pick_base(build, scene)
+        vanilla = logdiff.warnings(base[0]) if base else {}
         with open(log, encoding="utf-8", errors="replace") as f:
-            hits = [line.rstrip() for line in f if pat.search(line) and "PredictionError" not in line][-40:]
-        out += ["", "## Console warnings touching the mod's files or rendering", ""] + [f"    {h}" for h in hits]
-        r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "logdiff.py"), "--mod", log], capture_output=True, text=True)
+            hits = [line.rstrip() for line in f if pat.search(line) and "PredictionError" not in line]
+        out += ["", "## Console warnings touching the mod's files or rendering", ""] + warning_lines(hits, vanilla, bool(base))
+        r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "logdiff.py"), "--mod", log, "--build", build, "--scene", scene],
+                           capture_output=True, text=True)
         out += ["", "## Warnings the mod adds over vanilla (logdiff.py)", ""] + [f"    {x}" for x in (r.stdout + r.stderr).splitlines()]
+    return out
+
+
+def warning_lines(hits, vanilla, have_base, limit=40):
+    """Console lines for the index: each distinct warning once with how often it came, in first-seen order. With a
+    vanilla baseline only the ones vanilla does not print are listed (the mod's to answer for), and the rest are
+    counted: they are the game's own. Without one, every line is listed and nothing is claimed about whose it is."""
+    seen = {}
+    for line in hits:
+        k = logdiff.norm(line)
+        if k not in seen:
+            seen[k] = [0, line]
+        seen[k][0] += 1
+    if not seen:
+        return ["    none"]
+    ours = [(n, line) for k, (n, line) in seen.items() if not (have_base and k in vanilla)]
+    out = [f"    x{n:<3} {line}" for n, line in ours[:limit]]
+    if len(ours) > limit:
+        out.append(f"    ... {len(ours) - limit} more distinct line(s) in console_full.log")
+    if have_base:
+        theirs = len(seen) - len(ours)
+        if not ours:
+            out.append("    none that vanilla does not print too")
+        if theirs:
+            out.append(f"    ({theirs} distinct warning(s) vanilla prints too are left out: the game's own)")
     return out
 
 
