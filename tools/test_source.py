@@ -300,6 +300,21 @@ class Source(unittest.TestCase):
         self.assertIn("<title>Test Skin 1.0.0</title>", feed)
         self.assertIn("https://example.github.io/skins/test-skin/#" + listing["release"]["id"], feed)
 
+    def test_the_builds_a_mod_was_proven_on_are_said_without_a_new_release(self):
+        z = self.bundle()
+        self.ok(self.source(z))
+        before = self.doc("mods", "test-skin.json")
+        self.assertNotIn("Proven in game", before["description"])
+        with open(os.path.join(self.d, "mod.toml"), "w", encoding="utf-8") as f:
+            f.write('[mod]\nslug = "test-skin"\n\n[proven]\n# filled by prove\nbuilds = [6864, 6866, 6865]\n\n[other]\nbuilds = [1]\n')
+        self.ok(self.source(z))
+        after = self.doc("mods", "test-skin.json")
+        self.assertIn("Proven in game on builds 6864, 6865 and 6866.", after["description"])
+        self.assertEqual(after["release"]["id"], before["release"]["id"], "a re-prove is not an update")
+        self.assertIn("proven on Deadlock build 6866", self.text("test-skin", "index.html"))
+        r = self.run_source(self.source(z, mods=[{"bundle": "package/bundle.json", "zip": z, "mod_toml": "nope.toml"}]))
+        self.assertNotEqual(r.returncode, 0)
+
     def test_the_page_block_dresses_every_page_in_the_sites_own_chrome(self):
         for name, body in (("t.css", ".x { color: red; }"), ("h.html", '<a href="{root}">home</a>'), ("f.html", "<p>foot</p>")):
             with open(os.path.join(self.d, name), "w", encoding="utf-8") as f:

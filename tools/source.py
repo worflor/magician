@@ -25,7 +25,8 @@ https://example.github.io/skins/; --base-url overrides it, so it is the one valu
 mods [{bundle (a bundle.json), zip (the zip bundle.py --zip wrote) or bundle_dir (the bundle folder; the zip is found
 beside it as bundle.py names it), id (the listing id, default the bundle's slug), sections (README sections copied
 into the description, default ["Not seen yet"]), preselect (optional mods ticked by default, default none),
-homepage (the mod's page, default the landing page's entry)}].
+homepage (the mod's page, default the landing page's entry), mod_toml (default the mod.toml beside the bundle's
+folder: its [proven] builds are said in the listing, so a re-prove after a game update shows without a new release)}].
 Optional: homepage (default base_url), downloads_url (default base_url + "files/"; may hold {id} and {version}, e.g.
 https://github.com/<user>/<repo>/releases/download/{id}-{version}/), media_url (default base_url + "media/"),
 download_origins (more origins artifacts may come from or redirect to), icon (an image; a 256 px square JPEG),
@@ -308,7 +309,26 @@ def read_bundle(entry, base, taxonomy):
             "size": os.path.getsize(zpath), "sha256": sha256_file(zpath), "readme": readme, "changelog": changelog,
             "previews": previews, "components": components, "required": required, "groups": groups,
             "scenes": [sc["hero"] for sc in spec.get("scenes", [])], "entry": entry,
+            "proven": proven_builds(entry, base, sbase),
             "page": open(resolve(base, entry["page"]), encoding="utf-8").read() if entry.get("page") else None}
+
+
+def proven_builds(entry, base, bundle_dir):
+    """The game builds a mod was proven on in game: `[proven] builds = [...]` of its mod.toml (the entry's mod_toml,
+    else the mod.toml beside the bundle's folder). A listing says them, so after a game update and a re-prove the
+    page and DMM show the mod is good on the new build without a new release."""
+    path = resolve(base, entry["mod_toml"]) if entry.get("mod_toml") else os.path.join(os.path.dirname(bundle_dir), "mod.toml")
+    if not os.path.isfile(path):
+        if entry.get("mod_toml"):
+            die(f"mod_toml {path} does not exist")
+        return []
+    m = re.search(r"^\[proven\][^\[]*?^\s*builds\s*=\s*\[([^\]]*)\]", open(path, encoding="utf-8").read(), flags=re.M | re.S)
+    return sorted({int(b) for b in re.findall(r"\d+", m.group(1))}) if m else []
+
+
+def join_and(items):
+    items = [str(i) for i in items]
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
 def jpeg(data, max_side, limit, square=False):
@@ -429,6 +449,8 @@ def description(b, download_url, zip_note):
         if name in secs:
             out += ["", f"## {name}", "", secs[name]]
     tail = f"Version {spec['release']}" + (f", built for Deadlock build {spec['game_build']}" if spec.get("game_build") else "") + "."
+    if b.get("proven"):
+        tail += f" Proven in game on build{'s' if len(b['proven']) > 1 else ''} {join_and(b['proven'])}."
     if spec.get("link") and urllib.parse.urlsplit(spec["link"]).hostname != urllib.parse.urlsplit(download_url).hostname:
         tail += f" Also on [{site_name(spec['link'])}]({spec['link']})."
     out += ["", tail]
@@ -1152,6 +1174,8 @@ def mod_page(src, base_url, desc_url, entry, icon_rel, theme):
     links = "".join(f'<a class="more" href="{e(x["url"])}">{e(x["label"])}</a>' for x in b["entry"].get("links", []))
     tagline = f'<p class="tagline">{md_inline(b["entry"]["tagline"])}</p>' if b["entry"].get("tagline") else ""
     build = f" &middot; Deadlock build {e(str(spec['game_build']))}" if spec.get("game_build") else ""
+    if b.get("proven"):
+        build = f" &middot; proven on Deadlock build {e(str(b['proven'][-1]))}"
     rels = []
     for r in history:
         a = r["artifacts"][0]
