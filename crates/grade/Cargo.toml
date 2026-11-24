@@ -1,0 +1,21 @@
+[package]
+name = "magician-grade"
+description = "Grading: a hero's footprint from the game's own data, and a mod's depth, identity, fair play, freshness and release gate against it, as one reproducible record"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "grade"
+
+[dependencies]
+magician-vpk = { path = "../vpk" }
+magician-resource = { path = "../resource" }
+magician-lint = { path = "../lint" }
+magician-mesh = { path = "../mesh" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+magician-fuzz = { path = "../fuzz" }

@@ -1,0 +1,47 @@
+# A worked example on a stock hero: Haze runs the Hero Sandbox street, a bullet-time orbit, then slow motion away.
+# Record your own take first (`ingame/mod_session.py up` records SourceTV by default; run the street; `down`): the take is
+# the newest citadel/replays/auto-*-new_player_basics-*.dem. Put its file name below, find the run's ticks
+# (`python -I track.py list <take>` lists the actors and their ticks), set them, then:
+#   python -I film.py check scenes\example_run.toml     then  animatic, render --stills 3, make
+[scene]
+name = "example_run"
+take = "auto-YYYYMMDD-HHMM-new_player_basics-4-player.dem"   # your take's file name
+fps = 32
+look = "clean"
+
+[[shot]]
+name = "side_run"
+length = 3.0
+tick = 2780
+speed = 1.0
+[shot.camera]
+type = "track"
+actor = "Haze"
+offset = [40, -230, 60]     # a little ahead, 230 to the right, 60 up
+look_height = 50
+
+[[shot]]
+name = "bullet_orbit"
+length = 4.0
+tick = 2950
+speed = 0
+cut = "dissolve 0.4"
+[shot.camera]
+type = "orbit"
+around = "Haze"
+radius = 160
+height = 30
+from = -100
+to = 40
+look_height = 50
+
+[[shot]]
+name = "slowmo_away"
+length = 3.0
+tick = 2990
+speed = 0.5
+[shot.camera]
+type = "fixed"
+pos = [2050, -760, 70]
+look = "Haze"
+look_height = 50

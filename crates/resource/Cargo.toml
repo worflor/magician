@@ -1,0 +1,16 @@
+[package]
+name = "magician-resource"
+description = "Source 2 compiled resource (*_c) block table and external-reference reader"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "resource"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+magician-fuzz = { path = "../fuzz" }
+magician-vpk = { path = "../vpk" }

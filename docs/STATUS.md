@@ -1,0 +1,37 @@
+# Status
+
+The board by the door: known state and loose ends, not a plan.
+
+## Current (2026-11-24, build 6866)
+
+- Build 6866 arrived on 2026-11-24 (Steam updated the game at a session's launch). `check` on Maid Lash: `RE-PROVE`, drift 6865 to 6866 "nothing under it changed"; the paragraphs below were written on 6865.
+
+- The full loop runs: native readers for VPK, resources, KV3 (LZ4 and zstd), textures, meshes and cloth; 79 lint rules (M001 to M148, the mesh family M100 to M140 and M145 to M147); build, release, install with a ledger and rollback; drift and the patch-day check with rig sidecars, each mod compared from its last proven build; grading v2 (depth, identity, fair play, freshness, release gate, one reproducible record) with every judgement number in a policy; the maker's mark; scene patches; the MCP server; the in-game harness (one session driver for any mod, `ingame/mod_session.py`, with the game bound to the seat that launched it) and offline QA. Every command answers `--help` and `--version`, exit codes have one meaning each (0 clean, 1 broken, 2 usage, 3 refused, 4 re-prove), and `lint`, `grade`, `drift`, `patchday`, `release` and `rules` print JSON with `--json`. `cargo test --workspace`: 460 tests, 458 of them on synthetic fixtures; the other two grade real mods when the game and their paks are on the machine (`real_mods.rs`), and skip otherwise. The same suite passed on Ubuntu 24.04. A GitHub Actions workflow runs the suite, clippy and the Python tests on a clean Windows runner, and the Rust suite on Ubuntu. Every reader of bytes or text from outside is fuzzed (a short run in every `cargo test`, a long one on request; CONTRIBUTING.md), and the workspace passes `cargo clippy -- -D warnings` with overflow checks on in tests.
+- Proof is one released mod: Maid Lash is proven on 6864 and ships as a Deadlock Mod Manager bundle built by `tools/bundle.py`, with standalone scene installers for Windows and Linux. The mod lives in its own repository; this one carries neutral worked examples on a stock hero (Haze).
+- The patch-day path was drilled on the real 6861 to 6864 patch and on synthetic breakage ([PATCH-DAY.md](PATCH-DAY.md), "What the drill showed").
+- Locations resolve per machine (flag, environment, config file, Steam), so a fresh clone runs without editing code. `magician paths` shows what was found, `magician doctor` what is missing and how to fix it.
+- A mod's folder is enough: inside one, `check` gives the mod's one verdict on the installed build and the other verbs need nothing after them; `init` writes the `mod.toml` for a pak or an addon. On 6865 the reference skin reads `RE-PROVE` (nothing under it changed since 6864, so the in-game pass is a short one): Maid Lash `S Costume · stale(6864)`.
+- Prepared to go public: the docs stand alone, and the history was rewritten to drop personal files committed by accident. The rewrite is local until the author force-pushes it.
+- The reference skin as graded: Maid Lash `S Costume` with its M140 allowance listed. Its `mod.toml` declares `[rights] state = "cleared"`, and the release gate passes. A plain `grade --mod` finds the skin's own `magician.allow`.
+
+## Known gaps for unattended use
+
+What stands between Magician and a fully unattended patch-day pipeline, roughly in the order an automation would hit them.
+
+- **Mod discovery and manifest.** `patchday` finds mods through a `model-replacements/*/mod.toml` layout (or the `mod.toml` of the working folder) unless given `--mod`, and `mod.toml` is a draft schema read line by line; `init` writes one in the shape the readers expect.
+- **The in-game proof needs a desktop and a viewer.** The harness types with SendInput and captures the window, so it needs an interactive Windows session with the game in front, and the frames need someone, a person or an agent that can see, to look at them. It cannot run as a service.
+- **No Steam trigger.** Magician reads the installed build; noticing an update, scheduling the check and sending the notification are the host's job.
+- **Grading has rubrics for hero mods only** (character, variant, kit). A map, HUD or music mod is `not graded`, said so, with no rubric yet.
+- **Some identity is declared, not measured.** A new voice identity counts only when `mod.toml` declares it (`[identity] voice = "new"`), and a replaced name logo counts as a rename only through the mod's name in `mod.toml`: bytes can't tell a new voice from a treatment, or read a logo.
+
+## Loose ends
+
+- **What the mesh family does not judge.** A model is measured as its default body-group choice against the default hitbox set; another choice (Viscous's Goo Ball) and its own hitbox set are not looked at. Animation is not decoded, so nothing is judged in motion: clip-to-clip continuity, a spring-driven bone keyed to move while its parent is still, a cloth goal pose strained by a clip. Sound is compared by the length and envelope peak the compiler stored, not by loudness: that needs the MP3 decoded. An albedo step across a UV seam of one material (a repainted panel that kept a baked shadow) has no rule yet.
+- **Cloth has one rule, on purpose.** Rules for a node resting inside a collision shape, a shape that fits between two nodes, a rod at odds with the rest pose and a settling time were measured on Valve's 47 heroes before being written, and Valve's own cloth breaks every one of them ([reference/engine.md](reference/engine.md), Cloth). Only a comparison with Valve's group at the same place holds, which is what M141 does.
+- **The skin's manifest.** Maid Lash's `mod.toml` does not set `[mod] owners`, so `patchday` compares `lash_showcase` from the previous baseline, not from a proof. `check` and `doctor` now name the unclaimed owners; adding them is the author's call.
+- **CI has not run on GitHub yet** at the time of writing: `.github/workflows/ci.yml` was proven locally step by step, not on a runner. `cinema/test_scene.py` needs ffmpeg and is left out of it.
+- **The session driver's film and restore are proven offline only.** `mod_session.py up`, `run` (a console scenario and a timed take), `down` and `sheets` ran in the game on 2026-11-24; `film` (needs a take's tracks through Boon) and `--pak` / `--vanilla` with `--restore` are held by tests on synthetic data and a scratch game, not yet by a live session.
+- **M148 on Maid Lash.** The first run of M148 on the installed paks names Maid Lash's whip material (`g_tNprOutlineMask` a constant 0 where Valve's default reads 1: the whip may draw without its NPR outline). A real finding for the skin's author, not allowed away here.
+- **Linux is tested, not used.** The workspace builds and its suite passes on Ubuntu 24.04 (which found the scene commands joining paths with backslashes), and the player scene installer is proven there. The seat check reads `/proc` there (the game under Proton) and refuses when it can't tell; nobody has driven a real install on Linux yet, and the `/proc` read is held by a unit test on synthetic command lines, not by a running Proton game.
+- **Source 2 Viewer credit.** Its MIT licence asks for its notice if its binaries ship, and the project asks for a "Powered by Source 2 Viewer" credit. This repository ships none of its binaries; where to credit it is the author's call.
+- Several in-game behaviours are marked UNVERIFIED in [reference/engine.md](reference/engine.md) (bone-count effects, cloth collision layers).

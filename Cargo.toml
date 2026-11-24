@@ -1,0 +1,43 @@
+[workspace]
+resolver = "2"
+members = ["crates/vpk", "crates/resource", "crates/mesh", "crates/geom", "crates/lint", "crates/grade", "crates/expr", "crates/mark", "crates/magician", "crates/fuzz"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+# The rules every crate is built under (each crate's `[lints] workspace = true`). CI-like runs add
+# `RUSTFLAGS=-D warnings` and `cargo clippy --workspace --all-targets -- -D warnings` (CONTRIBUTING.md).
+[workspace.lints.rust]
+unsafe_code = "deny"                 # every library crate forbids it; the two exceptions say why where they are
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+# The readers of someone else's bytes (vpk, resource, mesh) also deny unwrap, expect and slicing a str at a byte
+# offset, in their lib.rs; everywhere the fuzz targets in each crate's tests/fuzz.rs stand behind the same promise.
+# The geometry, codec and raster code indexes by loop variable on purpose (parallel arrays, strides, pixel grids),
+# and its parsers return tuples a type alias would only hide.
+needless_range_loop = "allow"
+type_complexity = "allow"
+too_many_arguments = "allow"
+tabs_in_doc_comments = "allow"        # doc examples of tab-separated files keep their tabs
+explicit_counter_loop = "allow"       # a counter beside the loop reads plainer than a zip in the decoders
+field_reassign_with_default = "allow" # a default, then the one field a fixture is about
+needless_late_init = "allow"          # a value both branches of a long decode assign
+
+[profile.dev]
+opt-level = 1          # VPK trees are 150k+ entries; unoptimised parsing is needlessly slow
+overflow-checks = true # an integer that wraps on someone else's bytes is a bug the tests must see
+debug-assertions = true
+
+[profile.test]
+overflow-checks = true
+debug-assertions = true
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+overflow-checks = true # the shipped binary reads the same hostile bytes; a wrap there is the same bug

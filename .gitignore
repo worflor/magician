@@ -1,0 +1,55 @@
+# build output
+target/
+**/obj/
+**/bin/
+*.pdb
+
+# compiled mods and anything extracted from the game: reference material, never committed
+*.vpk
+*.vpk_c
+*.vmdl_c
+*.vmat_c
+*.vtex_c
+*.vpcf_c
+*.vsndevts_c
+*.vsnd_c
+*_c
+*.glb
+*.gltf
+*.blend
+*.blend1
+*.dll
+*.exe
+/.reference/
+/reference/
+/work/
+
+# harness output (a failed console probe writes its two screenshots to --out, else <reference>\work\console; this line
+# is kept for older runs that wrote them into the working folder)
+harness_fail_*.png
+ingame/out/
+ingame/captures/
+qa/out/
+**/__pycache__/
+*.pyc
+
+# scratch scenarios and logs
+ingame/scenarios/*_tmp.txt
+*.log
+*.dmp
+
+# editor and OS
+.vs/
+.vscode/
+.idea/
+Thumbs.db
+.harness-pid
+
+# harness runtime state and signed binaries
+.harness-pid
+ingame/.harness-pid
+magician.signed
+*.signed
+
+# console.py blind-mode state (r_drawpanorama 0)
+ingame/.console-blind

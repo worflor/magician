@@ -1,0 +1,7 @@
+# generated: by bridge/build_bridge.py (derived from the installed game: Valve content, never committed), studio_lights.py and shoot.py cfg --write
+panorama/layout/hud_hero_testing.vxml
+panorama/layout/replay/
+panorama/scripts/cinema/cinema_paths.js
+panorama/scripts/cinema/cinema_bridge.js
+particles/cinema/
+cfg/cinema/

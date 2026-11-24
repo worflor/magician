@@ -1,0 +1,8 @@
+# Enter the Hero Sandbox (new_player_basics) as Haze, a worked example for any hero: swap the hero id.
+# (hero_testing is the old sandbox and crashes client.dll on 6864.) session.py selects a mod's hero itself; this file
+# is for driving console.py by hand after: launch.ps1 -Extra "+map new_player_basics"
+@log ChangeGameState: GameInProgress 300
+@wait 3
+sv_cheats 1
+selecthero hero_haze
+@wait 6

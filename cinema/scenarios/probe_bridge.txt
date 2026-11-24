@@ -1,0 +1,38 @@
+# One focused session for what the first probes left open (build 6864), with the cinema pak installed:
+# the Panorama bridge (does the Testing Tools layout load our script, do $.Msg lines reach console.log, does
+# CitadelConCommand run a command from JS, do Panorama key binds fire on injected keys), the studio light rig,
+# and whether your own health bar is the unit-status panel. Run in the sandbox as any hero (session.py up, or ingame\scenarios\enter_haze.txt):
+#   python -I console.py --out <dir> --script ..\cinema\scenarios\probe_bridge.txt
+@log cinema_bridge: loaded 5
+exec cinema
+cin_bot_still;god;citadel_ability_cooldown_max 2
+setpos 1494 -1196 1;setang 6 234 0
+citadel_create_unit hero_lash
+@wait 2
+setpos 1300 -1450 20;setang 6 54 0
+@wait 1
+@shot b00_start
+# own bar and the bot's bar with the override installed, HUD hidden only
+cin_clean
+@wait 1
+@shot b01_clean
+cin_hud
+# F10: the bridge's self-test (two marker commands, then a 120-frame dolly of the override camera)
+@key f10
+@burst b02_selftest 24 12 full
+@log cinema_bridge: self-test 10
+citadel_camera_override_fov
+@key console
+@wait 0.8
+@shot b03_console_fov
+@key console
+cin_cam_reset
+# studio light rig on the bot, in the black void
+r_drawworld 0;r_drawskybox 0
+particle_test_file particles/cinema/studio_rig.vpcf
+particle_test_start
+@wait 1.5
+@shot b04_studio_rig
+particle_test_stop
+r_drawworld 1;r_drawskybox 1
+exec cinema_reset

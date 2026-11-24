@@ -1,0 +1,19 @@
+[package]
+name = "magician-mark"
+description = "Invisible authorship mark for colour textures: keyed spread-spectrum embed, blind detection from compiled .vtex_c, PNG/TGA/PSD codecs, BC1/BC3/BC7 encoders"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "mark"
+
+[dependencies]
+magician-resource = { path = "../resource" }
+magician-vpk = { path = "../vpk" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+magician-fuzz = { path = "../fuzz" }

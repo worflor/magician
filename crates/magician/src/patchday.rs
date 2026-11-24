@@ -1,0 +1,612 @@
+//! Patch day: re-prove a mod set against a new Deadlock build, offline and in minutes.
+//!
+//! Three pieces, all pure so they can be tested without a game:
+//!   - `Rig`: the rig sidecar (`<build>/rig.tsv`) captured beside the baseline: every skeleton's bone names and every
+//!     AnimGraph's control parameters. A baseline's CRCs say a rig file changed; the sidecar says what changed in it.
+//!   - `compute`: what changed under a mod between two baselines (the core of `magician drift`).
+//!   - `proven_builds` / `add_proven`: the `[proven] builds = [...]` ledger in a mod's `mod.toml`.
+//!
+//! `cmd_patchday` in main.rs strings them together with the install state into the one "check everything" entry.
+
+use lint::{Baseline, ModFile};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+// ------------------------------------------------------------------------------------------------ rig sidecar
+
+/// Bone names per skeleton (`.vnmskel_c`, `m_boneIDs`) and control parameter names per AnimGraph (`.vnmgraph_c`,
+/// `m_controlParameterIDs`) of one build.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Rig {
+    pub build: String,
+    pub skeletons: BTreeMap<String, Vec<String>>,
+    pub graphs: BTreeMap<String, Vec<String>>,
+}
+
+pub fn rig_path(reference: &Path, build: &str) -> PathBuf {
+    reference.join(build).join("rig.tsv")
+}
+
+impl Rig {
+    /// Read every skeleton and graph in an archive. Files that don't decode are skipped (a rig file we can't read
+    /// can't be compared; the CRC in the baseline still flags it).
+    pub fn capture(build: &str, pak: &vpk::Vpk) -> Rig {
+        let mut rig = Rig { build: build.to_string(), ..Rig::default() };
+        let mut todo: Vec<&vpk::Entry> = pak.entries.iter().filter(|e| e.path.ends_with(".vnmskel_c") || e.path.ends_with(".vnmgraph_c")).collect();
+        todo.sort_by_key(|e| (e.archive_index, e.offset)); // physical order: the disk may be an HDD
+        for e in todo {
+            let Ok(data) = pak.read(e) else { continue };
+            let Some(Ok(kv)) = resource::kv3_block(&data, b"DATA") else { continue };
+            let (key, into) = if e.path.ends_with(".vnmskel_c") { ("m_boneIDs", &mut rig.skeletons) } else { ("m_controlParameterIDs", &mut rig.graphs) };
+            let Some(list) = kv.get(key) else { continue };
+            let names: Vec<String> = list.as_array().iter().filter_map(|v| v.as_str().map(String::from)).collect();
+            into.insert(e.path.clone(), names);
+        }
+        rig
+    }
+
+    pub fn write(&self, mut w: impl Write) -> std::io::Result<()> {
+        writeln!(w, "# magician rig build={} skeletons={} graphs={}", self.build, self.skeletons.len(), self.graphs.len())?;
+        for (kind, map) in [("skel", &self.skeletons), ("graph", &self.graphs)] {
+            for (path, names) in map {
+                writeln!(w, "{kind}\t{path}\t{}", names.join(","))?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn parse(text: &str) -> Result<Rig, String> {
+        let mut rig = Rig::default();
+        for (n, line) in text.lines().enumerate() {
+            let line = line.trim_end();
+            if line.is_empty() {
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix('#') {
+                if let Some(i) = rest.find("build=") {
+                    rig.build = rest[i + 6..].split_whitespace().next().unwrap_or("").to_string();
+                }
+                continue;
+            }
+            let mut it = line.splitn(3, '\t');
+            let (kind, path, names) = (it.next().unwrap_or(""), it.next(), it.next().unwrap_or(""));
+            let path = path.ok_or_else(|| format!("rig line {}: no path", n + 1))?.to_string();
+            let names: Vec<String> = names.split(',').filter(|s| !s.is_empty()).map(String::from).collect();
+            match kind {
+                "skel" => rig.skeletons.insert(path, names),
+                "graph" => rig.graphs.insert(path, names),
+                other => return Err(format!("rig line {}: unknown kind '{other}'", n + 1)),
+            };
+        }
+        Ok(rig)
+    }
+
+    pub fn load(path: &Path) -> Result<Rig, String> {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        Rig::parse(&text)
+    }
+}
+
+/// What a skeleton's bone list lost or gained between two builds. Added bones are harmless (the engine ignores
+/// bones a clip has no track for); a missing or renamed bone leaves the mod's tracks and weights pointing at nothing.
+fn bone_delta(path: &str, then: &[String], now: &[String]) -> Vec<String> {
+    let have: HashSet<&String> = now.iter().collect();
+    let had: HashSet<&String> = then.iter().collect();
+    let gone: Vec<&String> = then.iter().filter(|b| !have.contains(b)).collect();
+    let new: Vec<&String> = now.iter().filter(|b| !had.contains(b)).collect();
+    let mut out = Vec::new();
+    if gone.len() == 1 && new.len() == 1 {
+        out.push(format!("{path}: bone '{}' is now '{}' (renamed); the mod's clips and weights still say '{}'", gone[0], new[0], gone[0]));
+    } else {
+        for b in &gone {
+            out.push(format!("{path}: bone '{b}' removed or renamed; the mod's clips and weights still address it"));
+        }
+    }
+    out
+}
+
+fn param_delta(path: &str, then: &[String], now: &[String]) -> Vec<String> {
+    let have: HashSet<&String> = now.iter().collect();
+    let gone: Vec<&String> = then.iter().filter(|p| !have.contains(p)).collect();
+    gone.iter().map(|p| format!("{path}: control parameter '{p}' removed or renamed; anything driving it (an event, a clip selector) goes quiet")).collect()
+}
+
+// ------------------------------------------------------------------------------------------------ drift core
+
+/// What changed under one mod between two builds.
+#[derive(Debug, Default)]
+pub struct Drift {
+    /// Replaced files whose Valve original changed (the mod's copy may lack new fixes, bones or clips).
+    pub changed: Vec<String>,
+    /// Replaced files Valve removed (the copy replaces nothing now).
+    pub removed: Vec<String>,
+    /// References that resolved on the old build and don't on the new one: `mod file -> missing target`.
+    pub broken: Vec<String>,
+    /// Game files the mod references whose CRC changed.
+    pub deps: BTreeSet<String>,
+    /// Bones removed or renamed in a skeleton the mod depends on (needs the rig sidecar of both builds).
+    pub skeleton: Vec<String>,
+    /// Control parameters removed or renamed in a graph the mod depends on.
+    pub params: Vec<String>,
+    /// Model contract breaches against the installed game (bones, attachments, hitboxes); filled by the caller.
+    pub contract: Vec<String>,
+    /// Whether the contract check ran (it needs Valve's current models, so only when the checked build is installed).
+    pub contract_checked: bool,
+}
+
+impl Drift {
+    pub fn rig_deps(&self) -> Vec<&String> {
+        self.deps.iter().filter(|d| d.ends_with(".vnmskel_c") || d.ends_with(".vnmgraph_c") || d.ends_with(".vmdl_c")).collect()
+    }
+    /// Problems that stop the mod loading or working: exit 1.
+    pub fn bad(&self) -> usize {
+        self.removed.len() + self.broken.len() + self.contract.len() + self.skeleton.len()
+    }
+    /// `broken`, `re-prove` or `clean`: the same judgement as `verdict`, as a label for scripts.
+    pub fn state(&self) -> &'static str {
+        if self.bad() > 0 {
+            "broken"
+        } else if self.changed.is_empty() && self.rig_deps().is_empty() && self.params.is_empty() {
+            "clean"
+        } else {
+            "re-prove"
+        }
+    }
+    pub fn verdict(&self, from: &str, to: &str) -> String {
+        if self.bad() > 0 {
+            format!("BROKEN on {to}: {} problem(s) above", self.bad())
+        } else if self.changed.is_empty() && self.rig_deps().is_empty() && self.params.is_empty() {
+            format!("no drift from {from} to {to}")
+        } else {
+            format!("loads on {to}; re-prove the {} changed original(s) and {} changed rig file(s) in game", self.changed.len(), self.rig_deps().len())
+        }
+    }
+}
+
+/// The references a mod file declares, for drift: its resource references, a sound event file's `.vsnd` names and a
+/// model's AnimGraph skeleton references. `extra` is how the caller reads the KV3 data (kept out of here so the
+/// core stays testable on synthesized files).
+fn refs_of(f: &ModFile) -> Vec<String> {
+    let Ok(r) = resource::parse(&f.data) else { return Vec::new() };
+    let mut refs = lint::ref_targets(&r);
+    if f.path.ends_with(".vsndevts_c") {
+        if let Some(Ok(kv)) = resource::kv3_block(&f.data, b"DATA") {
+            refs.extend(lint::deep::vsnd_refs(&kv));
+        }
+    }
+    if f.path.ends_with(".vmdl_c") {
+        if let Some(Ok(kv)) = resource::kv3_block(&f.data, b"DATA") {
+            for s in kv.get("m_vecNmSkeletonRefs").map(|a| a.as_array().to_vec()).unwrap_or_default() {
+                if let Some(s) = s.as_str() {
+                    refs.push(lint::deep::compiled(s));
+                }
+            }
+        }
+    }
+    refs
+}
+
+/// Compare a mod's files with the two builds' baselines (and, when both exist, their rig sidecars).
+pub fn compute(files: &[ModFile], then: &Baseline, now: &Baseline, rigs: Option<(&Rig, &Rig)>) -> Drift {
+    let mod_paths: HashSet<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    let mut d = Drift::default();
+    for f in files {
+        match (then.get(&f.path), now.get(&f.path)) {
+            (Some(a), Some(b)) if a.crc != b.crc => d.changed.push(f.path.clone()),
+            (Some(_), None) => d.removed.push(f.path.clone()),
+            _ => {}
+        }
+        for t in refs_of(f) {
+            if mod_paths.contains(t.as_str()) {
+                continue;
+            }
+            match (then.get(&t), now.get(&t)) {
+                (Some(_), None) => d.broken.push(format!("{} -> {t}", f.path)),
+                (Some(a), Some(b)) if a.crc != b.crc => {
+                    d.deps.insert(t);
+                }
+                _ => {}
+            }
+        }
+    }
+    if let Some((rt, rn)) = rigs {
+        for dep in &d.deps {
+            if let (Some(a), Some(b)) = (rt.skeletons.get(dep), rn.skeletons.get(dep)) {
+                d.skeleton.extend(bone_delta(dep, a, b));
+            }
+            if let (Some(a), Some(b)) = (rt.graphs.get(dep), rn.graphs.get(dep)) {
+                d.params.extend(param_delta(dep, a, b));
+            }
+            // A skeleton that vanished from the sidecar entirely is a removal the baseline already reports as broken.
+        }
+    }
+    d
+}
+
+/// `mod file -> missing target` lines grouped by target, most-referenced first: a removed skeleton that ninety clips
+/// point at is one finding with a count, not ninety lines.
+pub fn group_broken(broken: &[String]) -> Vec<String> {
+    let mut by: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for b in broken {
+        if let Some((from, to)) = b.split_once(" -> ") {
+            by.entry(to).or_default().push(from);
+        }
+    }
+    let mut v: Vec<(&str, Vec<&str>)> = by.into_iter().collect();
+    v.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(b.0)));
+    v.into_iter()
+        .map(|(to, mut from)| {
+            from.sort();
+            from.dedup();
+            match from.as_slice() {
+                [one] => format!("{one} -> {to}"),
+                _ => format!("{to} is gone; {} mod files point at it (e.g. {})", from.len(), from[0]),
+            }
+        })
+        .collect()
+}
+
+// ------------------------------------------------------------------------------------------------ builds on record
+
+/// Builds that have a baseline in the reference folder, ascending.
+pub fn builds_on_record(reference: &Path) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(reference)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().join("baseline.tsv").is_file())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        .collect();
+    v.sort_by_key(|n| n.parse::<u64>().unwrap_or(0));
+    v
+}
+
+/// The build to compare against by default: the newest baseline older than `installed`, else `installed` itself.
+pub fn default_from(builds: &[String], installed: &str) -> String {
+    let inst = installed.parse::<u64>().unwrap_or(0);
+    builds.iter().rfind(|b| b.parse::<u64>().is_ok_and(|n| n < inst)).cloned().unwrap_or_else(|| installed.to_string())
+}
+
+/// The build a mod is compared from on patch day: its last proven build at or before `installed` (a mod proven on the
+/// installed build is current), when that build's baseline is on record. Otherwise the newest older baseline, with the
+/// reason, because a drift needs both eras.
+pub fn era_for(proven: &[String], builds: &[String], installed: &str) -> (String, Option<String>) {
+    let inst = installed.parse::<u64>().unwrap_or(0);
+    let last = proven.iter().filter(|b| b.parse::<u64>().is_ok_and(|n| n <= inst)).max_by_key(|b| b.parse::<u64>().unwrap_or(0));
+    let fallback = default_from(builds, installed);
+    match last {
+        Some(b) if b == installed => (b.clone(), None),
+        Some(b) if builds.contains(b) => (b.clone(), None),
+        Some(b) => (fallback.clone(), Some(format!("last proven on {b}, which has no baseline on record; compared from {fallback}"))),
+        None => (fallback.clone(), Some(format!("no proven build on record; compared from {fallback}"))),
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ proven ledger
+
+fn proven_section_line(toml: &str) -> Option<(usize, usize)> {
+    // (byte start, byte end) of the `builds = [...]` line inside [proven].
+    let mut in_proven = false;
+    let mut at = 0;
+    for line in toml.split_inclusive('\n') {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_proven = grade::manifest::section_of(t) == Some("proven");
+        } else if in_proven && t.split_once('=').is_some_and(|(k, _)| k.trim() == "builds") {
+            return Some((at, at + line.len()));
+        }
+        at += line.len();
+    }
+    None
+}
+
+/// The builds a mod's `mod.toml` says it was proven on (`[proven] builds = [6861, "6864"]`).
+pub fn proven_builds(toml: &str) -> Vec<String> {
+    grade::manifest::proven(toml)
+}
+
+/// `mod.toml` with `build` added to `[proven] builds`, keeping the rest of the file and the line's own comment.
+/// Only the one-line array form is supported; anything else is refused rather than guessed at.
+pub fn add_proven(toml: &str, build: &str) -> Result<String, String> {
+    if build.is_empty() || !build.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!("'{build}' is not a build number"));
+    }
+    let (a, b) = proven_section_line(toml).ok_or("mod.toml has no `builds = [...]` line under [proven]")?;
+    let line = &toml[a..b];
+    let (key, rest) = line.split_once('=').unwrap();
+    let (body, comment) = match rest.split_once('#') {
+        Some((x, c)) => (x, Some(c)),
+        None => (rest, None),
+    };
+    if !body.contains('[') || !body.contains(']') {
+        return Err("the `builds` array must sit on one line (`builds = [6864]`)".into());
+    }
+    let mut builds = proven_builds(toml);
+    if !builds.iter().any(|x| x == build) {
+        builds.push(build.to_string());
+    }
+    builds.sort_by_key(|n| n.parse::<u64>().unwrap_or(0));
+    let eol = if line.ends_with("\r\n") { "\r\n" } else if line.ends_with('\n') { "\n" } else { "" };
+    let list = builds.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ");
+    let new = match comment {
+        Some(c) => format!("{}= [{list}]  #{}", key, c.trim_end_matches(['\r', '\n'])),
+        None => format!("{}= [{list}]", key),
+    };
+    Ok(format!("{}{}{}{}", &toml[..a], new.trim_end(), eol, &toml[b..]))
+}
+
+/// The `slug` and `[target]` paths of a mod.toml (line-based; the file is flat enough that a TOML parser isn't worth
+/// a dependency).
+pub fn mod_slug(toml: &str) -> Option<String> {
+    grade::manifest::string(toml, "mod", "slug")
+}
+
+/// The install-ledger owners a mod.toml speaks for: its slug (`maid-lash` installs as `maid_lash`) and any listed in
+/// `[mod] owners = [...]` (a voice pak or a showcase scene installed under a name of its own).
+pub fn mod_owners(toml: &str) -> Vec<String> {
+    let mut out: Vec<String> = mod_slug(toml).map(|s| s.replace('-', "_")).into_iter().collect();
+    for o in grade::manifest::list(toml, "mod", "owners") {
+        if !out.contains(&o) {
+            out.push(o);
+        }
+    }
+    out
+}
+
+pub fn target_paths(toml: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut in_target = false;
+    for line in toml.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_target = grade::manifest::section_of(t) == Some("target");
+            continue;
+        }
+        if !in_target {
+            continue;
+        }
+        if let Some((k, v)) = t.split_once('=') {
+            let v = v.split('#').next().unwrap_or("").trim();
+            if let Some(p) = v.strip_prefix('"').and_then(|x| x.split('"').next()) {
+                if p.contains('/') && p.contains('.') {
+                    out.push((k.trim().to_string(), p.to_string()));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A source-compiled target path (`models/x/y.vmdl`) as the game stores it (`.vmdl_c`).
+pub fn compiled_target(p: &str) -> String {
+    if p.ends_with("_c") { p.to_string() } else { format!("{p}_c") }
+}
+
+/// Whether a mod.toml `[target]` value names a game resource (a source path the game stores compiled).
+pub fn is_game_resource(p: &str) -> bool {
+    ["vmdl", "vnmskel", "vnmgraph", "vnmclip", "vmat", "vpcf", "vsndevts", "vtex", "vmap"].iter().any(|e| p.ends_with(&format!(".{e}")) || p.ends_with(&format!(".{e}_c")))
+}
+
+/// The ledger rows whose file on disk is missing or isn't the file we installed: `(name, why)`.
+pub fn ledger_problems(rows: &[(String, String, Option<String>)]) -> Vec<(String, String)> {
+    rows.iter()
+        .filter_map(|(name, crc, disk)| match disk {
+            None => Some((name.clone(), "missing from addons (removed by hand, or a verify-files pass)".to_string())),
+            Some(d) if d != crc => Some((name.clone(), format!("on disk crc {d}, ledger says {crc}: something else replaced our file"))),
+            _ => None,
+        })
+        .collect()
+}
+
+// ------------------------------------------------------------------------------------------------ tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lint::baseline::FileInfo;
+
+    fn base(build: &str, rows: &[(&str, u32)]) -> Baseline {
+        let mut b = Baseline { build: build.into(), ..Baseline::default() };
+        for (p, c) in rows {
+            b.files.insert(p.to_string(), FileInfo { crc: *c, size: 1 });
+        }
+        b
+    }
+    fn mod_file(path: &str, refs: &[&str]) -> ModFile {
+        ModFile { path: path.into(), stored_crc: 0, inline: true, data: resource::synth(refs) }
+    }
+    fn names(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+    const CLIP: &str = "models/heroes/x/clips/run.vnmclip_c";
+    const SKEL: &str = "models/heroes/x/x.vnmskel_c";
+    const GRAPH: &str = "animgraphs/animgraph2/hero/hero.vnmgraph+x.vnmgraph_c";
+    const PARTICLE: &str = "particles/x/fx.vpcf_c";
+
+    fn files() -> Vec<ModFile> {
+        vec![mod_file(CLIP, &["models/heroes/x/x.vnmskel"]), mod_file("models/heroes/x/x.vmdl_c", &[PARTICLE.trim_end_matches("_c")])]
+    }
+
+    #[test]
+    fn identical_builds_are_no_drift() {
+        let b = base("1", &[(CLIP, 1), ("models/heroes/x/x.vmdl_c", 2), (SKEL, 3), (PARTICLE, 4)]);
+        let d = compute(&files(), &b, &b, None);
+        assert_eq!(d.bad(), 0);
+        assert!(d.verdict("1", "1").starts_with("no drift"), "{}", d.verdict("1", "1"));
+    }
+
+    #[test]
+    fn a_changed_original_asks_for_a_reprove_but_still_loads() {
+        let then = base("1", &[(CLIP, 1), (SKEL, 3)]);
+        let now = base("2", &[(CLIP, 9), (SKEL, 3)]);
+        let d = compute(&files(), &then, &now, None);
+        assert_eq!(d.changed, vec![CLIP.to_string()]);
+        assert_eq!(d.bad(), 0);
+        assert!(d.verdict("1", "2").starts_with("loads on 2"), "{}", d.verdict("1", "2"));
+    }
+
+    #[test]
+    fn a_removed_original_and_a_vanished_reference_break_the_mod() {
+        let then = base("1", &[(CLIP, 1), (SKEL, 3), (PARTICLE, 4)]);
+        let now = base("2", &[]);
+        let d = compute(&files(), &then, &now, None);
+        assert_eq!(d.removed, vec![CLIP.to_string()]);
+        assert!(d.broken.iter().any(|b| b.ends_with(&format!("-> {SKEL}"))), "{:?}", d.broken);
+        assert!(d.verdict("1", "2").starts_with("BROKEN on 2"));
+    }
+
+    #[test]
+    fn a_renamed_bone_in_a_skeleton_the_mod_uses_breaks_it() {
+        let then = base("1", &[(CLIP, 1), (SKEL, 3)]);
+        let now = base("2", &[(CLIP, 1), (SKEL, 4)]);
+        let mut rt = Rig { build: "1".into(), ..Rig::default() };
+        rt.skeletons.insert(SKEL.into(), names(&["root", "pelvis", "spine_0"]));
+        let mut rn = Rig { build: "2".into(), ..Rig::default() };
+        rn.skeletons.insert(SKEL.into(), names(&["root", "pelvis", "spine_a"]));
+        let d = compute(&files(), &then, &now, Some((&rt, &rn)));
+        assert_eq!(d.skeleton.len(), 1, "{:?}", d.skeleton);
+        assert!(d.skeleton[0].contains("'spine_0' is now 'spine_a'"), "{}", d.skeleton[0]);
+        assert_eq!(d.bad(), 1);
+        // An added bone alone is harmless.
+        rn.skeletons.insert(SKEL.into(), names(&["root", "pelvis", "spine_0", "extra"]));
+        assert_eq!(compute(&files(), &then, &now, Some((&rt, &rn))).bad(), 0);
+    }
+
+    #[test]
+    fn a_removed_graph_parameter_is_a_warning_not_a_break() {
+        let f = vec![mod_file("models/heroes/x/x.vmdl_c", &["animgraphs/animgraph2/hero/hero.vnmgraph+x.vnmgraph"])];
+        let then = base("1", &[(GRAPH, 1)]);
+        let now = base("2", &[(GRAPH, 2)]);
+        let mut rt = Rig::default();
+        rt.graphs.insert(GRAPH.into(), names(&["move_speed", "crouch_fraction"]));
+        let mut rn = Rig::default();
+        rn.graphs.insert(GRAPH.into(), names(&["move_speed"]));
+        let d = compute(&f, &then, &now, Some((&rt, &rn)));
+        assert_eq!(d.params.len(), 1);
+        assert!(d.params[0].contains("'crouch_fraction'"));
+        assert_eq!(d.bad(), 0);
+        assert!(d.verdict("1", "2").starts_with("loads on 2"));
+    }
+
+    #[test]
+    fn broken_references_group_by_missing_target() {
+        let b = vec!["a.vnmclip_c -> s.vnmskel_c".to_string(), "b.vnmclip_c -> s.vnmskel_c".to_string(), "b.vnmclip_c -> s.vnmskel_c".to_string(), "m.vmdl_c -> p.vpcf_c".to_string()];
+        let g = group_broken(&b);
+        assert_eq!(g.len(), 2);
+        assert!(g[0].starts_with("s.vnmskel_c is gone; 2 mod files"), "{}", g[0]);
+        assert_eq!(g[1], "m.vmdl_c -> p.vpcf_c");
+    }
+
+    #[test]
+    fn rig_sidecar_round_trips() {
+        let mut r = Rig { build: "6864".into(), ..Rig::default() };
+        r.skeletons.insert(SKEL.into(), names(&["a", "b"]));
+        r.graphs.insert(GRAPH.into(), names(&["p"]));
+        let mut out = Vec::new();
+        r.write(&mut out).unwrap();
+        assert_eq!(Rig::parse(&String::from_utf8(out).unwrap()).unwrap(), r);
+        assert!(Rig::parse("bogus\tx\ty\n").is_err());
+    }
+
+    #[test]
+    fn builds_sort_numerically_and_from_defaults_to_the_one_before() {
+        let b = names(&["6861", "6864", "10000"]);
+        assert_eq!(default_from(&b, "10000"), "6864");
+        assert_eq!(default_from(&b, "6864"), "6861");
+        assert_eq!(default_from(&b, "6861"), "6861", "nothing older: compare with itself");
+    }
+
+    #[test]
+    fn proven_ledger_reads_and_appends_in_place() {
+        let toml = "[mod]\nslug = \"a\"\n\n[proven]\nbuilds = []   # filled by the harness\n\n[fair_play]\nnotes = \"\"\n";
+        assert!(proven_builds(toml).is_empty());
+        let t = add_proven(toml, "6864").unwrap();
+        assert_eq!(proven_builds(&t), vec!["6864".to_string()]);
+        assert!(t.contains("# filled by the harness") && t.contains("[fair_play]") && t.contains("notes = \"\""));
+        let t = add_proven(&add_proven(&t, "6861").unwrap(), "6864").unwrap();
+        assert_eq!(proven_builds(&t), vec!["6861".to_string(), "6864".to_string()], "sorted, no duplicates");
+        assert!(add_proven("[mod]\nslug = \"a\"\n", "6864").is_err());
+        assert!(add_proven(toml, "x1").is_err());
+        assert!(add_proven("[proven]\nbuilds = [\n  6861,\n]\n", "6864").is_err(), "multi-line arrays are refused, not guessed at");
+        // found by the long fuzz: a header grade read as [proven] and prove did not, so the build prove wrote was not
+        // the one grade and patchday read
+        for t in ["[[proven]\nbuilds = [6861]\n[proven]\nbuilds = [6861, 6864]\n", "[ proven ]  # spaced\nbuilds = [6861]\n"] {
+            let new = add_proven(t, "6865").unwrap();
+            assert!(proven_builds(&new).contains(&"6865".to_string()), "{new}");
+        }
+    }
+
+    #[test]
+    fn targets_and_slug_come_out_of_mod_toml() {
+        let toml = "[mod]\nslug    = \"maid-lash\"\n[target]\nmodel = \"models/heroes_wip/lash/lash.vmdl\"  # note\nmaterials_dir = \"models/heroes_wip/lash/materials\"\n[proven]\nbuilds = []\n";
+        assert_eq!(mod_slug(toml).as_deref(), Some("maid-lash"));
+        let t = target_paths(toml);
+        assert_eq!(t[0], ("model".to_string(), "models/heroes_wip/lash/lash.vmdl".to_string()));
+        assert_eq!(compiled_target(&t[0].1), "models/heroes_wip/lash/lash.vmdl_c");
+        assert!(is_game_resource(&t[0].1) && !is_game_resource("evidence/6861/asset-catalog.tsv") && !is_game_resource("models/heroes_wip/lash/materials"));
+    }
+
+    #[test]
+    fn a_mod_is_compared_from_its_last_proven_build() {
+        let on_record = names(&["6861", "6863", "6864", "6865"]);
+        // proven on the installed build: nothing to compare, it is current
+        assert_eq!(era_for(&names(&["6861", "6865"]), &on_record, "6865"), ("6865".to_string(), None));
+        // proven on an older build that is on record: from there, not from the newest older baseline
+        assert_eq!(era_for(&names(&["6861"]), &on_record, "6865"), ("6861".to_string(), None));
+        assert_eq!(era_for(&names(&["6861", "6863"]), &on_record, "6865").0, "6863");
+        // a later proof than the installed build (the game went back) does not count
+        assert_eq!(era_for(&names(&["6863", "6866"]), &on_record, "6865").0, "6863");
+        // the last proven build has no baseline: the newest older one, and the reason
+        let (from, why) = era_for(&names(&["6862"]), &on_record, "6865");
+        assert_eq!(from, "6864");
+        assert!(why.unwrap().contains("6862"));
+        // never proven: the newest older baseline, said so
+        let (from, why) = era_for(&[], &on_record, "6865");
+        assert_eq!(from, "6864");
+        assert!(why.unwrap().contains("no proven build"));
+    }
+
+    #[test]
+    fn a_mod_toml_claims_its_slug_and_listed_owners() {
+        let toml = "[mod]
+slug = \"example-skin\"
+owners = [\"example_voice\", \"example_showcase\"]  # paks it installs
+[proven]
+builds = [6864]
+";
+        assert_eq!(mod_owners(toml), names(&["example_skin", "example_voice", "example_showcase"]));
+        assert_eq!(mod_owners("[mod]
+slug = \"maid-lash\"
+"), names(&["maid_lash"]));
+        assert!(mod_owners("[proven]
+builds = []
+").is_empty());
+    }
+
+    #[test]
+    fn drift_states_match_their_verdicts() {
+        let mut d = Drift::default();
+        assert_eq!(d.state(), "clean");
+        d.changed.push(CLIP.into());
+        assert_eq!(d.state(), "re-prove");
+        d.removed.push(CLIP.into());
+        assert_eq!(d.state(), "broken");
+        let mut p = Drift::default();
+        p.params.push("x".into());
+        assert_eq!(p.state(), "re-prove", "a lost graph parameter is a warning: re-prove, not broken");
+    }
+
+    #[test]
+    fn ledger_problems_name_a_missing_and_a_replaced_file() {
+        let rows = vec![
+            ("pak10_dir.vpk".to_string(), "aa".to_string(), Some("aa".to_string())),
+            ("pak11_dir.vpk".to_string(), "bb".to_string(), None),
+            ("pak12_dir.vpk".to_string(), "cc".to_string(), Some("dd".to_string())),
+        ];
+        let p = ledger_problems(&rows);
+        assert_eq!(p.len(), 2);
+        assert!(p[0].1.contains("missing") && p[1].1.contains("something else"));
+    }
+}

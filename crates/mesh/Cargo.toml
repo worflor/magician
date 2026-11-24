@@ -1,0 +1,18 @@
+[package]
+name = "magician-mesh"
+description = "Source 2 compiled model meshes, read natively: meshoptimizer vertex/index codecs, packed vertex formats, draw calls per LOD and material, skeleton, hitboxes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "mesh"
+
+[dependencies]
+magician-resource = { path = "../resource" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+magician-fuzz = { path = "../fuzz" }

@@ -1,0 +1,15 @@
+[package]
+name = "magician-expr"
+description = "Static analysis of Source 2 material DynamicParams expressions: parse, prove output ranges with interval arithmetic, count cost"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "expr"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+magician-fuzz = { path = "../fuzz" }

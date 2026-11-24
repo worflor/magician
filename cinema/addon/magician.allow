@@ -1,0 +1,7 @@
+M061	panorama/styles/unit_status_v2.vcss_c	*	cinema_dev is a dev-only film kit: the stylesheet is replaced by one rule that collapses every world-space unit panel, so none of Valve's images are needed
+M031	particles/cinema/studio_rig.vpcf_c	*	a studio light rig, started from the console (particle_test_file), never referenced by a game file
+M031	particles/cinema/studio_key.vpcf_c	*	a studio light rig, started from the console (particle_test_file), never referenced by a game file
+M031	particles/cinema/studio_rim.vpcf_c	*	a studio light rig, started from the console (particle_test_file), never referenced by a game file
+M031	particles/cinema/studio_top.vpcf_c	*	a studio light rig, started from the console (particle_test_file), never referenced by a game file
+M031	panorama/scripts/cinema/cinema_bridge.vjs_c	*	loaded by path from the cinema copy of hud_hero_testing (its <scripts> include); the compiled layout does not record script dependencies
+M031	panorama/scripts/cinema/cinema_paths.vjs_c	*	loaded by path from the cinema copy of hud_hero_testing (its <scripts> include); the compiled layout does not record script dependencies

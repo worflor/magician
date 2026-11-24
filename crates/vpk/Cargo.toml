@@ -1,0 +1,15 @@
+[package]
+name = "magician-vpk"
+description = "Valve VPK v1/v2 reader and single-file v2 writer, no dependencies"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "vpk"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+magician-fuzz = { path = "../fuzz" }

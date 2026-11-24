@@ -1,0 +1,37 @@
+{
+  "hero": "haze",
+  "model": "models/heroes_staging/haze/haze.vmdl_c",
+  "mod": "example",
+  "design_blend": null,
+  "_doc": "A worked example on a stock hero: copy it into your mod (for example <mod>/source/qa/heroes/<hero>.json), name your own meshes and materials, and run run_qa.py --hero <that file>. Valve's own names are from build 6865.",
+  "classes": {
+    "_doc": "how a compiled component is classed: by render mesh name (the part after 'haze.'), else by its majority material, else default. skin/gear are Valve's body and kit; outfit/cloth are a mod's own; fx is never collision-tested",
+    "mesh": {},
+    "material": {
+      "hazev2": "skin",
+      "hazev2_head": "skin",
+      "hazev2_head_invis": "fx",
+      "hazev2_headsmoke": "fx",
+      "hazev2_headsmoke_invis": "fx",
+      "haze_body_smoke": "fx",
+      "haze_head_smoke": "fx",
+      "haze_gun_smoke": "fx"
+    },
+    "default": "gear"
+  },
+  "cloth_bones": ["$cc", "cloth"],
+  "clip_sets": {
+    "curated": [
+      "weapon_stand_idle", "invis_stand_idle", "weapon_run_n", "weapon_run_e", "weapon_run_w", "weapon_run_s",
+      "out_of_combat_run_n", "weapon_crouch_idle", "weapon_crouch_run_n", "run_to_stop_stand", "jump_ground",
+      "in_air_loop_down", "landing_impact_idle", "dash_ground", "slide_loop", "mantle_64",
+      "melee_quick_1", "parry", "reload_idle", "zipline_attached_loop", "rope_climb_up", "ui_pose"
+    ],
+    "sequences": ["weapon_stand_idle", "weapon_run_n", "jump_ground", "landing_impact_idle", "slide_loop", "ui_pose"]
+  },
+  "particle_prefixes": ["particles/abilities/haze/", "particles/weapon_fx/haze/"],
+  "families": {
+    "_doc": "regex on a piece label -> the family a finding is filed under when both sides belong to it, or the first side's family",
+    "Valve's body": "^skin:|^gear:haze"
+  }
+}

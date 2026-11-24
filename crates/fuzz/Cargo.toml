@@ -1,0 +1,13 @@
+[package]
+name = "magician-fuzz"
+description = "Deterministic fuzzing for Magician's parsers, no dependencies: a seeded generator, mutators, a time budget and an allocation cap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "fuzz"
+
+[lints]
+workspace = true

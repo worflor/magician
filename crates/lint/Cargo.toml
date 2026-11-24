@@ -1,0 +1,21 @@
+[package]
+name = "magician-lint"
+description = "Deadlock mod lint rules: each one names what breaks in-game, and ships a fixture that must trigger it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "lint"
+
+[dependencies]
+magician-vpk = { path = "../vpk" }
+magician-resource = { path = "../resource" }
+magician-mesh = { path = "../mesh" }
+magician-geom = { path = "../geom" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+magician-fuzz = { path = "../fuzz" }

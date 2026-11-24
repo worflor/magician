@@ -1,0 +1,29 @@
+{
+  "name": "example_orbit",
+  "note": "A worked example: a bullet-time arc round a hero frozen mid-stride at a street corner of the Hero Sandbox (SourceTV demo, paused at tick 2950), 155 degrees from its right side round to its front in 10 s. Set the tick and the centre from your own take.",
+  "fps": 30,
+  "seconds": 10,
+  "camera": "spec",
+  "time": {
+    "mode": "live"
+  },
+  "path": {
+    "type": "orbit",
+    "center": [1985, -650, 60],
+    "radius": 170,
+    "height": 35,
+    "yaw_from": -95,
+    "yaw_to": 60,
+    "look_height": 45,
+    "ease": "inout"
+  },
+  "pre": [
+    "demo_pause",
+    "demo_gototick 2950",
+    "@wait 5",
+    "citadel_hud_visible 0;cl_hud_telemetry_frametime_show 0;cl_hud_telemetry_ping_show 0;cl_hud_telemetry_net_misdelivery_show 0;citadel_camera_fade_other_near_dist 0;citadel_camera_fade_viewed_near_dist 0"
+  ],
+  "post": [
+    "citadel_hud_visible 1;cl_hud_telemetry_frametime_show 1;cl_hud_telemetry_ping_show 1;cl_hud_telemetry_net_misdelivery_show 1;citadel_camera_fade_other_near_dist 20;citadel_camera_fade_viewed_near_dist 20"
+  ]
+}

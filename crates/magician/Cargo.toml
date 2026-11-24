@@ -1,0 +1,25 @@
+[package]
+name = "magician"
+description = "Magician is a headless toolchain for creating, validating, and maintaining Deadlock mods through automation, scripts, and AI agents."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "magician"
+path = "src/main.rs"
+
+[dependencies]
+magician-vpk = { path = "../vpk" }
+magician-resource = { path = "../resource" }
+magician-mesh = { path = "../mesh" }
+magician-lint = { path = "../lint" }
+magician-grade = { path = "../grade" }
+magician-expr = { path = "../expr" }
+magician-mark = { path = "../mark" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+magician-fuzz = { path = "../fuzz" }

@@ -1,0 +1,12 @@
+[package]
+name = "magician-geom"
+description = "Geometry kernel for compiled meshes: exact predicates, BVH, topology and homology, triangle quality, intersection, clipping, mass properties, orthographic rasterizer, PNG"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "geom"
+
+[lints]
+workspace = true

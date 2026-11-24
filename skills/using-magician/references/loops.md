@@ -1,0 +1,166 @@
+# Magician loops in full
+
+Load the section you need. Commands assume the repository root and `magician` = `target\release\magician.exe`.
+
+## Contents
+
+- [A headless run, start to finish](#a-headless-run-start-to-finish)
+- [Validate a mod](#validate-a-mod)
+- [Patch day](#patch-day)
+- [Build and release](#build-and-release)
+- [Install and roll back](#install-and-roll-back)
+- [Install a pak for someone to look at](#install-a-pak-for-someone-to-look-at)
+- [Hero-page scenes](#hero-page-scenes)
+- [Release bundles](#release-bundles)
+- [In-game proof](#in-game-proof)
+
+## A headless run, start to finish
+
+The prompt is one line, say *"validate the lash skins for the newest Deadlock release"*, and nobody will answer questions. Do this:
+
+1. `magician doctor --json`. A check whose `state` is `fail` (most often `game`): report its `detail` and `fix`, and stop. The `build` check names the installed build; "newest release" means the build Steam has installed (Magician never downloads one).
+2. Find the mods. "The lash skins" means every mod whose hero is Lash: the `model-replacements\*\mod.toml` above the working folder with `[mod] hero = "hero_lash"` (or `lash`, `Lash`: Magician reads a hero any way), and `magician install --status` for what is installed and under which owner. If nothing matches, say what you searched.
+3. `magician patchday --capture --json`. It writes the new build's baseline and rig sidecar into the reference folder if they are missing (never into the game), then checks every installed mod: `mods[].state`, `mods[].from` (the build each was compared from) and `verdict`. If it says there is no older baseline on record, drift could not be checked: say so.
+4. For each mod in scope, `magician check <its folder> --json`: its paks (from its `mod.toml`: `[mod] paks`, else the paks beside it, else the ones the ledger holds for its owners, which is what the game loads) linted deep and graded together, its drift since its last proven build, its scene patches against the stock maps. Report `verdict` (`ok`, `re-prove`, `broken`), `label`, the `lint` step's counts and every `next` line. stderr names every file it used and where it found it. If a `next` line says the ledger holds files for owners the mod.toml does not claim (a voice pak, a scene), report it: the grade left them out, and only the author can say they belong (`[mod] owners`).
+5. For anything broken, `magician drift --json` from inside the mod's folder (it compares from the last proven build) or `magician lint <pak>` for the full findings. Do not uninstall unless the prompt or a standing instruction says to contain broken mods.
+6. Stop before anything that needs judgement or the game: no fixes, no installs, no `prove`, no launch.
+7. Report (format in SKILL.md): build, each mod's verdict and label, lint counts with rule codes, every write you made (a captured baseline), what remains (in-game re-prove for `re-prove` mods, a fix for broken ones).
+
+With a person pairing, do the same but ask before anything that writes outside the reference folder.
+
+## Validate a mod
+
+```
+magician check <mod folder or mod.toml> [--light] [--json]   the one verdict: lint + grade + drift + scenes
+magician lint <pak>                          light
+magician lint <pak> --deep                   plus the mesh family (M100-M140)
+magician lint <pak> --json                  one JSON document on stdout, same findings (--json-out FILE writes it beside the report)
+magician rules                               the catalogue: code, name, severity, in-game consequence
+```
+
+Inside a mod's folder every command here can drop its pak (and `grade` its `--mod`): the mod.toml supplies them, and stderr says which files were used. Explicit arguments win.
+
+A finding line reads `<severity>  <code> <name>  <path>`, with a hint indented under it, and the run ends with `N error(s), N warning(s), N note(s), N allowed, N stale`. Exit 1 means at least one error that is not allowed.
+
+- Findings are judged against Valve's file at the same path; what Valve's own file does is never a finding. A mod is blamed only for references it introduced.
+- **Allowances** live in the addon's `magician.allow` (one site, one rule, a written reason). Allowed findings still print, as `allowed`. `stale` means an allowance no longer matches anything: report it, the author should remove it.
+- `M129` (egregious hitbox overflow) and other fair-play findings are not style notes. They mean the mod makes a hero harder to read or hit fairly. `M144` means a fair-play comparison could not run on a file: fair play is unknown there, not clean. Fair play is lenient unless the policy enforces it (`[fair_play] enforce = true`): until then these print as warnings, lint exits 0 on them alone and install goes ahead. Report them anyway, with their codes; a warning here is not a clean bill.
+- Without a users index for the build, the shared-file rule M090 does not run and lint says so. `magician index` builds it (needs the Source 2 Viewer CLI).
+- One model in detail: `magician mesh <pak> <model path>` (verdict PASS / ATTENTION / FAIL, silhouettes, an x-ray sheet in `--out`), `magician cloth <pak> <model path>` (the compiled cloth beside Valve's).
+
+**Grade** (hero mods; a mod that touches nothing of the hero is "not graded", and says so):
+
+```
+magician grade <pak>... --mod <mod.toml> [--allow <magician.allow>]... [--json] [--gate]   # without --allow it finds the mod's own magician.allow
+magician grade <pak> --hero <hero> [--light | --findings <file from lint --findings-out>]
+```
+
+Give every pak of the mod at once (a skin pak and its voice pak grade as one; alone, the skin pak lacks the kit sound). The label reads `<letter> <word>[ · NSFR | · FP?][ · stale(N) | · unproven]`:
+
+- the letter (S to F) is depth: how completely the mod fulfils its archetype, never whether the art is good. Don't present it as a quality verdict;
+- the word is identity: Echo (a new character at S), Echolite (a new character below S), Costume (the same character), Variant (Valve's mesh, new materials), Kit (no model);
+- `NSFR` is a confirmed fair-play violation, `FP?` a fair-play check that could not run (a `--light` lint over a model reads `FP?`: grade lints deep by default), and neither ever lowers the letter;
+- `stale(N)` means not proven on this build, last proven on N; `unproven`, no build on record.
+
+In the record (`--json`, schema `magician.grade/2`) the useful parts are `release_gate.blockers` (what stops publishing: lint errors that are not fair play, Valve's own files, not proven, rights denied; and fair play unknown or NSFR, and unreviewed rights, when the policy enforces them; otherwise those are in `release_gate.warnings`), `allowance_files` (which `magician.allow` the grade read, or that none was found: an unexplained NSFR is often a missing one), `fair_play.violations` and `fair_play.allowances` (each with its measured value and limit), `identity.evidence` and `next_steps` (they name files). `rights: unreviewed` is a person's call: never set `[rights] state` yourself. `--gate` exits 1 when the gate blocks.
+
+## Patch day
+
+```
+magician patchday --capture           the check; writes a missing baseline and rig sidecar
+magician patchday --from <build>      compare against a specific older build
+magician patchday --mod <mod.toml>    check named mods (otherwise model-replacements/*/mod.toml is searched)
+magician drift <pak>... --from <old> [--to <new>]
+```
+
+Sections: `[1] baseline` (MISSING, ok, or STALE: same build number, different bytes, a hotfix), `[2] install state` (is `Game citadel/addons` still in `gameinfo.gi`; ledger rows against disk), `[3] drift` per mod from its last proven build, `[4] mods` (`[target]` paths and `proven on N of M builds`), then `verdict`: `clear` (exit 0), `loads, but re-prove in game: <mods>` (exit 4), or `BROKEN: n problem(s)` (exit 1). `--json` gives all of it as one document.
+
+What to do with each, briefly (the full table is `docs/PATCH-DAY.md`, "What each failure means"):
+
+| You see | It means | Your move |
+|---|---|---|
+| `addons search path MISSING` | Steam reset `gameinfo.gi`; mods silently don't load | Report. The fix is `magician install` of any installed pak (idempotent), which is a write: only if asked |
+| `RE-PROVE` | Loads; Valve changed something the mod replaces or uses | Needs an in-game pass. Headless: report as pending |
+| `bone 'a' is now 'b'`, `skeleton bones removed` | BROKEN: the mod's rig names a bone Valve renamed or dropped | Report the bone names; the rig must be rebuilt by the author |
+| `replaced files Valve removed`, `X is gone; n mod files point at it` | BROKEN: a path moved | Report; `magician ls <game pak> <prefix>` can find the new path |
+| `contract breach(es)` | BROKEN: a replaced model lost a bone, attachment or hitbox Valve's has (M062) | Report; never weaken the rule |
+| `STALE` | Baseline differs from the game under the same build number | Let Steam finish; re-run. Never overwrite a baseline by hand |
+
+A pak whose owner no `mod.toml` claims (a voice pak, a showcase scene installed under its own name) is compared from the newest older baseline, and its line says so; a `mod.toml` claims such owners with `[mod] owners = [...]`.
+
+## Build and release
+
+Needs the CSDK (`magician paths` shows `csdk`). Addon sources live in `<csdk>\content\citadel_addons\<addon>\`.
+
+```
+magician build <addon> <out\pakNN_dir.vpk>        compile real sources, pack outputs that map to live sources, lint
+magician release <addon> --hero <hero> [--with <addon>]... [--out FILE]
+```
+
+- One build per addon at a time: a second waits for the lock; `--no-wait` fails at once instead (use it when unattended).
+- A text source with a UTF-8 BOM is refused by name; the fix is to rewrite the file without one, not to bypass the check.
+- `magician.exclude` in the addon keeps listed paths out of the pak (when another pak owns them).
+- `release` writes `release-report.txt`, `lint.json` and `grade.json` beside the pak (lint, grade, mark; `--mod <mod.toml>` gives the grade its proof and rights) and exits 1 if lint failed. `--json` prints the whole release as one document. Default output is `<reference>\work\release\<addon>\pak10_dir.vpk`.
+
+## Install and roll back
+
+```
+magician install --status
+magician install <pak> [--mod NAME] [--as pakNN_dir.vpk]
+magician uninstall <file> | --mod NAME | --all
+```
+
+- Install lints first and refuses (exit 3) on lint errors.
+- It refuses while `deadlock.exe` runs unless you hold the game lock (`--holder NAME` or `MAGICIAN_GAME_HOLDER` equal to the lock's holder).
+- It never replaces another mod's file, a file it didn't install, or one changed since; the message names the owner and a free slot for `--as`. Don't reach for `--force`.
+- It backs up `gameinfo.gi` once per build and adds the addons line idempotently. Uninstall removes only ledger files; a pak someone else put in `addons\` stays.
+- After installing, `install --status` should show the crc you meant. Deadlock Mod Manager renumbers paks it didn't install; Magician follows a moved pak by its crc and `install --status` says `(the ledger says pakNN_dir.vpk: renamed by another tool)`. Report the move. An update of a moved pak is refused with the `--as` that replaces it in place: use that rather than installing a second copy.
+- A running Source 2 Viewer MCP session keeps the addon paks mapped and install fails with `os error 1224`; stop the viewer (`tools\s2v_mcp.ps1 stop`) first.
+
+## Install a pak for someone to look at
+
+The person says "I rebuilt my pak, check it and put it in the game so I can look."
+
+1. Lint it (light, and `--deep` if it replaces a model). Errors: report them and stop; install would refuse anyway.
+2. `magician install --status`: is a version of this mod installed, under which owner and file name?
+3. `python -I ingame\gamelock.py status` and whether `deadlock.exe` is running. A running game you don't hold: ask them to close it (a running game holds the paks and install refuses).
+4. `magician install <pak> --mod <the owner from step 2>` (same file name, so it replaces their previous build of the same mod). If it refuses because another mod owns that slot, report the free slot it suggests and ask before using `--as`.
+5. `magician install --status` again: the crc should be the new pak's.
+6. Tell them it is installed and that they can launch. Don't launch for them unless asked; if asked, follow [In-game proof](#in-game-proof) and give the seat back when they're done looking.
+
+## Hero-page scenes
+
+```
+magician scene check <patch dir>                          read-only: does this game's stock map match the patch?
+magician scene compose <patch dir> --out <file.vpk>       build it somewhere, install nothing
+magician scene install <patch dir> [--mod NAME]           compose and install (same rules as install)
+magician scene make <scene.vpk> --out <patch dir>         author side: split a built scene into a patch
+```
+
+After a game update, `check` exiting 1 (and `compose` or `install` refusing with 3) with "A game update changed Valve's map" is the design working: the patch must be re-made against the new map with `scene make` and the hero page re-proven. Report it per hero.
+
+## Release bundles
+
+```
+python -I tools\bundle.py <bundle.json> --out <dir> [--zip]
+```
+
+Builds a Deadlock Mod Manager bundle (`mod-interchange.json`, paks, previews, scene patches with standalone installers, `SHA256SUMS.txt`). It refuses a path shipped in two paks and any file byte-identical to Valve's. Write to a scratch `--out` unless told where releases go; never overwrite a published bundle.
+
+## In-game proof
+
+Only when the task asks for it, the machine has an interactive Windows desktop, and you can look at the frames (or a person will). The harness types into the game like a player; see `ingame/README.md`.
+
+```
+$env:MAGICIAN_GAME_HOLDER = "<your name>"
+python -I ingame\gamelock.py status                                   0 free, 3 held: never take it from someone
+powershell -ExecutionPolicy Bypass -File ingame\launch.ps1 -Extra "+map new_player_basics"
+python -I ingame\mod_session.py qa --mod <mod folder> --out <dir> [scenario ...]     # or: ingame\qa_run.ps1 -Mod <mod folder> [-Scenarios a,b,c]
+powershell -ExecutionPolicy Bypass -File ingame\stop_game.ps1          gives the seat back
+```
+
+- `launch.ps1` exit 4: a game it did not start is running (it may carry other paks). Don't adopt it; report.
+- Install before launching, never during a session you don't hold.
+- `mod_session.py qa` writes into `--out` (`qa_run.ps1`: a dated folder under `<reference>\work\<mod>\ingame\`) with contact sheets and `index.md`. Open the sheets. Say what you saw (a T-pose, a pink material, cloth clipping), not that the run exited 0.
+- Give the seat back as soon as the captures are taken, then check `gamelock.py status` before saying it is free.
+- Only after the frames were looked at: `magician prove <mod.toml>` records the build.

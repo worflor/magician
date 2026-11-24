@@ -1,0 +1,7 @@
+/* cinema_dev (dev only, never shipped): replaces the stylesheet of every world-space unit panel
+   (panorama/layout/unit_status_overlay_v2: a unit's name, health bar, status effects, bounty), so heroes,
+   bots and troopers carry no overhead bar. r_drawpanorama 0 hides the HUD and your own bar, not these. */
+.WindowRoot
+{
+	visibility: collapse;
+}

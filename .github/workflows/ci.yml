@@ -1,0 +1,58 @@
+# A fresh clone builds and passes its tests on a clean Windows machine: the Rust workspace (warnings and clippy as
+# errors, as CONTRIBUTING.md asks before a change lands) and the Python tools' tests. Every test uses synthetic
+# fixtures; none needs the game, a CSDK, Source 2 Viewer, Blender or a GPU.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: -D warnings
+      MAGICIAN_THREADS: "2"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Toolchain
+        run: rustup component add clippy
+      - name: Build
+        run: cargo build --release --workspace
+      - name: Test
+        run: cargo test --workspace
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Python tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m pip install --quiet pillow   # the bundler's and the mod source's images (CONTRIBUTING.md, rule 1)
+          $tests = "ingame\test_gamelock.py", "ingame\test_takes.py", "ingame\test_mod_session.py",
+                   "cinema\test_session.py", "cinema\test_replay.py", "mcp\test_server.py",
+                   "tools\test_bundle.py", "tools\test_scene_install.py", "tools\test_source.py"
+          foreach ($t in $tests) {
+            Write-Host "== $t"
+            python $t
+            if ($LASTEXITCODE -ne 0) { throw "$t failed" }
+          }
+
+  # The workspace builds and its Rust suite passes on Linux too (docs/STATUS.md); the harness and its tests are
+  # Windows-only by design, so this job runs the Rust side alone.
+  linux:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+      MAGICIAN_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: rustup component add clippy
+      - name: Test
+        run: cargo test --workspace
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings

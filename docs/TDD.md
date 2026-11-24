@@ -1,0 +1,183 @@
+# Magician: technical design
+
+How Magician is built and why. What it is for is in [PDD.md](PDD.md); facts about the engine itself (formats, compiler behaviour, what the game does at runtime) live in [reference/engine.md](reference/engine.md), one fact in one place.
+
+## The model: mods are programs, builds are targets
+
+| Compiler idea | In Magician |
+|---|---|
+| Target | A game build, identified by `ClientVersion` in `game\citadel\steam.inf` |
+| Target description | The build's **baseline** (`baseline.tsv`: every path, CRC and size in `citadel` and `core` `pak01_dir.vpk`) and **rig sidecar** (`rig.tsv`: every skeleton's bone list and every anim graph's control parameters) |
+| Program | A mod: one or more VPKs built from an addon's sources, described by a `mod.toml` (`[target]` model and skeleton, `[proven] builds`) |
+| Link | Every reference a mod's compiled files make (the RERL of each resource), resolved against the mod plus the build |
+| Contract | What a replaced file must keep from Valve's file at the same path: bones, attachments, hitboxes (M062), the material and texture expectations of the mesh family |
+| Diagnostics | Lint rules M001 to M148, each with an in-game consequence and a fixture that triggers it |
+| Re-link on a new target | `drift` and `patchday`: what changed under a mod between two builds |
+| Test on hardware | The in-game harness (`ingame/`), recorded per mod with `prove` |
+
+Everything that depends on a build is read from that build. A baseline is about 1 s to capture, the rig a few seconds; drift between two captured builds needs no game at all.
+
+## Crates
+
+Zero external crates. Each format is decoded here and checked against an independent reader (Source 2 Viewer), because a round trip through our own code proves nothing.
+
+Dependencies run one way: `vpk`, `resource`, `expr` and `geom` depend on nothing; `mesh` on `resource`; `lint` on `vpk`, `resource`, `mesh` and `geom`; `grade` on `vpk`, `resource`, `lint` and `mesh`; `mark` on `vpk` and `resource`; the `magician` CLI on all of them.
+
+- `vpk`: VPK v1/v2 read, single-file v2 write. Entries are sorted, so identical input gives identical bytes.
+- `resource`: the compiled-resource block table, RERL (references), binary KV3 v4/v5 read and write (LZ4 and zstd blocks; the zstd decoder is RFC 8878 written here), texture headers and pixel decode.
+- `mesh`: compiled model meshes (meshoptimizer vertex and index codecs v0/v1, packed vertex formats, draw calls per LOD), skeleton, hitboxes, the cloth FeModel in `PHYS` (`mesh::cloth`, the one decoder), the glb proof, and `synth.rs`, which builds every mesh fixture triangle by triangle.
+- `geom`: the geometry kernel: exact predicates, BVH, topology, intersection, clipping, mass properties, an orthographic rasterizer, PNG.
+- `lint`: the rules. `deep.rs` reads inside files; `mesh/` is the M1xx family (`mesh/rules.rs` holds every judgement constant); `policy.rs` the fair-play limits a run is handed; `allow.rs` the per-site allowances; `baseline.rs` the build table; `cache.rs` the findings cache; `par.rs` order-keeping parallel map.
+- `grade`: a hero's footprint from the game's own data (`footprint.rs`), the rubric (`rubric.rs`, the single home of every grading number), identity (`identity.rs`), fair play (`compliance.rs`), the record and its label (`record.rs`), the policy reader (`policy.rs`), the `mod.toml` reader (`manifest.rs`), the measurements inside files (`evidence.rs`), SHA-256 and the one JSON writer.
+- `expr`: material `DynamicParams` expressions, parsed and proved by interval arithmetic.
+- `mark`: the maker's mark, a keyed invisible watermark in colour textures, with its own PNG, TGA, PSD and zlib codecs and BC1/BC3/BC7 encoders.
+- `magician`: the CLI. `main.rs` (dispatch, lint, grade, drift), `cli.rs` (`--help`, `--version`, unknown options and the nearest real one, the exit codes), `paths.rs` (locations, below), `modctx.rs` (the mod of the working folder, below), `heroes.rs` (the game's hero table, read natively), `checkcmd.rs`, `doctor.rs`, `initcmd.rs`, `build.rs`, `lock.rs`, `install.rs`, `scene.rs` (scene patches), `patchday.rs` / `patchcmd.rs`, `meshcmd.rs`, `clothcmd.rs`, `markcmd.rs`, `gamefiles.rs`, `jsonout.rs` (hand-written JSON), `out.rs` (every write to stdout and stderr), `style.rs` and `progress.rs` (colour and a progress line, on a terminal only).
+
+## Locations
+
+Magician works against things it doesn't own: the game install, Valve's CSDK, the Source 2 Viewer CLI, and a reference folder of per-build data. None of them has a fixed home, so each resolves the same way, first answer wins:
+
+| Location | Flag | Environment | Config key | Otherwise |
+|---|---|---|---|---|
+| Game (`...\Deadlock\game`) | `--game` | `DEADLOCK_GAME` | `game` | Steam's `libraryfolders.vdf`, from the registry's `SteamPath` and Program Files (native, Flatpak and Snap homes off Windows) |
+| Reference folder | `--reference` | `MAGICIAN_REFERENCE` | `reference` | `%LOCALAPPDATA%\magician\reference` |
+| CSDK | `--csdk` | `MAGICIAN_CSDK` | `csdk` | an error naming all three, from the commands that need it |
+| Source 2 Viewer CLI | `--vrf` | `MAGICIAN_VRF` | `vrf` | `Source2Viewer-CLI` on PATH |
+| Game lock | | `MAGICIAN_GAME_LOCK` | `game_lock` | `<reference>\work\ingame-game.lock` |
+| Policy | `--policy` | `MAGICIAN_POLICY` | `policy` | none: the built-in defaults |
+
+The config file is `MAGICIAN_CONFIG`, else `%APPDATA%\magician\config.txt` (`$XDG_CONFIG_HOME/magician/config.txt` elsewhere): one `key = value` per line, `#` comments, the last line for a key wins. It is read on every run, so a running pipeline picks up a change at its next command. `magician paths` prints every answer with its source.
+
+`crates/magician/src/paths.rs` is the CLI's resolver and `ingame/gamepaths.py` the harness's, line for line the same order. They must agree: install's seat check reads the game lock the harness writes, and a disagreement would let an install swap paks under a running capture. The Python side adds keys only it uses (`blender`, `blender_45`, `cinema_venv`) and treats `<reference>\work\` as the output root for QA runs, harness baselines and films.
+
+### The mod of the working folder
+
+A command that is not told which mod it is for takes the nearest `mod.toml` at or above the working folder (`modctx.rs`), and from it only what it was not given; an explicit argument or flag always wins. What it used goes to stderr, one line per answer with where it came from, and `magician paths` and `magician doctor` print the same answers:
+
+| What | From, first that holds |
+|---|---|
+| the mod | `--mod` (a `mod.toml` or its folder), else the nearest `mod.toml` at or above the working folder |
+| its paks | `[mod] paks` (relative to the `mod.toml`), else the `pakNN_dir.vpk` beside it, else the paks the install ledger holds for its owners (what the game loads); `install` takes only the first two |
+| its owners | the slug with `-` as `_`, then `[mod] owners` |
+| its hero | `[mod] hero`, read against the game's own hero table (`heroes.rs`: `scripts/heroes.vdata_c` decoded natively, and the English hero names), so `lash`, `Lash`, `hero_lash`, `"Lady Geist"` or a model path all name one |
+| its addon | `[mod] addon`, else the CSDK addon named by the slug with `_`; `[mod] with` for `release --with` |
+| its allowances | `paths::mod_allowances`, as `grade --mod` reads them (Grading, below) |
+| its scenes | `[mod] scenes`, else folders with `scene-patch.txt` at `scene/` or `package/scene/`, or one level inside them |
+| from which build drift compares | the last of `[proven] builds` |
+
+`modctx::fill` turns a bare verb into the command line it stands for (several, when a mod has several paks to lint or install), so every command still runs exactly as if it had been typed in full. Nothing is filled in by guessing: an owner in the ledger that merely looks like the mod's (`example_voice` beside `example-skin`) is reported by `check` and `doctor` as unclaimed, never folded in.
+
+The first time a command needs the installed build's baseline and the reference folder has none, it captures it (with the rig sidecar) as `magician baseline` would, and says so on stderr; but only when the game is this machine's own, found through Steam or named in the config file. A game named by `--game` or `DEADLOCK_GAME` is often a drill's copy, and its build number must not seed the real reference folder.
+
+The player-side scene installers (`tools/scene_install.ps1`, `.py`) are deliberately outside this: they ship in release bundles and find the game with `--game`, `DEADLOCK_GAME` or Steam alone.
+
+## Files Magician owns
+
+Plain text, tab-separated where tabular.
+
+| File | Where | What |
+|---|---|---|
+| `baseline.tsv`, `rig.tsv` | `<reference>\<build>\` | The target description, each written whole (a temporary name, then a rename). Never overwritten by `patchday`; `baseline` rewrites on request; the first command on a new build captures them for this machine's own game |
+| `users.tsv` | `<reference>\<build>\` | Which heroes, abilities and items reach each game file (`magician index`); feeds the shared-file rule M090 |
+| `decompiled\`, `particle_classes.tsv` | `<reference>\<build>\` | Derived reference data for footprints and deep rules |
+| `.magician-installed.tsv` | `game\citadel\addons\` | The install ledger: file, CRC, the mod it was installed for |
+| `.magician-installed.lock` | `game\citadel\addons\` | Held while one install or uninstall reads, changes and rewrites the ledger; gone when it ends |
+| `gameinfo.gi.magician-backup-<build>` | `game\citadel\` | Stock `gameinfo.gi`, taken once per build before the first edit |
+| `.magician-build.lock`, `magician_build.stamp` | `game\citadel_addons\<addon>\` | One build per addon at a time; skip the compiler when nothing changed |
+| `magician.allow`, `magician.exclude`, `.magician-compiler`, `magician.signed` | addon root | Accepted findings with reasons; paths left out of the pak; the compiler bin to use; the mark manifest |
+| `model\<key>.tsv` | `%LOCALAPPDATA%\magician\cache\` | The findings cache |
+| `mod.toml` | a mod's folder | Written once by `init` (never over an existing one without `--force`); after that the author's |
+| `[proven] builds` | the mod's `mod.toml` | The builds a mod was seen working on, written by `prove` |
+| `release-report.txt`, `lint.json`, `grade.json`, `lint-findings.tsv` | beside a release pak | What `release` judged: the report, the lint run, the grade record, the run the grade read |
+| `scene-patch.txt`, `files\` | a scene patch folder (a skin's `package\scene\`) | A hero-page scene as only our files plus the CRCs of Valve's files it keeps (below) |
+
+`<reference>` is the reference folder above.
+
+## The pipeline
+
+- **build**: compile only the addon's real sources with Valve's resourcecompiler (CSDK), pack only outputs that map back to a live source, lint with the addon's allowances. The compiler is the one non-deterministic, external step; everything around it is ours.
+- **release**: one VPK from the addon and any `--with` addons (each compiled with its own compiler), lint, grade from the same lint run, check the mark, write `release-report.txt`, `lint.json` and `grade.json`.
+- **grade**: every pak of one mod as one (the lower pak number wins a shared path), linted deep unless `--light`, judged as described in Grading, below.
+- **lint**: light by default (paths, references, the model contract, fair play for particles and sounds, shared files); `--deep` adds the mesh family (M100 to M140, M145, M147). A mod is blamed only for references it introduced. A model is measured as the game draws it by default: the meshes of its default body-group choices (`m_nDefaultMeshGroupMask`), against the default hitbox set, each hitbox as the capsule, sphere or box it is. `MAGICIAN_THREADS=N` caps the threads a lint uses (1 is sequential), for a run that shares the machine with the game.
+- **install / uninstall**: lint first; refuse a slot another mod owns; back up `gameinfo.gi` per build; add the addons search path idempotently; ledger every file; refuse while `deadlock.exe` runs unless the caller holds the game lock (`tasklist` on Windows; `/proc` on Linux, where the game under Proton is `deadlock.exe` or `project8` by its program, not an argument), and refuse when that can't be told, except to the lock's holder; `--ignore-game` overrides. `gameinfo.gi`'s `SearchPaths` block is read as KeyValues: the key outside comments and strings, to the brace that matches its own. The ledger is changed under its lock, and the pak, `gameinfo.gi` and the ledger are written to a temporary name and renamed into place. A row whose file is missing or holds other bytes follows its crc to the one unclaimed pak with those bytes (`install::reconcile`: Deadlock Mod Manager renumbers the folder); installing the same release again then copies nothing, an update is refused rather than loaded beside the renamed copy, and uninstall removes the renamed pak. Uninstall never removes a file whose bytes are not the ones it installed (exit 3, `--force` overrides) and never acts on a ledger row that is not a `pakNN_dir.vpk` or a hero scene map.
+- **scene** (`scene.rs`): a hero-page scene is a map VPK, `maps/ui/hero_prefabs/<hero>.vpk`, of which most files are Valve's compiled map byte for byte. A *scene patch* is the answer to shipping one without Valve's bytes: a folder with `scene-patch.txt` and `files/`. The manifest is tab-separated, one fact per line (`#` comments): `magician-scene-patch<TAB>1`, `map`, `mod` (the ledger owner), `built_for` (the build, informational), `result` (the author's scene CRC: `compose` and `install` refuse a scene that does not come out as it, exit 3, `--force` writes it anyway), and one row per file of the scene, which is exactly `keep` + `replace` + `add`:
+  - `keep path valve_crc size`: Valve's file, kept; the player's copy must match.
+  - `replace path valve_crc our_crc size`: our file (in `files/`) replaces Valve's, and the Valve file we replaced must match too, so a changed entity lump is caught.
+  - `add path our_crc size`: ours, new to the map; refused if Valve's map now has a file there.
+
+  `make` splits a built scene against the stock map (identical CRC and size is `keep`, so no Valve byte is ever written). `assemble` reads the player's stock map from `game/citadel/maps/...`, checks every Valve file by directory CRC and again by hashing its bytes, checks our files against the manifest, and returns the scene's file list or one refusal listing what differs; `vpk::write` then packs it (sorted, so identical inputs give identical bytes, and the scene an author proved is reproduced exactly). Paths in a patch are validated (lowercase, `/`, no `..`, only under the hero's own `maps/ui/hero_prefabs/<hero>` folder) because they become file reads. `install` hands the composed file to `install::install_vpk` unchanged (seat check, slot and ledger, `gameinfo.gi` backup). The game is found as every command finds it (Locations, above). A game update that touches the map makes the check fail, which is the point: the patch is re-made against the new build with `scene make`. `tools/bundle.py` carries a patch (`scenes` in `bundle.json`) with the standalone installers `install-scene.ps1` and `install-scene.py`.
+- **check** (`checkcmd.rs`): one mod's verdict on the installed build: its paks graded together (the grade's lint, deep unless `--light`, is the lint; without the Source 2 Viewer CLI each pak is linted instead and the grade step says why), drift from its last proven build, each scene patch assembled against the stock map. Exit 1 broken, 4 re-prove (not proven on the installed build, whether or not anything changed under it), 0 clean; `--json` is `magician.check/1` with the grade record inside. It runs the other commands' work in-process with their reports muted (`QUIET`), so it reads their results, never their text.
+- **doctor** (`doctor.rs`): read-only; one row per dependency (`ok`, `todo`, `skip`, `FAIL`) with its fix; exit 1 when one fails; `magician.doctor/1`.
+- **drift / patchday**: compare two baselines and two rig sidecars under each installed pak; check the model contract against Valve's current models; read each `mod.toml`; one verdict. `patchday` compares each mod from its last proven build (`[proven] builds`, the ledger owner being the slug or one of `[mod] owners`), so a mod proven on the installed build is current; an owner no manifest claims is compared from the previous baseline.
+
+## Determinism and speed
+
+Parallel work goes through `lint::par::map`, which keeps input order; anything that sums floats folds in input order afterwards. The findings cache keys on the model's bytes, its path, the depth, the game's identity, the fair-play limits in force and a fingerprint of the rule code (hashed at build time by `lint/build.rs`), and records every file a judgement read, so a hit is always what a fresh run would say. Deep lint of a hero model is about 8 s cold and 1 s cached; a whole patch-day check is 2 to 15 s, depending on whether the disk cache is warm. `--timings` on `lint`, `build` and `release` prints where the time went.
+
+## Interfaces for automation
+
+- **Exit codes**: 0 clean; 1 broken; 2 usage error; 3 refused on purpose; 4 re-prove (reason for 1 to 3 on stderr after `magician:`, and with `--json` as the one document, schema `magician.error/1`). One enum, `cli::Stop`, carries the reason a command stopped, so a refusal can't be mistaken for a typo. Listed in `magician --help`.
+- **Output** goes through `out.rs`: a reader that stops reading (`| head`) closes the stream for the rest of the run, which goes on and exits with its own code instead of panicking. Colour (`style.rs`) and the progress line (`progress.rs`, after 1.5 s) appear only on a terminal, so piped bytes never change, and every word reads without them. Tools Magician runs keep off its stdout (Source 2 Viewer's output is closed).
+- **No command**: `magician` alone prints a short orientation (the game and build, the mod here, the next commands) on stderr and exits 2, so an empty command in a script never reads as success.
+- **`--help` and `--version`** are answered before anything else runs. Options are checked against the usage text, so a typo is exit 2 (naming the nearest option of that command, or the nearest command), and an option that takes no value never swallows the argument after it. An option that takes a value must have one that is not the next option, and only those the usage marks repeatable (`[--allow FILE]...`) may be given twice (`cli::check_values`).
+- **JSON**: `--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `release` and `rules` prints one document with a `schema` string and turns the human text off; `lint --json-out`, `mesh --json-out` and `grade --record-out` write a file, and a file that could not be written stops the command (exit 2). One writer (`grade::json`, no serialisation crate), numbers printed the same way every time.
+- **MCP**: `mcp/server.py`, Python stdlib only, runs the release binary as a subprocess with timeouts and returns JSON: the commands' own documents for those with `--json`, a small parse of the tab-separated or text output for the rest (`cloth`, `refs`, `ls`, `verify`, `install --status`, `policy`). It has no install, uninstall or launch tool by design.
+- **Locks for shared resources**: the per-addon build lock and the game lock (`ingame/gamelock.py`, holder named by `MAGICIAN_GAME_HOLDER`) let several pipelines or agents share one machine and one game.
+
+## Grading
+
+A grade is a record of separate properties (schema `magician.grade/2`, `record.rs`) and a label projected from it:
+
+```text
+<letter> <word>[ · NSFR | · FP?][ · stale(<last proven build>) | · unproven]
+not graded (<kind>)[ · NSFR | · FP?][ · stale(<build>) | · unproven]
+```
+
+- **Identity** (`identity.rs`) decides the archetype from signals, stored as data: `head_replaced` (our head-weighted vertices against Valve's head, `evidence::compare_models`), `renamed` (the mod's localisation names the hero anew, or a replaced name logo for a `mod.toml` name that does not keep the hero's), `new_hero_art` (the portrait and card art), `voice_identity` (declared in `mod.toml`, half a signal). Two make a new character, which needs its model replaced. A replaced model that keeps Valve's mesh, or Valve's model with new materials, is a variant; no model is a kit; a mod that touches nothing of the hero is not graded.
+
+  | Identity | Rubric | Word |
+  |---|---|---|
+  | new character | character | Echo at S, Echolite below |
+  | same character | character | Costume |
+  | same model | variant | Variant |
+  | no model | kit | Kit |
+  | not a hero mod | none | not graded (map, HUD or music mod) |
+
+- **Depth** (`rubric.rs`): each archetype has required criteria and applicable ones that count once touched, weights totalling 100, and an S minimum (a variant covers every visible material slot of Valve's model; a kit at least two of VFX, sound, UI and voice, each complete). Coverage is per group, as before. Depth caps are about the mod working only: protected files max D, lint errors that are not fair play max C, dropped dependencies max B, a missed S minimum max A. Files byte-identical to Valve's at the same path earn nothing.
+- **Compliance** (`compliance.rs`): pass, fail (NSFR) or unknown (FP?). The fair-play rules are M062 (hitboxes only), M063, M081, M082, M124, M129, M130, M131, M140; each is never allowable, advisory, or bounded (an allowance holds within the limit the rule's own measure is checked against: M140's worst point and visible share, read back from its message by `mesh::rules::envelope_measures`). A light lint over a model, or any M144, makes the rules it names unknown. Fair-play findings and M144 never count toward craft or the depth caps.
+- **Freshness** reads `[proven] builds` against the target build (installed, or `--target`).
+- **Rights** is a person's verdict in `mod.toml` (`[rights] state`: unreviewed, cleared, denied).
+- **Enforcement**: fair play and rights are lenient by default and enforced with one switch each in the policy. `fair_play.enforce = false` reports every fair-play finding and M144 as a warning (`compliance::severity`, applied to the lint run that `lint`, `build`, `release`, `install`, `grade` and `mesh` act on), so nothing stops on them alone; `true` makes every one that can fail fair play or leave it unknown (all but the advisory rules) an error. `rights.enforce` decides whether `unreviewed` blocks the gate. The label and the record say the same either way; the record's policy object carries both switches.
+- **Release gate**: blockers are lint errors that are not fair play, files byte-identical to Valve's, not proven on the target, and rights denied; fair play unknown, NSFR and unreviewed rights are blockers when enforced and warnings when not.
+- **Allowances**: every `--allow` and `--addon-root` file; with neither, `grade --mod` reads the mod's own (`paths::mod_allowances`: `addon/magician.allow` and `magician.allow` beside the `mod.toml`, then the CSDK addon of its slug and of each `[mod] owners` entry, each file once). The record's `allowance_files` names each file read with its SHA-256 and where it was found, or says none was.
+
+The record also carries the toolchain and commit, the build, SHA-256 fingerprints of the baseline (its canonical text and the rig sidecar), of every pak and of the policy, every criterion, cap, signal with its evidence, check run or not run, violation, allowance with value and limit, and advisory, and the next steps. Its fields are in a fixed order and its numbers print one way, so the same inputs give the same bytes.
+
+Decisions taken in building it (2026-11-22), where the design left them open:
+
+- A replaced name logo is a rename only when the mod's name (`[identity] name`, else `[mod] name`) does not keep the hero's: Maid Lash ships a new `lash` logo and is still Lash. A localisation that renames the hero counts on its own.
+- `head_replaced` compares our LOD0 vertices weighted most to `head` or a bone below it with Valve's, within 0.1 units; under half on Valve's head is a new head (a new head 16%, Maid Lash 78%). The same comparison over the whole mesh tells a variant (98% or more on Valve's) from a costume.
+- A new character needs its model replaced: a rename and new art on Valve's model are a kit, not a new body.
+- M081 (brighter particles) and M130 (the wide envelope below the taste tier) are advisory: a brighter cue is not a hidden one, and M130 fires on both reference skins' cloth. M062 counts as fair play only for hitboxes; a lost bone or attachment is the mod not working, a depth cap.
+- A variant's and a kit's score is over the criteria in their scope (applicable ones count once touched), so their craft weight is lower than the character rubric's 15: a clean pak with one sound in it is a fragment of a kit, not half of one. A kit's scope is padded to two departments with the heaviest untouched ones at zero.
+- A mod with no proven build on record reads `unproven` in the label, beside `stale(N)` for one proven on an older build.
+- `grade` lints deep by default, since fair play needs the mesh rules; `--light` is the quick look and reads `FP?` for a model.
+- Files byte-identical to Valve's at the same path earn nothing in depth and block the gate.
+- The record's paths are file names, not absolute paths, so the same paks graded on two machines give the same bytes; a grade on the same inputs is byte-for-byte reproducible (a test holds it on Maid Lash).
+- `release` does not exit on the gate: a fresh release is never proven yet, and its rights are a person's call. `grade --gate` is the check a publishing step runs.
+
+**Policy** (`grade::policy`, `lint::policy`): every judgement number is a key of a plain-text policy file, defaulting to its constant. The keys are listed with their ranges by `magician policy`; a file is read strictly (unknown section or key, wrong kind of value, out of range, set twice, weights not totalling 100, tiers out of order: a usage error with the line). The fingerprint is SHA-256 of every effective `key = value` line, so a file that spells out the defaults has the default fingerprint.
+
+## Outside the Rust workspace
+
+- `ingame/`: Python stdlib and PowerShell; drives the retail game with scancode input and PrintWindow capture.
+- `qa/`, `harness/`: Blender 5.2 headless plus Python; Source 2 Viewer exports the glb files they read.
+- `mcp/`: Python stdlib.
+- `tools/`: `bundle.py` (player release bundles with `mod-interchange.json`; Pillow for previews), `scene_lump.py` (re-dress a UI scene map's entity lump through `magician dump` and back), `scene_install.ps1` and `scene_install.py` (the player-side scene installers bundles carry: Windows PowerShell 5.1 or Python 3 stdlib, no Magician), `s2v_mcp.ps1` (the Source 2 Viewer MCP server), `rip-heroes.ps1` (hero models to glb for reference work, keyed by build, never committed).
+- `cinema/`: the dev-only film kit, with its own README.
+
+## Verification
+
+`cargo test --workspace` runs on synthetic fixtures only and needs no game. Every lint rule has a fixture that breaks it, enforced by `every_rule_has_a_fixture`. Decoders are pinned against Source 2 Viewer's output by golden values. What only the game can show is proved in the game, and what only a picture can show is looked at.
+
+Every reader of bytes or text someone else made is fuzzed (`crates/fuzz`, a dev-dependency with no dependencies of its own): VPK trees and entries, the resource block table and RERL, binary KV3 v4 and v5 with LZ4 and zstd, the LZ4 and zstd decoders alone, texture headers and pixels, KV3 text, compiled models with every LOD's surfaces, both meshoptimizer codecs, cloth, glb and its JSON, a whole lint (light and deep) over one hostile file, `magician.allow`, findings files, baselines, the policy, `mod.toml`, DynamicParams expressions, the mark's PNG, TGA, PSD and inflate, and the CLI's scene patches, ledger, locks, `gameinfo.gi`, `prove`'s rewrite, rig sidecars, `magician.exclude`, the config file and Steam's library list. A case must return within 10 s without panicking or asking for one allocation over 256 MiB; cases are deterministic, so a failure names the one that reproduces it, and the inputs that found bugs are kept beside each target and replayed first. Where a format has both directions the round trip is held too (VPK, KV3, meshoptimizer, deflate and PNG, baselines, findings files, rig sidecars, scene patches, the policy). The workspace builds with overflow checks in dev and test, clippy's correctness and suspicious groups as errors, and no `unwrap`, `expect` or `str` slicing in the readers; CONTRIBUTING.md has the commands.
