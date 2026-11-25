@@ -250,6 +250,13 @@ pub fn resolve_hero(heroes: &str, localization: &str, arg: &str) -> Option<(Stri
     Some((key, display))
 }
 
+/// Whether a string of the hero's own heroes.vdata block is UI art of the hero's. The block names its card, portrait
+/// and icon images, and they are its own whatever they are called: Lady Geist's are `spectre_card`, `spectre_sm`,
+/// which no token of hero_ghost or geist.vmdl matches. Other images (shared ones) need a token.
+fn hero_block_art(s: &str, owned: bool) -> bool {
+    s.starts_with("file://{images}/") && (owned || s.starts_with("file://{images}/heroes/"))
+}
+
 pub fn build(src: &Sources, arg: &str) -> Result<Footprint, String> {
     let heroes = src.text("scripts/heroes.vdata_c")?;
     let abilities = src.text("scripts/abilities.vdata_c")?;
@@ -302,7 +309,7 @@ pub fn build(src: &Sources, arg: &str) -> Result<Footprint, String> {
         if s.starts_with("file://{images}/heroes/hero_names/") {
             fp.name_art.push(compiled(s));
         }
-        if s.starts_with("file://{images}/") && owned(s) {
+        if hero_block_art(s, owned(s)) {
             add(&mut items, Cat::UiArt, "ui", compiled(s));
         } else if s.ends_with(".vmap") && owned(s) {
             // UI scenes ship as their own map VPKs (maps/ui/hero_shop/lash_shop.vpk), not inside pak01.
@@ -483,6 +490,17 @@ mod tests {
         for no in ["materials/effects/muzzleflashx.vtex_c", "particles/generic/splash.vpcf_c", "sounds/slash.vsnd_c", "x/flashlight.vtex_c"] {
             assert!(!has_token(no, "lash"), "{no}");
         }
+    }
+
+    #[test]
+    fn the_hero_s_own_block_names_its_art_whatever_it_is_called() {
+        // Lady Geist (hero_ghost, geist.vmdl): her cards are spectre_*, which no token matches
+        assert!(hero_block_art("file://{images}/heroes/spectre_card.psd", false));
+        assert!(hero_block_art("file://{images}/heroes/guns/spectre_gun.psd", false));
+        // an image elsewhere in the block still needs a token
+        assert!(!hero_block_art("file://{images}/hud/shared_ring.psd", false));
+        assert!(hero_block_art("file://{images}/hud/ghost_ring.psd", true));
+        assert!(!hero_block_art("models/heroes_wip/geist/geist.vmdl", true));
     }
 
     #[test]
