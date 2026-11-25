@@ -57,6 +57,7 @@ Read every line `init` prints:
 - **`left out <pak>: all N of its files are in <other>, byte for byte, so it adds nothing`**: the download held an older part of the same mod (a particles pak that a later full release includes). Say so; nothing is lost.
 - **`note   <a> and <b> both ship N file(s) with different bytes`**: two paks disagree on a file, and only one loads. Tell the person; which they meant is theirs to say.
 - **`hero   hero_lash (Lash): 644 of 644 files are its own`**: decided from the files. Good.
+- **`also   1 file(s) of hero_atlas (Abrams): soundevents/hero/abrams.vsndevts_c; the mod changes that hero too`**: the mod ships a file of another hero's. Usually a leftover of the author's; worth a sentence in the report, since installing the mod changes that hero as well.
 - **`hero   none: no file is one of a hero's, so a prop mod (models/...)`**, or an effects, sound, HUD, map or music mod: correct, and needs nothing. It is linted and checked like any other; it is `not graded`, which is a statement, not a failure.
 - **`hero   not decided: ... (and ...): pass --hero`**: split between heroes. `--hero <name>` settles it, only when the files or the person make it plain.
 
@@ -71,13 +72,13 @@ magician check                    # the verdict: lint, grade, proofs, drift (--j
 magician lint                     # every finding, ending with the count by rule
 ```
 
-`check` prints the verdict, then under its lint line the findings by rule (errors, warnings, fair play). Report by rule code in Magician's own words, a count per rule, and the few findings that matter most with what each does in game (`magician rules` says it for every code). The verdict will be one of:
+`check` prints the verdict, then under its lint line the findings by rule: errors, warnings, fair play, and fair play's advisories (reported, never a violation, so `fair play pass` above a row of them is right). `lint` prints a run of one rule on one file that differs only in a counting number as one line (`swing_long_01..25.vsnd_c' (25 findings)`), and an explanation several of a block's findings share once, marked `(*)`. Report by rule code in Magician's own words, a count per rule, and the few findings that matter most with what each does in game (`magician rules` says it for every code). The verdict will be one of:
 
 - **`re-prove`** (exit 4). The normal result for a mod that loads: nothing proves it on this build yet. The move is done; what remains is someone looking at it in game.
 - **`broken`** (exit 1). Lint errors, or files the current game build no longer has. These are findings about the mod as it already was. Do not add allowances, edit the pak or pick a different check to get a better word.
 - **`ok`** (exit 0) only happens once a proof exists, so not on a first move.
 
-Some findings are about the game, not about taste, and are worth a sentence to the author: a reference to a file the current build no longer has (M030: that sound or material is gone, so it is silent or missing now), a copy of the engine's own files (M071) or of another hero's, attachments or hitboxes that are not Valve's (M062; the message says when they are Valve's numbers with the axes turned by an exporter), Valve's effects the mod's file no longer references (M061). A fair-play finding (`NSFR`, `FP?`) on someone's long-standing mod is worth one plain sentence: what the rule saw, and that Magician will refuse to install with lint errors but only warns on this unless they enforce it.
+Some findings are about the game, not about taste, and are worth a sentence to the author: a reference to a file neither the mod nor the current build has (M030: that sound or material is silent or missing now), a copy of the engine's own files (M071) or of another hero's (init's `also` line), attachments or hitboxes that are not Valve's (M062; `(*)` marks the ones that are Valve's turned by an exporter, one setting to fix), Valve's effects the mod's file no longer references (M061), files nothing plays (M031). A fair-play finding (`NSFR`, `FP?`) on someone's long-standing mod is worth one plain sentence: what the rule saw, and that Magician will refuse to install with lint errors but only warns on this unless they enforce it.
 
 ## 4. Put it in the game through the ledger
 
