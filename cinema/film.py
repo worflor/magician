@@ -140,8 +140,7 @@ def bridge_index():
 
 def build(scenes, stills=0):
     write_chains(scenes, stills)
-    r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", os.path.join(HERE, "cinema.ps1"), "build"],
-                       capture_output=True, text=True)
+    r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "cinema.py"), "build"], capture_output=True, text=True)
     tail = (r.stdout.strip().splitlines() or [""])[-1]
     if r.returncode != 0:
         raise RuntimeError(f"cinema pak build failed: {r.stdout[-1500:]}{r.stderr[-500:]}")

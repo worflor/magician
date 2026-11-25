@@ -13,7 +13,7 @@ What the context manager guarantees, however the body ends (an exception, Ctrl+C
   - pak90 is installed only for this session and uninstalled before the seat is handed back (cinema README rule);
   - `exec cinema_reset` runs before the game quits (the camera, HUD, telemetry, fov and frame-rate cvars are
     archived in the user's config), and every key the kit binds is unbound;
-  - the game is closed through stop_game.ps1, the lock released, the blind-console state file removed.
+  - the game is closed through stop_game.py, the lock released, the blind-console state file removed.
 The SourceTV take of the session (when `sourcetv`) is `citadel/replays/auto-*-<map>-*.dem`; `take()` names it.
 """
 import glob
@@ -29,12 +29,13 @@ sys.path.insert(0, INGAME)
 sys.path.insert(0, HERE)
 import console  # noqa: E402
 import gamelock  # noqa: E402
+import gameos  # noqa: E402
 import gamepaths  # noqa: E402
 
 GAME = gamepaths.try_game()
 CITADEL = os.path.join(GAME, "citadel")
 REPLAYS = os.path.join(CITADEL, "replays")
-MAGICIAN = os.path.join(TOOLKIT, "target", "release", "magician.exe" if os.name == "nt" else "magician")
+MAGICIAN = gamepaths.magician()
 PAK = os.path.join(os.environ.get("CINEMA_WORK") or gamepaths.work("cinema"), "pak90_dir.vpk")
 HOLDER = "cinema"
 KEY = console.console_key()   # the player's own console bind (console.py)
@@ -53,9 +54,10 @@ def user_fps_max():
         return "180"
 
 
-def ps(script, *args, timeout=None):
-    return subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", os.path.join(INGAME, script)]
-                          + list(args), capture_output=True, text=True, timeout=timeout)
+def tool(script, *args, timeout=None):
+    """One of the harness's tools (launch.py, stop_game.py) in this Python, its output kept."""
+    return subprocess.run([sys.executable, "-I", os.path.join(INGAME, script)] + [str(a) for a in args],
+                          capture_output=True, text=True, timeout=timeout)
 
 
 def game_running():
@@ -128,8 +130,8 @@ class Session:
         self.log_start = console.log_size() if os.path.exists(console.LOG) else 0
         self.launched_at = time.time()
         self.say(f"session: launching ({' '.join(extra)})")
-        r = ps("launch.ps1", "-Holder", HOLDER, "-Timeout", str(self.launch_timeout), "-Width", str(self.size[0]),
-               "-Height", str(self.size[1]), "-Extra", " ".join(extra))
+        r = tool("launch.py", "--holder", HOLDER, "--timeout", self.launch_timeout, "--size", f"{self.size[0]}x{self.size[1]}",
+                 *(["--extra", " ".join(extra)] if extra else []))
         self.say("session: " + (r.stdout.strip().splitlines() or ["(no output)"])[-1])
         if r.returncode != 0:
             raise SessionError(f"launch failed (rc {r.returncode}): {r.stdout[-400:]}")
@@ -224,15 +226,15 @@ class Session:
             except BaseException as e:   # the stop below must still happen
                 self.say(f"session: reset failed ({e}); killing the game loses this session's archived changes, which is safe")
         if game_running() and self.held:
-            # keep the seat through the uninstall (-KeepLock): stop_game would release it as the game closes, and a
+            # keep the seat through the uninstall (--keep-lock): stop_game would release it as the game closes, and a
             # pipeline waiting for it could launch and install between our stop and our uninstall. The heartbeat keeps
             # the hold alive however long the stop takes (a hung quit took 5 minutes).
             heart.start()
             try:
-                r = ps("stop_game.ps1", "-Holder", HOLDER, "-KeepLock", timeout=STOP_TIMEOUT)
+                r = tool("stop_game.py", "--holder", HOLDER, "--keep-lock", timeout=STOP_TIMEOUT)
                 self.say("session: " + (r.stdout.strip().splitlines() or ["(no output)"])[-1])
             except subprocess.TimeoutExpired:
-                self.say(f"session: stop_game.ps1 gave no answer in {STOP_TIMEOUT}s (a hung quit): killing deadlock.exe")
+                self.say(f"session: stop_game.py gave no answer in {STOP_TIMEOUT}s (a hung quit): killing deadlock.exe")
             t = time.time()
             while game_running() and time.time() - t < 120:
                 if time.time() - t > 30:
@@ -272,7 +274,7 @@ def install_name():
     return name
 
 
-STOP_TIMEOUT = 240     # stop_game.ps1's own path is at most ~2.5 min (45 s quit, 3 kills of 15 s, 30 s for the files)
+STOP_TIMEOUT = 240     # stop_game.py's own path is at most ~2.5 min (45 s quit, 3 kills of 15 s, 30 s for the files)
 
 
 def pak_state():
@@ -316,7 +318,7 @@ def kill_game():
     lock = gamelock.read()
     if lock is None or lock.get("holder") != HOLDER or not gamelock.bound_alive(lock):
         return False
-    subprocess.run(["taskkill", "/PID", str(lock["game_pid"]), "/F", "/T"], capture_output=True, text=True)
+    gameos.terminate(lock["game_pid"])
     return True
 
 

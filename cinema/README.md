@@ -5,7 +5,7 @@ moves, timing, cuts, slow motion, cues), see it at once as an animatic, then hav
 takes of the retail game with your mods installed, frame by frame and exactly, into an edit-ready video. The whole
 city is the stage (`dl_midtown`), the heroes in the takes are the actors, and one scene can cut between several takes.
 
-It runs on Windows only: it records the game with Windows' own capture and drives its pak with PowerShell, and has not been ported to the harness's Linux side ([README.md](../README.md#platforms)). Nothing else in Magician depends on it, and it depends on more than the rest: Python 3.11 or newer (scene files are
+It stands on the harness's seam to the system (`ingame/gameos.py`): on Windows it records with Desktop Duplication or GDI, on Linux with ffmpeg's `x11grab` of the game's window, and its frame grabs are the harness's own. On Linux that is proven against a test window (`test_capture.py`), not yet with the game ([README.md](../README.md#platforms)). Nothing else in Magician depends on it, and it depends on more than the rest: Python 3.11 or newer (scene files are
 TOML), ffmpeg on PATH, a Python venv with [Boon](https://pypi.org/project/boon-deadlock/) for actor tracks
 (`CINEMA_VENV_PY`, or `cinema_venv = <dir>` in the config file), the CSDK to build its pak, and the in-game harness.
 Output goes to `<reference>/work/cinema/` (`CINEMA_WORK` moves it). The commands below run from this folder.
@@ -420,10 +420,10 @@ Valve's cameras in `dl_midtown` (origin, then pitch and yaw; all in `stage.py li
 | `replay.py`, `frames.py` | A staged take (`ingame/takes.py stage`) filmed from free cameras, recorded in real time per shot, and stills and contact sheets from those recordings; `magician session film` and `sheets` run them |
 | `bridge/` | Panorama JS (per-frame console commands from baked paths: played, or paced with `host_framerate`), its builder (the replay HUD and Testing Tools layouts) and its node test |
 | `studio_lights.py` | Particle systems that are nothing but dynamic lights, for a light rig on a hero |
-| `acting.py`, `vpkx.py` | Acting for a shoot: clips and models remapped onto paths the actors trigger or the map loads, folded into pak90 after `cinema.ps1 build` (`check` refuses a target a lower pak masks); `vpkx.py` reads files out of any VPK |
+| `acting.py`, `vpkx.py` | Acting for a shoot: clips and models remapped onto paths the actors trigger or the map loads, folded into pak90 after `cinema.py build` (`check` refuses a target a lower pak masks); `vpkx.py` reads files out of any VPK |
 | `grade.py` | The colour looks and the look book |
 | `splice.py` | Splices re-rendered shots into a delivered master and mixes the sound again, so a late fix to one shot doesn't mean rendering the whole film |
-| `cinema.ps1` | build / install / uninstall / status of pak90 |
+| `cinema.py` | build / install / uninstall / status of pak90 (`cinema.ps1` is its PowerShell spelling) |
 | `addon/` | The CSDK addon `cinema_dev`: cfgs (aliases, keypad, reset), the overhead-bar override, studio lights, the bridge layouts and chains (generated, git-ignored) |
 | `scenes/`, `scenarios/` | `example_run` (a worked example on a stock hero; a mod's own scenes live with the mod) and the bridge's probe scenario |
 | `shoot.py`, `shots/` | The first renderer, kept for `shots/example_orbit.json` |

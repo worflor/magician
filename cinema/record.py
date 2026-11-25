@@ -1,10 +1,11 @@
 """Record the game window to video in real time (retail has no startmovie): ffmpeg off the desktop.
 
-    python -I record.py <out.mkv> --seconds 12 [--fps 60] [--method ddagrab|gdigrab] [--codec lossless|nvenc|x264]
+    python -I record.py <out.mkv> --seconds 12 [--fps 60] [--method ddagrab|gdigrab|x11grab] [--codec lossless|nvenc|x264]
     python -I record.py <out.mkv> --seconds 12 --then "cin_slow"     # type a console line as the recording starts
 
 ddagrab (Desktop Duplication, on the GPU) keeps up at 60 fps at 1920x1080; gdigrab (GDI) is the fallback and
-drops frames above about 30. Both read the screen, so the game window must be on top and unobstructed (the
+drops frames above about 30; x11grab (the default off Windows) reads the game's own window on the X display, so
+it works under XWayland too. The two Windows methods read the screen, so the game window must be on top and unobstructed (the
 desktop app's floating windows end up in the frame; PrintWindow bursts in capture.py do not have that problem
 but cannot hold a frame rate). Codecs: lossless = FFV1 in mkv (edit master, ~1 GB a minute at 1080p60 with
 grain, much less on clean frames); nvenc = h264_nvenc at constant quality 16 (review copies); x264 = libx264
@@ -48,13 +49,20 @@ def main(a):
         sys.exit(__doc__)
     out = a[0]
     seconds, fps = opt("--seconds", 10, float), opt("--fps", 60, int)
-    method, codec = opt("--method", "ddagrab"), opt("--codec", "lossless")
+    import gameos
+    method, codec = opt("--method", "ddagrab" if gameos.WINDOWS else "x11grab"), opt("--codec", "lossless")
     from capture import find_window, client_rect
     hwnd = find_window()
     if not hwnd:
         sys.exit("record: no Deadlock window")
     x, y, w, h = client_rect(hwnd)
-    if method == "ddagrab":
+    if method == "x11grab":
+        # the game's own window, not the screen: under a Wayland desktop XWayland draws no root window (a screen grab
+        # there is black, seen under WSLg), and a window grab reads what XGetImage reads (gameos.py)
+        src = ["-f", "x11grab", "-framerate", str(fps), "-window_id", str(hwnd), "-draw_mouse", "0",
+               "-i", os.environ.get("DISPLAY", ":0")]
+        pre = "format=bgra"
+    elif method == "ddagrab":
         idx, ox, oy = monitor_of(x, y)
         src = ["-f", "lavfi", "-i",
                f"ddagrab=output_idx={idx}:framerate={fps}:offset_x={ox}:offset_y={oy}:video_size={w}x{h}:draw_mouse=0"]

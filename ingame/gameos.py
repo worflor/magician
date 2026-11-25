@@ -598,16 +598,14 @@ class _X11:
         return a.map_state == 2 and a.width > 1 and a.height > 1   # IsViewable
 
     def _candidates(self):
-        """Top-level client windows: the window manager's list when it keeps one, else every window in the tree."""
-        listed = [w for w in self._longs(self.root, "_NET_CLIENT_LIST") if w]
-        if listed:
-            return listed
-        out, todo = [], [self.root]
+        """Top-level client windows: the window manager's list, then every window in the tree (a window manager that
+        is still starting, or one that keeps no list, leaves windows out of it)."""
+        yield from (w for w in self._longs(self.root, "_NET_CLIENT_LIST") if w)
+        todo = [self.root]
         while todo:
             kids, _ = self._children(todo.pop())
-            out += kids
+            yield from kids
             todo += kids
-        return out
 
     def find_window(self, title_part="Deadlock"):
         for w in self._candidates():

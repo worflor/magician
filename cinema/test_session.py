@@ -26,7 +26,7 @@ class FakeWorld:
         self.now = 1_000_000.0
         self.running = True
         self.installed = True                 # pak90 in addons and in magician's status
-        self.quit_hangs_s = quit_hangs_s      # how long stop_game.ps1 spends before the game exits
+        self.quit_hangs_s = quit_hangs_s      # how long stop_game.py spends before the game exits
         self.uninstall_fails = uninstall_fails
         self.events = []                      # the order things happened in
         self.other_pipeline = other_pipeline          # a session waiting for the seat (it installs pak90 when it gets it)
@@ -65,14 +65,7 @@ class FakeWorld:
             self.installed = False
             self.events.append("SELF uninstalled pak90")
             return types.SimpleNamespace(returncode=0, stdout="uninstalled pak90_dir.vpk", stderr="")
-        if exe == "tasklist":
-            return types.SimpleNamespace(returncode=0, stdout="deadlock.exe 1234" if self.running else "INFO: none",
-                                         stderr="")
-        if exe == "taskkill":
-            self.running = False
-            self.events.append("game killed")
-            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
-        if exe == "powershell":      # stop_game.ps1 -KeepLock: the quit hangs, then the game exits
+        if any(str(c).endswith("stop_game.py") for c in cmd):   # stop_game.py --keep-lock: the quit hangs, then the game exits
             start = self.now
             while self.now < start + self.quit_hangs_s:
                 if timeout is not None and self.now - start >= timeout:
@@ -83,6 +76,11 @@ class FakeWorld:
             self.sleep(10)                 # stop_game waits for Windows to let go of the addon paks
             return types.SimpleNamespace(returncode=0, stdout="closed the game", stderr="")
         raise AssertionError(f"unexpected command {cmd}")
+
+    def terminate(self, pid):
+        self.running = False
+        self.events.append("game killed")
+        return True
 
 
 class HandBack(unittest.TestCase):
@@ -100,6 +98,8 @@ class HandBack(unittest.TestCase):
     def world(self, **kw):
         w = FakeWorld(**kw)
         self.patch(S.subprocess, "run", w.run)
+        self.patch(S.gameos, "terminate", w.terminate)
+        self.patch(S.gameos, "game_pids", lambda: [1234] if w.running else [])   # the fake game, on any system
         self.patch(S.time, "sleep", w.sleep)
         self.patch(S.time, "time", w.time)
         self.patch(G.time, "time", w.time)
@@ -140,11 +140,10 @@ class HandBack(unittest.TestCase):
     def test_the_hard_stop_kills_only_this_sessions_own_game(self):
         w = self.world()
         killed = []
-        real = w.run
-        w.run = lambda cmd, **kw: (killed.append(cmd), real(cmd, **kw))[1]
-        self.patch(S.subprocess, "run", w.run)
+        real = w.terminate
+        self.patch(S.gameos, "terminate", lambda pid: (killed.append(pid), real(pid))[1])
         self.assertTrue(S.kill_game())
-        self.assertEqual(killed[-1][:3], ["taskkill", "/PID", "1234"], "the bound pid, never /IM deadlock.exe")
+        self.assertEqual(killed[-1], 1234, "the bound pid, never every deadlock.exe")
         # another holder's seat: nothing is killed
         w.running = True
         G.release(S.HOLDER, path=w.lock, leave_running=True)
@@ -175,7 +174,7 @@ class HandBack(unittest.TestCase):
         # the bug, reproduced on the same fake world: a 300 s hold and no heartbeat
         w = self.world(quit_hangs_s=400)
         G.acquire(S.HOLDER, "cinema hand-back", 0, hold=300, path=w.lock, running=lambda: w.running)
-        w.run(["powershell", "stop_game.ps1"])    # the game exits after 400 s; the waiting pipeline polls meanwhile
+        w.run([sys.executable, "-I", "stop_game.py"])    # the game exits after 400 s; the waiting pipeline polls meanwhile
         w.sleep(1)
         self.assertTrue(w.other_has_seat, "the old hold should have gone stale (the bug)")
 
