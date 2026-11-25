@@ -18,7 +18,7 @@ For reading code and rules when a finding needs explaining, or when you are aske
 | `crates/lint/src/policy.rs` | The fair-play limits a lint run is handed, and their policy keys and ranges |
 | `crates/lint/src/tests.rs`, `mesh_fixtures.rs` | A fixture that breaks each rule; `every_rule_has_a_fixture` enforces it |
 | `crates/lint/src/allow.rs` | `magician.allow`: per-site allowances and stale detection |
-| `crates/grade/src/rubric.rs` | Every grading number: criteria, weights per archetype, letters, caps, coverage targets, identity requirements, fair-play rule classes |
+| `crates/grade/src/rubric.rs` | Every grading number: criteria and their groups, weights within a group, the lines that name a group, coverage targets, identity requirements, fair-play rule classes |
 | `crates/grade/src/footprint.rs` | A hero's footprint from the game's own data |
 | `crates/grade/src/identity.rs`, `compliance.rs`, `record.rs` | What kind of mod it is; fair play; the record, its label and the release gate |
 | `crates/grade/src/policy.rs` | The policy file: every key, its range, the reader, the fingerprint |

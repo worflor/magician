@@ -557,9 +557,10 @@ TOOLS = [
               "table plus the full per-chain report.",
      schema({"vpk": VPK_PROP, "model": {"type": "string"}, "against": {"type": "string", "enum": ["valve", "none"]},
              "shapes": {"type": "boolean"}, "timeout": TIMEOUT_PROP}, ["vpk", "model"]), t_cloth),
-    ("grade", "Grade a hero mod (every pak it ships, together) and return the grade record (schema magician.grade/2): "
-              "the label (e.g. 'S Echo · stale(6864)'), depth (letter, score, archetype rubric, every criterion, caps), "
-              "identity (kind, signals, evidence), fair_play (pass/fail/unknown, checks run, violations, allowances "
+    ("grade", "Grade a hero mod (every pak it ships, together) and return the grade record (schema magician.grade/3): "
+              "the label (e.g. 'Echo (look, some effects) · stale(6864)'), broken (lint errors that are not fair play), "
+              "description (kind, rubric, the groups look, effects and sound with state covered/some/valve and what "
+              "was counted, every criterion's coverage, notes), identity (kind, signals, evidence), fair_play (pass/fail/unknown, checks run, violations, allowances "
               "with value and limit, advisories), freshness, rights, release_gate (blockers, warnings), next_steps and "
               "the policy fingerprint. Lints deep unless light=true (fair play then stays unknown for a model). ok is "
               "true when the release gate passes.",
@@ -600,7 +601,7 @@ TOOLS = [
                "addons mount, baseline, viewer, CSDK, policy, and the mod given), each ok, todo, skip or fail with "
                "the command or config line that fixes it.",
      schema({"mod": {"type": "string", "description": "A mod's folder or mod.toml to check too."}, "timeout": TIMEOUT_PROP}, []), t_doctor),
-    ("policy", "Every judgement value in force (fair-play limits, allowance limits, gate, weights, letters, identity, "
+    ("policy", "Every judgement value in force (fair-play limits, allowance limits, gate, weights, group lines, identity, "
                "coverage), where each came from, and the fingerprint a grade records.",
      schema({"policy": {"type": "string"}, "timeout": TIMEOUT_PROP}, []), t_policy),
     ("build", "Long-running. Compile an addon and pack it into one VPK, then lint with the addon's magician.allow. "

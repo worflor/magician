@@ -5,7 +5,7 @@ description: Drive Magician, the headless toolchain for Deadlock (Valve, Source 
 
 # Using Magician
 
-Magician treats a Deadlock mod as a program and each game build as a compiler target. It builds mods reproducibly, lints them against the installed build (79 rules, each with its in-game consequence), works out what a new build changed under a mod, grades a hero mod (depth, identity, fair play, freshness, release gate) as one reproducible record, drives the retail game to film a mod, records which bytes were proven on which build, and installs or rolls back paks through a ledger. Every command is deterministic and its exit code means something, so you can act on results without a person watching.
+Magician treats a Deadlock mod as a program and each game build as a compiler target. It builds mods reproducibly, lints them against the installed build (79 rules, each with its in-game consequence), works out what a new build changed under a mod, grades a hero mod (what it makes its own, identity, fair play, freshness, release gate) as one reproducible record, drives the retail game to film a mod, records which bytes were proven on which build, and installs or rolls back paks through a ledger. Every command is deterministic and its exit code means something, so you can act on results without a person watching.
 
 **Good for:** checking a mod against the installed build; patch day (did Valve's update break anything, and what must be re-filmed); the in-game pass that re-proves a mod; building and releasing from an addon's sources; installing and removing paks safely; starting a mod folder for a hero; shipping hero-page scenes without Valve's bytes; packaging releases and a mod source for Deadlock Mod Manager.
 
@@ -65,7 +65,7 @@ Each is a short recipe here; the full versions, with what to read in the output,
 ```
 magician check <mod folder> --json       # the one verdict (magician.check/1): lint + grade together, drift since its last proven build, its proofs, scene patches
 magician lint <pak> [--deep]             # one pak's findings in full; --deep adds the mesh family M100-M148 (~8 s per hero model; MAGICIAN_THREADS=2 caps its threads beside a running game)
-magician grade <pak>... --mod <mod.toml> --json   # the grade record: label, depth, identity, fair play, freshness, gate
+magician grade <pak>... --mod <mod.toml> --json   # the grade record: label, description, identity, fair play, freshness, gate
 ```
 `check` exits 0 (`ok`: proven on this build and clean), 4 (`re-prove`: loads, not proven on this build) or 1 (`broken`), and its `next` lines say what remains. It grades only when the Source 2 Viewer CLI is set up; otherwise its `grade` step says why and lint stands alone.
 
@@ -114,13 +114,13 @@ Lead with the verdict, then the evidence, then what needs a person. Keep it to w
 
 ```
 Deadlock build 6865 (was 6864), data only. 3 mods checked.
-- maid-lash: RE-PROVE. Loads; 45 of Lash's clips and his anim graph changed since 6864. Pass run: ready, no warnings over vanilla; sheets read, cloth follows the new clips. Proof recorded. Grade: S Costume.
+- maid-lash: RE-PROVE. Loads; 45 of Lash's clips and his anim graph changed since 6864. Pass run: ready, no warnings over vanilla; sheets read, cloth follows the new clips. Proof recorded. Grade: Costume (look, effects, sound).
 - example-skin: BROKEN. Valve renamed bone `spine_1` -> `spine_1_renamed` in the hero's skeleton; 95 files reference it. Still installed: the rig needs rebuilding by the author.
 - another-skin: ok.
 Wrote: baseline and sidecars for 6865, two passes under work\passes (reference folder); maid-lash proofs.tsv and mod.toml (uncommitted).
 ```
 
-Always say: the build number; each mod's patch-day label and grade label (`S Echo · NSFR`, quoted as printed); the release-gate blockers if a release was asked about; error counts with rule codes (`M062`, not "a model problem"); what you saw in the frames, or that nobody looked; every write you made (a baseline captured, a pak installed or removed, a proof recorded, files created) and every refusal you hit; what you did not do and why. Quote Magician's own words for findings rather than paraphrasing them. When a command exits 2, give its `magician:` line verbatim.
+Always say: the build number; each mod's patch-day label and grade label (`Echo (look, some effects) · NSFR`, quoted as printed); the release-gate blockers if a release was asked about; error counts with rule codes (`M062`, not "a model problem"); what you saw in the frames, or that nobody looked; every write you made (a baseline captured, a pak installed or removed, a proof recorded, files created) and every refusal you hit; what you did not do and why. Quote Magician's own words for findings rather than paraphrasing them. When a command exits 2, give its `magician:` line verbatim.
 
 ## Where things are
 

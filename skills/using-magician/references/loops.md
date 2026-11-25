@@ -55,14 +55,15 @@ magician grade <pak>... --mod <mod.toml> [--allow <magician.allow>]... [--json] 
 magician grade <pak> --hero <hero> [--light | --findings <file from lint --findings-out>]
 ```
 
-Give every pak of the mod at once (a skin pak and its voice pak grade as one; alone, the skin pak lacks the kit sound). The label reads `<letter> <word>[ · NSFR | · FP?][ · stale(N) | · unproven]`:
+Give every pak of the mod at once (a skin pak and its voice pak grade as one; alone, the skin pak lacks the voice). The label reads `<Kind> (<groups>)[ · broken][ · NSFR | · FP?][ · stale(N) | · unproven]`:
 
-- the letter (S to F) is depth: how completely the mod fulfils its archetype, never whether the art is good. Don't present it as a quality verdict;
-- the word is identity: Echo (a new character at S), Echolite (a new character below S), Costume (the same character), Variant (Valve's mesh, new materials), Kit (no model);
-- `NSFR` is a confirmed fair-play violation, `FP?` a fair-play check that could not run (a `--light` lint over a model reads `FP?`: grade lints deep by default), and neither ever lowers the letter;
+- the kind is identity: Echo (a new character), Costume (the same character, a new model), Variant (Valve's mesh, new materials), Kit (no model);
+- the groups are what the mod makes its own: look (model, materials, UI art, scenes), effects (ability VFX, animation), sound (kit sound, voice); `some <group>` when begun, left out while Valve's. It describes the mod, it does not rank it: don't present it as a quality verdict or a score. The report's three lines under the label say what was counted;
+- `broken` is lint errors that are not fair play, the same word `check` uses;
+- `NSFR` is a confirmed fair-play violation, `FP?` a fair-play check that could not run (a `--light` lint over a model reads `FP?`: grade lints deep by default), and neither ever changes the description;
 - `stale(N)` means these paks are not proven on this build, last proven on N; `unproven`, no proof holds these bytes (a rebuilt pak, whatever `[proven] builds` lists; the record's `freshness.unbound` names the builds claimed for other bytes).
 
-In the record (`--json`, schema `magician.grade/2`) the useful parts are `release_gate.blockers` (what stops publishing: lint errors that are not fair play, Valve's own files, not proven, rights denied; and fair play unknown or NSFR, and unreviewed rights, when the policy enforces them; otherwise those are in `release_gate.warnings`), `allowance_files` (which `magician.allow` the grade read, or that none was found: an unexplained NSFR is often a missing one), `fair_play.violations` and `fair_play.allowances` (each with its measured value and limit), `identity.evidence` and `next_steps` (they name files). `rights: unreviewed` is a person's call: never set `[rights] state` yourself. `--gate` exits 1 when the gate blocks.
+In the record (`--json`, schema `magician.grade/3`) the useful parts are `description.groups` (each group's state and what was counted), `description.notes`, `release_gate.blockers` (what stops publishing: lint errors that are not fair play, Valve's own files, not proven, rights denied; and fair play unknown or NSFR, and unreviewed rights, when the policy enforces them; otherwise those are in `release_gate.warnings`), `allowance_files` (which `magician.allow` the grade read, or that none was found: an unexplained NSFR is often a missing one), `fair_play.violations` and `fair_play.allowances` (each with its measured value and limit), `identity.evidence` and `next_steps` (they name files). `rights: unreviewed` is a person's call: never set `[rights] state` yourself. `--gate` exits 1 when the gate blocks.
 
 ## Patch day
 

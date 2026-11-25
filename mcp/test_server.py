@@ -119,15 +119,15 @@ def main():
         check(d["ok"] == (d["counts"]["errors"] == 0), "lint: ok matches error count")
         r = c.call("lint", {"vpk": pak, "deep": True})["result"]
         check(r["structuredContent"]["depth"] == "deep", "lint deep: depth deep")
-        # the grade record of a pak that touches nothing of the hero: not graded, said so, never a fake F
+        # the grade record of a pak that touches nothing of the hero: not graded, said so, never a made-up description
         r = c.call("grade", {"vpk": pak, "hero": "lash"})["result"]
         d = r["structuredContent"]
         if r["isError"] and ("Source2Viewer" in d.get("error", "") or "decompile" in d.get("error", "")):
             print("skip  grade: the Source 2 Viewer CLI is not set up (magician paths)")
         else:
-            check(r["isError"] is False and d.get("schema") == "magician.grade/2", "grade: the record (%s)" % d.get("error", "ok"))
+            check(r["isError"] is False and d.get("schema") == "magician.grade/3", "grade: the record (%s)" % d.get("error", "ok"))
             check(d.get("label", "").startswith("not graded"), "grade: a pak with nothing of the hero is not graded (%s)" % d.get("label"))
-            check({"depth", "identity", "fair_play", "freshness", "rights", "release_gate", "policy", "label"} <= set(d), "grade: record keys")
+            check({"broken", "description", "identity", "fair_play", "freshness", "rights", "release_gate", "policy", "label"} <= set(d) and "depth" not in d, "grade: record keys")
             check(d.get("release_gate", {}).get("pass") is False and d.get("ok") is False, "grade: the gate blocks an unproven, unreviewed mod")
         # check on a mod folder whose mod.toml names the pak: one verdict, the steps behind it
         m = tempfile.mkdtemp(prefix="magician-mcp-mod-")

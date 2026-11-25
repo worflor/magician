@@ -133,7 +133,7 @@ One block per run, verdict first:
 
 ```
 Deadlock build 6868. 3 mods moved to D:\mods, 1 not moved.
-- cool-lash-skin: moved as it is (sha256 matches the original). RE-PROVE: loads, 0 errors, 350 warnings, B Costume, fair play NSFR (M140 on the hat). Installed as pak11 (pak10 is another mod's). Needs: a look in game.
+- cool-lash-skin: moved as it is (sha256 matches the original). RE-PROVE: loads, 0 errors, 350 warnings, Costume (look, some effects) · NSFR (M140 on the hat). Installed as pak11 (pak10 is another mod's). Needs: a look in game.
 - menu-music: moved as it is. No hero, so not graded. 0 errors. Your own copy is in addons\pak31_dir.vpk; not installed until you say which copy stays.
 - fabric-test: moved as it is. BROKEN: 2 x M143 (sheen with detail: the detail layer never shows). Not installed.
 - old-skin.vpk: not moved: Magician could not read it as a VPK ("...").
