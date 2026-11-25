@@ -452,6 +452,29 @@ pub fn contract(data: &[u8]) -> Option<Contract> {
     Some(c)
 }
 
+/// The first position of an attachment signature (`on <bones> at x,y,z;...`).
+fn first_position(sig: &str) -> Option<[f64; 3]> {
+    let at = sig.split(" at ").nth(1)?.split([';', ' ']).next()?;
+    let v: Vec<f64> = at.split(',').map(|x| x.parse().ok()).collect::<Option<_>>()?;
+    (v.len() == 3).then(|| [v[0], v[1], v[2]])
+}
+
+/// Whether our attachment sits at Valve's position with its axes turned round (Valve's x, y, z as our z, x, y or
+/// y, z, x): the mark of an export that moved the attachment between a Y-up and a Z-up frame. Said beside the
+/// finding, since the cause and the fix are the same for every attachment it explains.
+fn axes_turned(ours: &str, valve: &str) -> Option<&'static str> {
+    let (o, v) = (first_position(ours)?, first_position(valve)?);
+    let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() <= 0.02);
+    if near(o, v) || v.iter().all(|x| x.abs() <= 0.02) {
+        return None;
+    }
+    if near(o, [v[1], v[2], v[0]]) || near(o, [v[2], v[0], v[1]]) {
+        Some("that is Valve's position with its axes in another order: the attachment came through a Y-up/Z-up swap on export (a compile of Valve's own attachments keeps Valve's numbers)")
+    } else {
+        None
+    }
+}
+
 /// Contract breaches of `ours` against Valve's model (M062). Added bones are allowed (cloth chains, model-only
 /// bones; docs/reference/engine.md, the compiler); every Valve bone, attachment and hitbox must be there, unchanged; no hitbox may be added.
 pub fn contract_breaches(ours: &Contract, valve: &Contract) -> Vec<String> {
@@ -480,7 +503,9 @@ pub fn contract_breaches(ours: &Contract, valve: &Contract) -> Vec<String> {
             if have.is_empty() {
                 out.push(format!("{kind} '{n}' missing"));
             } else if let Some(bad) = have.iter().find(|h| !want.contains(h)) {
-                out.push(format!("{kind} '{n}' changed: {bad} (Valve's {})", want.iter().find(|w| !have.contains(w)).unwrap_or(sig)));
+                let theirs = want.iter().find(|w| !have.contains(w)).unwrap_or(sig);
+                let turned = if kind == "attachment" { axes_turned(bad, theirs) } else { None };
+                out.push(format!("{kind} '{n}' changed: {bad} (Valve's {theirs}){}", turned.map(|t| format!("; {t}")).unwrap_or_default()));
             } else if let Some(lost) = want.iter().find(|w| !have.contains(w)) {
                 out.push(format!("{kind} '{n}' missing: Valve's model has another of that name, {lost}"));
             }

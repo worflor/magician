@@ -625,6 +625,23 @@ fn m062_model_contract() {
 }
 
 #[test]
+fn m062_says_when_an_attachment_is_valve_s_with_its_axes_turned() {
+    // Real shape (two mods from one exporter): every attachment on the root at Valve's numbers in another order,
+    // zipline 10.43,10.89,90.36 written as 10.89,90.36,10.43.
+    let c = |at: &str| deep::Contract { bones: vec![], attachments: vec![("zipline".into(), format!("on root_motion at {at};0.00,0.00,0.00 rot 0.00,0.00,0.00,1.00"))], hitboxes: vec![] };
+    let valve = c("10.43,10.89,90.36");
+    let turned = deep::contract_breaches(&c("10.89,90.36,10.43"), &valve);
+    assert_eq!(turned.len(), 1);
+    assert!(turned[0].starts_with("attachment 'zipline' changed: ") && turned[0].ends_with("; that is Valve's position with its axes in another order: the attachment came through a Y-up/Z-up swap on export (a compile of Valve's own attachments keeps Valve's numbers)"), "{turned:?}");
+    // moved, not turned: the finding alone
+    let moved = deep::contract_breaches(&c("10.43,10.89,80.00"), &valve);
+    assert!(moved.len() == 1 && moved[0].ends_with(")"), "{moved:?}");
+    // an attachment at the origin has no axes to turn
+    let origin = c("0.00,0.00,0.00");
+    assert!(deep::contract_breaches(&deep::Contract { attachments: vec![("zipline".into(), "on root_motion at 0.00,0.00,0.00;0.00,0.00,0.00 rot 0.50,0.50,0.50,0.50".into())], ..Default::default() }, &origin)[0].ends_with(")"));
+}
+
+#[test]
 fn m062_hitboxes_that_share_a_name_are_compared_as_a_set() {
     // Real case (Haze, Kelvin, Seven on 6865): two hitboxes of one name, a box and a capsule. Valve's own file
     // against itself used to read as "changed", the second against the first.
