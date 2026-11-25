@@ -61,6 +61,7 @@ The runbook is [PATCH-DAY.md](PATCH-DAY.md). Every new capability should make so
 - A grade that names more because the mod ships more files, not because it covers more of the hero, or because of Valve's own files shipped back to it.
 - A fair-play failure that changes the description, or a description that hides one.
 - A judgement number that changes and leaves no trace in the record.
+- A judge that changes underneath its grades: a check for a newer Magician on the way past another command, or an update nobody asked for.
 - A green result presented as proof when nobody has looked at the frames.
 
 ## The name
