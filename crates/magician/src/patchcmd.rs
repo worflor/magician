@@ -362,6 +362,8 @@ pub fn cmd_patchday(args: &[String]) -> R {
         say!("  no mod.toml found (pass --mod <mod.toml>, or run from inside the workspace)");
     }
     let mut unproven: Vec<String> = Vec::new();
+    // Mods found here with nothing installed: listed, never judged, and the verdict says so.
+    let mut idle: Vec<String> = Vec::new();
     let mut manifests_json: Vec<String> = Vec::new();
     let mut now_heroes: Option<Result<String, String>> = None;
     for m in &manifests {
@@ -410,6 +412,9 @@ pub fn cmd_patchday(args: &[String]) -> R {
         }
         if is_installed && !here {
             unproven.push(m.slug.clone());
+        }
+        if !is_installed {
+            idle.push(m.slug.clone());
         }
         // The hero's own data: did anything the skin can lean on move since the build the mod is compared from?
         let mut hero_json: Option<String> = None;
@@ -494,12 +499,16 @@ pub fn cmd_patchday(args: &[String]) -> R {
         say!("  then, per mod: `magician session qa --mod <its folder> --out <dir>`, look at the frames, and `magician prove <mod.toml> --evidence <dir>` to record its installed bytes on build {installed}");
         "re-prove"
     } else {
-        say!("  clear: every installed pak holds on {installed} and every mod is proven on it");
+        say!("  clear: every installed pak holds on {installed} and every installed mod is proven on it");
         "clear"
     };
+    if !idle.is_empty() {
+        idle.sort();
+        say!("  not installed, so not judged: {} (`magician check <its folder>` judges a mod's own paks)", idle.join(", "));
+    }
     if json_mode() {
         let listed: &[String] = if state == "re-prove" { &who } else { &[] };
-        let verdict = jsonout::Obj::new().str("state", state).int("problems", hard as i64).strs("reprove", listed);
+        let verdict = jsonout::Obj::new().str("state", state).int("problems", hard as i64).strs("reprove", listed).strs("not_installed", &idle);
         outln!("{}", doc.raw("verdict", verdict.build()).build());
     }
     Ok(state_code(if state == "clear" { "clean" } else { state }))
