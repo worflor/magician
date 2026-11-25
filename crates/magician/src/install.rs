@@ -322,6 +322,8 @@ pub fn route_for(src: &Path, as_name: Option<&str>) -> Result<Route, String> {
                 parts[i + 1..].join("/")
             ));
         }
+    }
+    if !is_pak_name(&file) && !as_name.is_some_and(is_pak_name) {
         return Err(format!("{file}: not a pakNN_dir.vpk (NN 01..99) and not maps/ui/hero_prefabs/<hero>.vpk; rename it, or pass --as pakNN_dir.vpk"));
     }
     match as_name {
@@ -930,6 +932,9 @@ mod tests {
             assert!(r(bad, None).is_err(), "{bad}");
         }
         assert!(r(r"D:\s\maps\ui\hero_shop\lash_shop.vpk", None).unwrap_err().contains("under maps/ only maps/ui/hero_prefabs"));
+        // a download's pak keeps its own name; --as installs it under a slot, as the refusal says
+        assert_eq!(r(r"D:\s\Some Mod v2.vpk", Some("pak02_dir.vpk")), Ok(Route::Pak("pak02_dir.vpk".into())));
+        assert!(r(r"D:\s\maps\dl_midtown.vpk", Some("pak02_dir.vpk")).is_err(), "a map is never a pak, --as or not");
         assert_eq!(owner_for(Path::new(&native(r"D:\work\release\example_skin\pak10_dir.vpk")), None), "example_skin");
         assert_eq!(owner_for(Path::new(&native(r"D:\work\lash_scenes\maps\ui\hero_prefabs\lash.vpk")), None), "lash_scenes");
         assert_eq!(owner_for(Path::new(&native(r"D:\a\pak10_dir.vpk")), Some(" Example ")), "Example");
