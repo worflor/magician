@@ -50,7 +50,7 @@ magician                           # "no pak yet", and the command that builds t
 magician release --out pak10_dir.vpk
 ```
 
-If you have a pak and nothing else, `magician init` writes the `mod.toml`, taking the hero from the files the pak replaces. Either way, every command run in that folder (or below it) knows the mod, its paks, its hero and its allowances, and says on stderr what it used:
+If you have a pak and nothing else, `magician init` writes the `mod.toml`, taking the hero from the files the pak replaces; given a download (`magician init "Cool Skin.zip"`), it first takes the paks out of it into a folder of their own, each copy proven the same bytes. Either way, every command run in that folder (or below it) knows the mod, its paks, its hero and its allowances, and says on stderr what it used:
 
 ```
 cd my-lash-skin                    # holds pak33_dir.vpk
@@ -189,7 +189,7 @@ Echo (look, effects, sound)              a new character, its look, effects and 
 Costume (look, some effects) · NSFR      the same character in a new model, effects begun, a confirmed fair-play violation
 Kit (sound) · stale(6864)                no model, its own sound, last proven on 6864
 Variant (look) · broken                  Valve's mesh in new materials, with lint errors: something won't load
-not graded (HUD mod)                     no rubric for it, and it says so
+not graded (prop mod)                    no rubric for it, and it says so
 ```
 
 - **The kind** is identity, decided from what is in the paks: Echo (a new character), Costume (the same character, a new model), Variant (Valve's mesh kept, new materials), Kit (no model). A new character takes two signals out of a replaced head, a new name, new portrait and card art, and a new voice, which counts for half and is declared in the `mod.toml` (`[identity] voice = "new"`), because bytes can't tell a new voice from a treatment of the old one. Maid Lash keeps Valve's head and is still Lash: a Costume.
@@ -198,7 +198,7 @@ not graded (HUD mod)                     no rubric for it, and it says so
 
 The **release gate** is separate from the label: it decides whether automated packaging or publishing may go ahead. Its blockers are lint errors that are not fair play, files byte-identical to Valve's at the same path, not proven on the target build, and rights denied. Fair play and rights are lenient by default: NSFR, FP? and unreviewed rights are listed as gate warnings, and a policy turns each into a blocker with one switch (`[fair_play] enforce = true`, `[rights] enforce = true`). Rights are a person's call, never Magician's: `[rights] state = "cleared"` (or `"denied"`, default `"unreviewed"`) in the `mod.toml`. `grade` exits 0 whatever the grade; `--gate` makes it exit 1 when the gate has a blocker.
 
-`--json` prints the record (`magician.grade/3`): the toolchain and commit, the build, fingerprints of the baseline, the policy and every pak, each group and criterion with its measured coverage, the identity signals with what was measured for each, every fair-play check run or not run with its violations and allowances, freshness, rights, the gate, and the next steps. Whoever reads it later can explain the grade from it alone, or weigh the criteria their own way. `grade` lints deep unless `--light` (fair play then reads `FP?` for a mod with a model). `magician rubric` prints the criteria, their groups and the weights in force, and [docs/TDD.md](docs/TDD.md#grading) says how each part is decided. There are rubrics for hero mods only: a map, HUD or music mod is `not graded`, and says so.
+`--json` prints the record (`magician.grade/3`): the toolchain and commit, the build, fingerprints of the baseline, the policy and every pak, each group and criterion with its measured coverage, the identity signals with what was measured for each, every fair-play check run or not run with its violations and allowances, freshness, rights, the gate, and the next steps. Whoever reads it later can explain the grade from it alone, or weigh the criteria their own way. `grade` lints deep unless `--light` (fair play then reads `FP?` for a mod with a model). `magician rubric` prints the criteria, their groups and the weights in force, and [docs/TDD.md](docs/TDD.md#grading) says how each part is decided. There are rubrics for hero mods only: a map, HUD, music, prop, effects or sound mod for no hero is `not graded`, and says which.
 
 ## Policy
 
@@ -280,7 +280,7 @@ Everything Magician knows about a build it reads itself, with zero external crat
 
 | You want to | You need |
 |---|---|
-| Inspect a pak (`ls`, `refs`, `dump`, `kv`, `textures`, `verify`), prove an expression (`expr`) | nothing else |
+| Inspect a pak (`ls`, `diff`, `refs`, `dump`, `kv`, `textures`, `verify`), prove an expression (`expr`) | nothing else |
 | Lint, mesh and cloth reports, `pack` (it lints what it packs), drift, `patchday`, `install`, `scene`, `new` | Deadlock installed |
 | `footprint`, `grade`, `index` | Deadlock and the [Source 2 Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat) CLI (21.1; flags change between versions, so pin it). The decompiled files are cached per build in the reference folder |
 | `build`, `release`, `sign` | Valve's CSDK 13, the community-distributed build that carries `resourcecompiler.exe` (setup notes in [docs/reference/engine.md](docs/reference/engine.md#the-compiler-csdk-13)); on Linux, Wine to run it |
@@ -368,7 +368,7 @@ The update source is the repository's latest release unless you name another: an
 |---|---|
 | `magician doctor` | This machine's setup, one line per part, each with its fix |
 | `magician new <hero> [--slug NAME] [--dir DIR] [--author NAME]` | Start a mod from nothing: a folder with the `mod.toml`, addon layout, package and starter scenarios for that hero |
-| `magician init [<pak> \| <addon dir>]` | Write a `mod.toml` for a pak or an addon's sources (the hero from the files it replaces) |
+| `magician init [<pak>... \| <archive>... \| <addon dir>]` | Write a `mod.toml` for paks, a download or an addon's sources (the hero from the files it replaces); paks from elsewhere are copied in and proven the same bytes |
 | `magician check [<folder> \| <mod.toml>]` | One mod's verdict on the installed build: lint and grade together, drift since its last proven build, its scene patches (exit 1 broken, 4 re-prove) |
 | `magician patchday [--capture] [--from BUILD] [--mod mod.toml]...` | The patch-day check: baseline, install state, each mod's drift from its last proven build, whether the engine changed, a verdict (exit 1 broken, 4 re-prove) |
 | `magician baseline` | Snapshot the installed build to `<reference>/<build>/baseline.tsv`, with `rig.tsv` and `engine.tsv` beside it |
@@ -388,7 +388,7 @@ The update source is the repository's latest release unless you name another: an
 | `magician sign <addon>` / `verify <vpk>` | Put an invisible authorship mark in a mod's colour textures, and detect it in a compiled pak. The key is the author's: `--key`, else `[mark] key` or `[mod] author` in the mod's `mod.toml` |
 | `magician update --check` / `update [--dry-run]` / `update --describe` | Whether a newer Magician exists (exit 5 if so), installing it on request, and this build's own `VERSION`; the only commands, besides `doctor --updates`, that touch the network |
 | `magician paths` | Where every outside location resolved to, and why |
-| `magician ls`, `refs`, `scan`, `dump`, `kv`, `textures`, `index`, `expr`, `pack`, `cache` | Inspection, evidence queries, material expression proofs, raw packing, the findings cache |
+| `magician ls`, `diff`, `refs`, `scan`, `dump`, `kv`, `textures`, `index`, `expr`, `pack`, `cache` | Inspection (`diff`: whether two paks are the same mod, exit 1 when not), evidence queries, material expression proofs, raw packing, the findings cache |
 
 ## Layout
 

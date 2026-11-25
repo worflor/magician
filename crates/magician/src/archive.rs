@@ -73,7 +73,7 @@ pub fn unpack_vpks(archive: &Path, into: &Path) -> Result<Unpacked, String> {
 // ---------------------------------------------------------------------------------------------------------- zip
 
 #[derive(Debug)]
-struct Member {
+pub(crate) struct Member {
     name: String,
     method: u16,
     crc: u32,
@@ -90,7 +90,7 @@ fn u32_at(d: &[u8], at: usize) -> Option<u32> {
 }
 
 /// The central directory: every member's name, method, CRC, sizes and where its local header is.
-fn zip_members(d: &[u8]) -> Result<Vec<Member>, String> {
+pub(crate) fn zip_members(d: &[u8]) -> Result<Vec<Member>, String> {
     // The end record is in the last 64 KiB + 22 bytes (its comment is at most 64 KiB).
     let lo = d.len().saturating_sub(0xFFFF + 22);
     let eocd = (lo..d.len().saturating_sub(21)).rev().find(|&i| u32_at(d, i) == Some(0x0605_4b50)).ok_or("not a zip (no end of central directory)")?;
@@ -122,7 +122,7 @@ fn zip_members(d: &[u8]) -> Result<Vec<Member>, String> {
     Ok(out)
 }
 
-fn zip_read(d: &[u8], m: &Member) -> Result<Vec<u8>, String> {
+pub(crate) fn zip_read(d: &[u8], m: &Member) -> Result<Vec<u8>, String> {
     if m.size > MAX_MEMBER || m.packed > MAX_MEMBER {
         return Err(format!("{} bytes: larger than any mod", m.size.max(m.packed)));
     }

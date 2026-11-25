@@ -2,7 +2,8 @@
 //! tools rename and rewrite the addons folder), `gameinfo.gi`, the game lock's JSON, the build lock, `mod.toml`'s
 //! proven line as `prove` rewrites it, a rig sidecar, `magician.exclude`, the config file, Steam's library list, a
 //! process's command line (the seat check on Linux), the game's hero table and a hero's name as a person types it,
-//! and a `mod.toml` as discovery reads it and as `init` writes it. Each must read or refuse, never panic, and where
+//! a `mod.toml` as discovery reads it and as `init` writes it, and a mod site's zip as `init` takes its paks out of
+//! it. Each must read or refuse, never panic, and where
 //! the CLI writes the file back, what it writes reads back the same. See `crates/fuzz`.
 
 use crate::{install, lock, patchday, paths, scene};
@@ -131,5 +132,20 @@ fn mod_manifests_as_discovery_and_init_read_and_write_them() {
         assert_eq!(grade::manifest::list(&text, "mod", "paks"), d.paks, "{text}");
         assert!(grade::manifest::proven(&text).is_empty());
         let _ = name_of(t);
+    });
+}
+
+#[test]
+fn downloaded_zips() {
+    // a mod site's zip, the one archive init reads itself: it reads or refuses, never panics
+    use crate::archive::{tests::zip, zip_members, zip_read};
+    let pak: Vec<u8> = (0..600u32).map(|i| (i % 13) as u8).collect();
+    let seeds = vec![zip(&[("Mod/pak01_dir.vpk", &pak, true), ("Mod/readme.txt", b"hi", false)]), zip(&[("a.vpk", b"stored", false)])];
+    fuzz::run("zip", fuzz::DEFAULT_CASES * 2, seeds, |d| {
+        if let Ok(members) = zip_members(d) {
+            for m in &members {
+                let _ = zip_read(d, m);
+            }
+        }
     });
 }

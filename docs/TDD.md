@@ -157,7 +157,7 @@ not graded (<kind>)[ · broken][ · NSFR | · FP?][ · stale(<build>) | · unpro
   | same character | character | Costume |
   | same model | variant | Variant |
   | no model | kit | Kit |
-  | not a hero mod | none | not graded (map, HUD or music mod) |
+  | not a hero mod | none | not graded (map, HUD, music, prop, effects or sound mod) |
 
 - **Description** (`rubric.rs`): eight criteria, each in one group: look (model, materials, UI art, scenes), effects (ability VFX, animation), sound (kit sound, voice). Each archetype has required criteria and applicable ones that count once touched (a character counts its voice once it treats one; a variant adds VFX, animation, sound and voice once it touches them; a kit counts only what it touches), and weights that say how much each counts within its group. A group's coverage is the weighted mean of its counted criteria; at `groups.covered` (0.8) it is named, above nothing and at `groups.touched` (0) it is `some`, else left out. Coverage is per group of files (an ability, a moment), and a band with fewer files in the hero's footprint than its target is full at what the hero has. Each group's line says what was counted: a covered criterion by name, an untouched one as Valve's, a partial one by its count (`UI art 11 of 13`, `VFX for 4 of 4 abilities (2 in part) and the weapon`). Files byte-identical to Valve's at the same path count for nothing.
 - **broken** is `LintFacts::broken`: a lint error that is not fair play, allowed or not. `check` reads the same function for its verdict. Shipping a skeleton, graph or data file (an M070 error at a game path, so broken too) and unallowed M061 dropped dependencies are notes in the report and in `description.notes`.

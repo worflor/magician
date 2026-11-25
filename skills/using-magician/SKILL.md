@@ -67,7 +67,7 @@ magician check <mod folder> --json       # the one verdict (magician.check/1): l
 magician lint <pak> [--deep]             # one pak's findings in full; --deep adds the mesh family M100-M148 (~8 s per hero model; MAGICIAN_THREADS=2 caps its threads beside a running game)
 magician grade <pak>... --mod <mod.toml> --json   # the grade record: label, description, identity, fair play, freshness, gate
 ```
-`check` exits 0 (`ok`: proven on this build and clean), 4 (`re-prove`: loads, not proven on this build) or 1 (`broken`), and its `next` lines say what remains. It grades only when the Source 2 Viewer CLI is set up; otherwise its `grade` step says why and lint stands alone.
+`check` exits 0 (`ok`: proven on this build and clean), 4 (`re-prove`: loads, not proven on this build) or 1 (`broken`), and its `next` lines say what remains. Under its lint line it counts the findings by rule (errors, warnings, fair play; `by_rule` in the JSON): report those, and read `magician lint` for the sites. It grades only when the Source 2 Viewer CLI is set up; otherwise its `grade` step says why and lint stands alone.
 
 **Patch day** (a new Deadlock build landed):
 ```
@@ -92,7 +92,7 @@ magician uninstall --mod <owner>         # rolls back only what the ledger says 
 ```
 Reuse the owner `install --status` already shows for that mod (`maid_lash`, which can differ from the slug `maid-lash`); a new mod defaults to its pak's folder name. When someone wants to look at a mod in game, install it and tell them it is in; launch only if they asked you to: [references/loops.md](references/loops.md#install-a-pak-for-someone-to-look-at).
 
-**Start a mod:** `magician new <hero> [--slug NAME] [--dir DIR] [--author NAME]` writes a mod folder from the installed game's own data: a `mod.toml` with the hero's real model and skeleton, the addon folders with the ignore files that keep Valve-derived files out of git, a package folder, two starter scenarios. It copies no Valve file and never writes into a folder that exists. `magician init` writes only the `mod.toml`, for a pak or an addon that already exists.
+**Start a mod:** `magician new <hero> [--slug NAME] [--dir DIR] [--author NAME]` writes a mod folder from the installed game's own data: a `mod.toml` with the hero's real model and skeleton, the addon folders with the ignore files that keep Valve-derived files out of git, a package folder, two starter scenarios. It copies no Valve file and never writes into a folder that exists. `magician init` writes only the `mod.toml`, for a pak or an addon that already exists; given a download or paks from elsewhere it copies the paks into the mod's folder first, each proven the same bytes. A mod made without Magician: [moving-to-magician](../moving-to-magician/SKILL.md).
 
 **Staying current** (Magician only goes online when you run `update` or `doctor --updates`; nothing else checks):
 ```
@@ -106,7 +106,7 @@ Checking is always fine to do and to report ("behind: 0.2.0 is out"; "could not 
 
 **Publishing:** `magician bundle <bundle.json> --out <scratch dir>` makes a Deadlock Mod Manager release bundle; it refuses a path in two paks or any file byte-identical to Valve's. `magician source <source.json>` writes a static mod source and its pages from bundles; it states only the builds a proof holds the zip's own paks on. Neither publishes anything: putting the result on a host is the user's step.
 
-**Inspecting:** `doctor`, `paths`, `install --status`, `ls`, `refs`, `dump`, `kv`, `textures`, `mesh`, `cloth`, `rules`, `rubric`, `policy` only read. `grade`, `footprint` and `index` need the Source 2 Viewer CLI; if it isn't installed they exit 2, so report that instead of the grade.
+**Inspecting:** `doctor`, `paths`, `install --status`, `ls`, `diff` (two paks: the same mod or not, exit 1 when not), `refs`, `dump`, `kv`, `textures`, `mesh`, `cloth`, `rules`, `rubric`, `policy` only read. `grade`, `footprint` and `index` need the Source 2 Viewer CLI; if it isn't installed they exit 2, so report that instead of the grade.
 
 ## Reporting
 
