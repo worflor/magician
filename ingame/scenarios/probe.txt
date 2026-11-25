@@ -1,0 +1,3 @@
+# The harness proof's console step (prove_harness.py): console.py types its probe before the first command, so a
+# run that gets past this line has proven that typed keys reach the game's console and come back in console.log.
+echo magician harness proof

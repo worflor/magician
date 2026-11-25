@@ -242,12 +242,7 @@ class X11(unittest.TestCase):
         self.g.wheel(1)
         self.g.wheel(-2)
         self.pump(0.5)
-        got = [d for k, d in self.events if k == 4]
-        if not got and os.environ.get("WAYLAND_DISPLAY"):
-            # Seen under WSLg: XWayland moves the pointer for XTest but hands buttons to the window under the
-            # compositor's own pointer, which is not this one. A plain X server (Xvfb) delivers them.
-            self.skipTest("XWayland delivered no XTest button to this window (run under Xvfb to check the mechanics)")
-        self.assertEqual(got, [1, 3, 4, 5, 5], self.events)
+        self.assertEqual([d for k, d in self.events if k == 4], [1, 3, 4, 5, 5], self.events)
 
 
 if __name__ == "__main__":
