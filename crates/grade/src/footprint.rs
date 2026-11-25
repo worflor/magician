@@ -70,9 +70,19 @@ pub struct Footprint {
     pub items: Vec<Item>,
     /// The hero's name logos (`panorama/images/heroes/hero_names/...`), whatever their tokens: a new one is a rename.
     pub name_art: Vec<String>,
+    /// The hero's own model, compiled path, as heroes.vdata names it. The "core" group holds more models than this
+    /// one (an effect model the hero's own materials pull in, a sword it always carries), so it is kept by itself.
+    pub model: String,
 }
 
 impl Footprint {
+    /// The hero's own model: the one heroes.vdata names, else (a footprint put together by hand) the first core model.
+    pub fn hero_model(&self) -> Option<&str> {
+        if !self.model.is_empty() {
+            return Some(&self.model);
+        }
+        self.by_cat(Cat::Model).find(|i| i.group == "core").map(|i| i.path.as_str())
+    }
     pub fn by_cat(&self, c: Cat) -> impl Iterator<Item = &Item> {
         self.items.iter().filter(move |i| i.cat == c)
     }
@@ -330,6 +340,7 @@ pub fn build(src: &Sources, arg: &str) -> Result<Footprint, String> {
     let vpk = vpk::Vpk::open(src.vpk()).map_err(|e| e.to_string())?;
     let core = vpk::Vpk::open(src.game.join("core").join("pak01_dir.vpk")).ok();
     let mut queue: VecDeque<(String, String)> = VecDeque::new();
+    fp.model = compiled(&model_src);
     queue.push_back((compiled(&model_src), "core".into()));
     let vfx_roots: Vec<Item> = items.iter().filter(|i| i.cat == Cat::AbilityVfx).cloned().collect();
     for it in &vfx_roots {

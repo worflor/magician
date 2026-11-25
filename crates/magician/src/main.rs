@@ -1563,7 +1563,7 @@ pub(crate) fn grade_run(args: &[String]) -> Result<GradeOut, Stop> {
     let game_citadel = game.join("citadel");
     let scene_list: Vec<String> = fp.by_cat(grade::footprint::Cat::Scene).map(|i| i.path.clone()).collect();
     let scene_maps = grade::evidence::carried_scenes(&scene_list, &scene_roots, &|rel| vpk::Vpk::open(game_citadel.join(rel)).ok(), &mut |m| say!("{m}"))?;
-    let core = fp.by_cat(grade::footprint::Cat::Model).find(|i| i.group == "core").map(|i| i.path.clone()).unwrap_or_default();
+    let core = fp.hero_model().unwrap_or_default().to_string();
     let ours_model = by_path.get(core.as_str()).filter(|_| paths.contains(&core)).map(|f| f.data.clone());
     let valve_model = lint::Game::read(&valve_game, &core);
     let model_materials = ours_model.as_deref().map(|m| grade::evidence::model_materials(m, &paths)).unwrap_or_default();

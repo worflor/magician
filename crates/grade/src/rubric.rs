@@ -414,7 +414,7 @@ fn lines(fp: &Footprint, m: &ModFacts, archetype: Archetype, p: &Policy) -> Vec<
     };
 
     // Model
-    let hero_model = fp.by_cat(Cat::Model).find(|i| i.group == "core").map(|i| i.path.clone());
+    let hero_model = fp.hero_model().map(String::from);
     let has_model = hero_model.as_ref().is_some_and(|p| m.paths.contains(p));
     push("model", if has_model { 1.0 } else { 0.0 }, if has_model { "replaced".into() } else { "not replaced".into() }, String::new(), if has_model { vec![] } else { hero_model.into_iter().collect() });
 
@@ -664,6 +664,19 @@ mod tests {
         assert_eq!((look.state, look.counted.as_str()), (State::Some, "model, materials, Valve's UI art, Valve's scenes"));
         assert_eq!(group(&r, Group::Effects).counted, "Valve's");
         assert!(r.notes.is_empty());
+    }
+
+    #[test]
+    fn the_hero_s_model_is_the_one_heroes_vdata_names_not_the_first_core_model() {
+        // Paige's core group also holds an effect model whose path sorts before hers (models/abilities/...)
+        let mut f = fp();
+        f.items.insert(0, Item { cat: Cat::Model, group: "core".into(), path: "models/abilities/lash_butterfly_model.vmdl_c".into() });
+        f.model = "models/heroes_wip/lash/lash.vmdl_c".into();
+        assert_eq!(f.hero_model(), Some("models/heroes_wip/lash/lash.vmdl_c"));
+        let r = grade(&f, &facts(&["models/heroes_wip/lash/lash.vmdl_c"]), Archetype::Character, &policy());
+        assert_eq!(line(&r, "model").detail, "replaced");
+        // a footprint made by hand, with no model named, still finds its one core model
+        assert_eq!(fp().hero_model(), Some("models/heroes_wip/lash/lash.vmdl_c"));
     }
 
     #[test]
