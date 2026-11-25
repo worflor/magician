@@ -13,6 +13,7 @@ Each kind of knowledge has one home. Read it there, and put new knowledge there.
 - [docs/PATCH-DAY.md](docs/PATCH-DAY.md): the patch-day runbook and what each failure means.
 - [ingame/README.md](ingame/README.md), [mcp/README.md](mcp/README.md), [cinema/README.md](cinema/README.md): their subsystems. The in-game harness's README is also the home of game facts learned by driving it.
 - [skills/using-magician/](skills/using-magician/SKILL.md): how an agent drives Magician on a mod. Keep it in step when a command, exit code or safety rule changes.
+- [skills/moving-to-magician/](skills/moving-to-magician/SKILL.md): how an agent brings a mod made without Magician under it. It quotes `init`, `check` and `install` messages word for word; keep them in step.
 - Briefs: an open plan or investigation is one file in a `briefs` folder under `docs/`, made when the first one is needed. A brief is a draft, not canonical truth; what proves durable moves into a core doc or a test, and the brief is deleted.
 - Executable references: `magician --help` (every command and flag, the exit codes, how locations resolve; `magician <command> --help` for one), `magician rules` (the rule catalogue), `magician rubric` (the grading criteria in force), `magician policy` (every judgement number in force and where it came from), `magician paths` (where this machine's game, reference folder and tools are, and the mod of the working folder), `magician doctor` (what is missing on this machine, with each fix).
 
@@ -54,7 +55,7 @@ crates/magician   the CLI: main.rs, cli.rs (--help, --version, options, exit cod
                   drift verdicts, prove), proofs.rs (the proof ledger: which bytes were proven on which build, and the
                   one "is it proven here" question), gamefiles.rs, meshcmd.rs, clothcmd.rs, markcmd.rs, jsonout.rs
 mcp/              MCP server: the CLI as JSON tools for agents, Python stdlib only; no install or launch tool
-skills/           using-magician: the Agent Skill for driving the CLI on a mod
+skills/           the Agent Skills: using-magician (driving the CLI on a mod), moving-to-magician (bringing a mod under it)
 ingame/           retail-game driver, Python stdlib and PowerShell: mod_session.py is the one driver of a mod's session
                   and reprove.py patch day in game (`magician session`, `magician reprove`), takes.py the timed and
                   staged takes, logdiff.py the warnings a mod adds over vanilla, gamelock.py the one-user-at-a-time

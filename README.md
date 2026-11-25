@@ -225,7 +225,7 @@ The reason for 1, 2 and 3 follows `magician:` on stderr. `--help` (or `-h`) afte
 
 `--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release`, `rules` and `update` prints one JSON document on stdout and no human text. Each starts with a `schema` string (`magician.check/1`, `magician.grade/2`, `magician.patchday/1`, ...) so a reader can tell what it holds. A command that stops (exit 1, 2 or 3 with a reason) prints the reason as that one document, `{"schema":"magician.error/1","command":...,"exit":2,"kind":"usage","error":...}`, so stdout always parses. Also machine-readable: `lint --json-out FILE`, `mesh --json-out FILE`, `grade --record-out FILE`, `paths` and `policy` (tab-separated), and `lint --findings-out FILE` (a lint run that `grade --findings` judges without linting again). Results are deterministic: `pack` writes byte-identical VPKs from identical input, lint findings come out in a fixed order, a grade record is byte-for-byte the same for the same paks, build, policy and toolchain, and the findings cache only ever returns what a fresh run would compute.
 
-For agents there is an MCP server, [mcp/](mcp/README.md): seventeen tools (`check`, `lint`, `mesh`, `grade`, `release`, `build`, `drift`, `patchday`, `policy`, `refs`, `ls`, `dump`, `cloth`, `verify`, `rules`, read-only `doctor` and `install_status`) that return JSON, the commands' own documents where they have one. Installing, uninstalling and launching the game are deliberately not among them; those stay CLI calls that something has to choose to make. An agent that drives the CLI itself can load the skill in [skills/using-magician/](skills/using-magician/SKILL.md): the loops, the safety rules and how to report, in the Agent Skills format.
+For agents there is an MCP server, [mcp/](mcp/README.md): seventeen tools (`check`, `lint`, `mesh`, `grade`, `release`, `build`, `drift`, `patchday`, `policy`, `refs`, `ls`, `dump`, `cloth`, `verify`, `rules`, read-only `doctor` and `install_status`) that return JSON, the commands' own documents where they have one. Installing, uninstalling and launching the game are deliberately not among them; those stay CLI calls that something has to choose to make. An agent that drives the CLI itself can load the skill in [skills/using-magician/](skills/using-magician/SKILL.md): the loops, the safety rules and how to report, in the Agent Skills format. For mods that were made without Magician there is a second one, [skills/moving-to-magician/](skills/moving-to-magician/SKILL.md): point an agent at a pak, a folder of mods or the game's addons folder and it brings each one under Magician as the same bytes, gets its verdict, and says what still needs a person.
 
 What it leaves to the host:
 
@@ -372,7 +372,7 @@ Everything Magician knows about a build it reads itself, with zero external crat
 ```
 crates/   vpk, resource, mesh, geom, lint, grade, expr, mark, magician (the CLI)
 mcp/      the MCP server: the CLI as JSON tools for agents
-skills/   using-magician, an Agent Skill for driving the CLI
+skills/   Agent Skills: using-magician (driving the CLI on a mod), moving-to-magician (bringing an existing mod under it)
 ingame/   drive the retail game: sessions, patch-day passes, console, capture, log diff, crash dumps, example scenarios
 qa/       offline visual QA and detectors (Blender, glb)
 harness/  Blender render scripts: x-ray, lookdev, contact sheets
