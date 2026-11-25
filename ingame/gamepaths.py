@@ -1,18 +1,20 @@
-"""Where the game, the reference folder and the game lock are, resolved exactly as magician.exe resolves them.
+"""Where the game, the reference folder and the game lock are, resolved exactly as the magician CLI resolves them.
 
 The harness, the QA scripts, the bundler and the film kit all ask this module, so they agree with the CLI. Each
 location is an environment variable, then a line in the config file, then discovery or a default (the CLI also takes
 flags; `magician paths` prints the same answers with their sources):
 
     game       DEADLOCK_GAME        config `game`       else Deadlock found through Steam's library list
-    reference  MAGICIAN_REFERENCE   config `reference`  else %LOCALAPPDATA%\\magician\\reference
-    work       <reference>\\work (harness, QA and film output)
-    game_lock  MAGICIAN_GAME_LOCK   config `game_lock`  else <reference>\\work\\ingame-game.lock
+    reference  MAGICIAN_REFERENCE   config `reference`  else the platform's data folder: %LOCALAPPDATA%/magician/reference
+                                                        on Windows, $XDG_DATA_HOME/magician/reference (~/.local/share/...)
+    work       <reference>/work (harness, QA and film output)
+    game_lock  MAGICIAN_GAME_LOCK   config `game_lock`  else <reference>/work/ingame-game.lock
+    magician   MAGICIAN_EXE                             else this toolkit's target/release build, else `magician` on PATH
 
-The config file is MAGICIAN_CONFIG, else %APPDATA%\\magician\\config.txt (~/.config/magician/config.txt elsewhere):
-one `key = value` per line, `#` comments. From PowerShell or a shell:
+The config file is MAGICIAN_CONFIG, else %APPDATA%/magician/config.txt on Windows, $XDG_CONFIG_HOME/magician/config.txt
+(~/.config/magician/config.txt) elsewhere: one `key = value` per line, `#` comments. From a shell:
 
-    python -I gamepaths.py game        (also: citadel, console_log, reference, work, game_lock, vrf, csdk, config)
+    python -I gamepaths.py game        (also: citadel, console_log, reference, work, game_lock, vrf, csdk, config, magician)
 
 prints the path, or exits 2 with the reason on stderr. Standard library only.
 """
@@ -115,7 +117,7 @@ def game():
         if value:
             g = _game_folder(value)
             if not g:
-                raise LookupError(f"{source} {value}: no citadel\\steam.inf there (point it at Deadlock's `game` folder)")
+                raise LookupError(f"{source} {value}: no citadel/steam.inf there (point it at Deadlock's `game` folder)")
             return g
     g = _steam_game()
     if not g:
@@ -165,7 +167,7 @@ def reference():
 
 
 def work(*parts):
-    """<reference>\\work, where harness, QA and film output goes (joined with any parts given)."""
+    """<reference>/work, where harness, QA and film output goes (joined with any parts given)."""
     return os.path.join(reference(), "work", *parts)
 
 
@@ -186,10 +188,25 @@ def game_lock():
     return _env("MAGICIAN_GAME_LOCK") or config("game_lock") or work("ingame-game.lock")
 
 
+EXE = "magician.exe" if os.name == "nt" else "magician"
+
+
+def magician():
+    """The magician binary the Python tools run: MAGICIAN_EXE (the front door sets it to itself, so `magician session`
+    drives the same binary that was called), else this toolkit's release build, else `magician` on PATH."""
+    if _env("MAGICIAN_EXE") or _env("MAGICIAN_BIN"):   # MAGICIAN_BIN: the name the MCP server and the tests read
+        return _env("MAGICIAN_EXE") or _env("MAGICIAN_BIN")
+    built = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "target", "release", EXE)
+    if os.path.isfile(built):
+        return built
+    import shutil
+    return shutil.which("magician") or built
+
+
 def main(argv):
     what = argv[1] if len(argv) > 1 else ""
     table = {"game": game, "citadel": citadel, "console_log": console_log, "reference": reference, "work": work,
-             "game_lock": game_lock, "vrf": vrf, "csdk": csdk, "config": lambda: config_file() or ""}
+             "game_lock": game_lock, "vrf": vrf, "csdk": csdk, "config": lambda: config_file() or "", "magician": magician}
     if what not in table:
         print("usage: gamepaths.py " + " | ".join(table), file=sys.stderr)
         return 2

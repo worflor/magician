@@ -6,7 +6,8 @@
     python -I console.py --tail 30                                       # last lines of console.log
 
 The game reads keyboard input through SDL raw scancodes, so pasted text and virtual-key events are ignored:
-this sends hardware scancodes with SendInput. The game window is brought to the front first, and the
+this sends hardware keys (SendInput scancodes on Windows, XTest key events on X11; gameos.py has both). The game
+window is brought to the front first, and the
 console is toggled with the key bound to it (--key, else MAGICIAN_CONSOLE_KEY, else the player's own bind read
 from citadel/cfg/user_keys_0_slot0.vcfg, else grave). Output comes back
 through console.log (launch with -condebug).
@@ -25,58 +26,31 @@ Scenario lines: a console command, or a directive:
 
 One user of the game at a time: before typing, the game lock (gamelock.py) is taken for --holder NAME (else
 $MAGICIAN_GAME_HOLDER, else "anonymous"); exit 3 while another holder has the game, or --wait-lock SECS to wait.
-Nothing is typed into a game the holder did not launch: the window's process must be the one launch.ps1 bound to
+Nothing is typed into a game the holder did not launch: the window's process must be the one launch.py bound to
 the seat (exit 3 otherwise, with the reason). --release-lock hands the seat back after the run with the game still up
-(the next holder cannot drive it; otherwise the holder keeps the seat until stop_game.ps1).
+(the next holder cannot drive it; otherwise the holder keeps the seat until stop_game.py).
 Shots and failure evidence go to --out DIR, else <reference>/work/console.
 """
-import ctypes
-import ctypes.wintypes as wt
 import os
 import subprocess
 import sys
 import time
 
-user32 = ctypes.WinDLL("user32", use_last_error=True)
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import gameos  # noqa: E402
 import gamepaths  # noqa: E402
 
 LOG = os.path.join(gamepaths.try_game(), "citadel", "console.log")
 
-KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, KEYEVENTF_EXTENDEDKEY = 0x2, 0x8, 0x1
-MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP = 0x2, 0x4, 0x8, 0x10
+SC = gameos.SC   # the key names console.py knows (US layout)
 
 
-class KEYBDINPUT(ctypes.Structure):
-    _fields_ = [("wVk", wt.WORD), ("wScan", wt.WORD), ("dwFlags", wt.DWORD), ("time", wt.DWORD),
-                ("dwExtraInfo", ctypes.c_size_t)]
+def D():
+    """The display backend (gameos.py), or exit 2 saying what this machine lacks."""
+    return gameos.need_display()
 
 
-class MOUSEINPUT(ctypes.Structure):
-    _fields_ = [("dx", wt.LONG), ("dy", wt.LONG), ("mouseData", wt.DWORD), ("dwFlags", wt.DWORD),
-                ("time", wt.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
-
-
-class _U(ctypes.Union):
-    _fields_ = [("ki", KEYBDINPUT), ("mi", MOUSEINPUT), ("pad", ctypes.c_byte * 32)]
-
-
-class INPUT(ctypes.Structure):
-    _fields_ = [("type", wt.DWORD), ("u", _U)]
-
-
-user32.SendInput.argtypes = [wt.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
-
-# US layout set-1 scancodes
-SC = {"esc": 0x01, "1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06, "6": 0x07, "7": 0x08, "8": 0x09,
-      "9": 0x0A, "0": 0x0B, "-": 0x0C, "=": 0x0D, "backspace": 0x0E, "tab": 0x0F, "q": 0x10, "w": 0x11,
-      "e": 0x12, "r": 0x13, "t": 0x14, "y": 0x15, "u": 0x16, "i": 0x17, "o": 0x18, "p": 0x19, "[": 0x1A,
-      "]": 0x1B, "enter": 0x1C, "ctrl": 0x1D, "a": 0x1E, "s": 0x1F, "d": 0x20, "f": 0x21, "g": 0x22,
-      "h": 0x23, "j": 0x24, "k": 0x25, "l": 0x26, ";": 0x27, "'": 0x28, "grave": 0x29, "shift": 0x2A,
-      "\\": 0x2B, "z": 0x2C, "x": 0x2D, "c": 0x2E, "v": 0x2F, "b": 0x30, "n": 0x31, "m": 0x32, ",": 0x33,
-      ".": 0x34, "/": 0x35, "alt": 0x38, "space": 0x39, "f1": 0x3B, "f2": 0x3C, "f3": 0x3D, "f4": 0x3E,
-      "f5": 0x3F, "f6": 0x40, "f7": 0x41, "f8": 0x42, "f9": 0x43, "f10": 0x44, "f11": 0x57, "f12": 0x58, "scrolllock": 0x46, "rshift": 0x36}
 SHIFTED = {'"': "'", "_": "-", "+": "=", ":": ";", "?": "/", ">": ".", "<": ",", "{": "[", "}": "]",
            "|": "\\", "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7", "*": "8",
            "(": "9", ")": "0", "~": "grave"}
@@ -95,7 +69,7 @@ def bound_console_key(vcfg_text):
 
 def console_key():
     """The key that toggles the console on this machine: MAGICIAN_CONSOLE_KEY, else the player's own bind in
-    citadel\\cfg\\user_keys_0_slot0.vcfg, else grave (the game's default)."""
+    citadel/cfg/user_keys_0_slot0.vcfg, else grave (the game's default)."""
     if os.environ.get("MAGICIAN_CONSOLE_KEY", "").strip():
         return os.environ["MAGICIAN_CONSOLE_KEY"].strip().lower()
     try:
@@ -106,34 +80,25 @@ def console_key():
         return "grave"
 
 
-def _send(*inputs):
-    arr = (INPUT * len(inputs))(*inputs)
-    if user32.SendInput(len(inputs), arr, ctypes.sizeof(INPUT)) != len(inputs):
-        raise OSError(f"SendInput blocked (error {ctypes.get_last_error()}); is an elevated window in front?")
-
-
-def _key(sc, up):
-    i = INPUT(type=1)
-    i.u.ki = KEYBDINPUT(0, sc, KEYEVENTF_SCANCODE | (KEYEVENTF_KEYUP if up else 0), 0, 0)
-    return i
+def press(name, up):
+    """One key down or up, as hardware sends it."""
+    if name not in SC:
+        raise ValueError(f"no key named {name!r}")
+    D().key(name, up)
 
 
 def tap(name, hold=0.03):
-    sc = SC[name]
-    _send(_key(sc, False))
+    press(name, False)
     time.sleep(hold)
-    _send(_key(sc, True))
+    press(name, True)
     time.sleep(0.02)
 
 
 def mouse(button, hold=0.05):
-    down, up = (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP) if button == "mouse1" else (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP)
-    i = INPUT(type=0)
-    i.u.mi = MOUSEINPUT(0, 0, 0, down, 0, 0)
-    _send(i)
+    n = 1 if button == "mouse1" else 2
+    D().button(n, False)
     time.sleep(hold)
-    i.u.mi = MOUSEINPUT(0, 0, 0, up, 0, 0)
-    _send(i)
+    D().button(n, True)
 
 
 def type_text(text):
@@ -148,56 +113,32 @@ def type_text(text):
             # camera upward and spec_goto keeps the velocity (build 6864, cinema session 2026-11-21: the "drift" of
             # every typed camera path). Gameplay binds Left Shift too (Lash's dash). The console types the same.
             base = ch.lower() if ch.isupper() else SHIFTED[ch]
-            _send(_key(SC["rshift"], False))
+            press("rshift", False)
             try:
                 tap(base, 0.01)
             finally:
-                _send(_key(SC["rshift"], True))
+                press("rshift", True)
         else:
             raise ValueError(f"no scancode for {ch!r}")
 
 
 def _describe(hwnd):
-    if not hwnd:
-        return "nothing"
-    t = ctypes.create_unicode_buffer(200)
-    user32.GetWindowTextW(hwnd, t, 200)
-    c = ctypes.create_unicode_buffer(200)
-    user32.GetClassNameW(hwnd, c, 200)
-    return f"{t.value[:60]!r} (class {c.value})"
+    return D().describe(hwnd)
 
 
 def game_window():
-    sys.path.insert(0, HERE)
-    from capture import find_window
-    return find_window()
+    return D().find_window()
 
 
 def game_pid():
     hwnd = game_window()
-    if not hwnd:
-        return 0
-    pid = wt.DWORD()
-    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    return pid.value
+    return D().window_pid(hwnd) if hwnd else 0
 
 
 def game_started():
     """When the running game's process was created (Unix time); 0 when there is no game."""
     pid = game_pid()
-    if not pid:
-        return 0.0
-    kernel32 = ctypes.WinDLL("kernel32")
-    kernel32.OpenProcess.restype = wt.HANDLE
-    h = kernel32.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
-    if not h:
-        return 0.0
-    made, a, b, c = wt.FILETIME(), wt.FILETIME(), wt.FILETIME(), wt.FILETIME()
-    ok = kernel32.GetProcessTimes(wt.HANDLE(h), ctypes.byref(made), ctypes.byref(a), ctypes.byref(b), ctypes.byref(c))
-    kernel32.CloseHandle(wt.HANDLE(h))
-    if not ok:
-        return 0.0
-    return ((made.dwHighDateTime << 32) | made.dwLowDateTime) / 1e7 - 11644473600.0
+    return (gameos.process_started(pid) or 0.0) if pid else 0.0
 
 
 class NotOurGame(SystemExit):
@@ -209,7 +150,7 @@ _DRIVEN = {"pid": 0}   # the game pid this process has been allowed to drive (re
 
 def guard():
     """Refuse, before any key reaches it, a game that this holder did not launch: the seat must be this holder's
-    ($MAGICIAN_GAME_HOLDER, or --holder) and the window's process the one launch.ps1 bound to the seat. On 2026-11-24 a
+    ($MAGICIAN_GAME_HOLDER, or --holder) and the window's process the one launch.py bound to the seat. On 2026-11-24 a
     pipeline whose seat had been taken typed a stage plan into the next holder's game. The holder is re-read every time
     (cheap); the process start time only when the window's pid changes."""
     import gamelock
@@ -231,56 +172,39 @@ FOCUS_WAIT = 12.0   # seconds focus_game keeps trying before it gives up
 
 def focus_game():
     """Bring the game to the front and prove it is there. Called before a script and again before every command and
-    key (ensure_focus): SendInput goes to whatever window is in front, so a window that takes the foreground mid-script
-    (a notification, the desktop app on the other monitor) would otherwise receive the rest of the scenario as typing."""
+    key (ensure_focus): injected keys go to whatever window is in front, so a window that takes the foreground
+    mid-script (a notification, the desktop app on the other monitor) would otherwise receive the rest of the scenario
+    as typing."""
     hwnd = game_window()
     if not hwnd:
         sys.exit("console: no Deadlock window")
     guard()
-    user32.GetForegroundWindow.restype = wt.HWND
     # A shell flyout (the Start menu, Quick settings, a notification's panel) holds the foreground against every
-    # route below and lets go by itself within seconds, so three quick tries gave up on a window that was about to
-    # leave. Keep asking for FOCUS_WAIT seconds; nothing is typed until the game is in front.
+    # route and lets go by itself within seconds, so three quick tries gave up on a window that was about to leave.
+    # Keep asking for FOCUS_WAIT seconds; nothing is typed until the game is in front.
     deadline, tries = time.time() + FOCUS_WAIT, 0
     while time.time() < deadline:
-        if user32.GetForegroundWindow() == hwnd:
+        if D().in_front(hwnd):
             break
         tries += 1
-        # Windows only lets the foreground thread hand focus over: join its input queue for the switch,
-        # and tap Alt (which lifts the foreground lock) as a second route.
-        kernel32 = ctypes.WinDLL("kernel32")
-        fg = user32.GetForegroundWindow()
-        fg_thread = user32.GetWindowThreadProcessId(fg, None) if fg else 0
-        me = kernel32.GetCurrentThreadId()
-        if fg_thread and fg_thread != me:
-            user32.AttachThreadInput(me, fg_thread, True)
-        if tries <= 3:   # the Alt tap goes to whatever is in front: a few, not a stream into someone's window
-            _send(_key(SC["alt"], False), _key(SC["alt"], True))
-        user32.ShowWindow(hwnd, 9)
-        user32.BringWindowToTop(hwnd)
-        user32.SetForegroundWindow(hwnd)
-        if fg_thread and fg_thread != me:
-            user32.AttachThreadInput(me, fg_thread, False)
+        D().bring_forward(hwnd, tries)
         time.sleep(0.4)
-    if user32.GetForegroundWindow() != hwnd:
-        sys.exit("console: could not bring the Deadlock window to the front; in front: "
-                 + _describe(user32.GetForegroundWindow()))
+    if not D().in_front(hwnd):
+        sys.exit("console: could not bring the Deadlock window to the front; in front: " + _describe(D().foreground()))
     return hwnd
 
 
 HELD = set()   # keys this run holds down through @down (released when the script ends, however it ends)
-_VK = {"ctrl": 0xA2, "shift": 0xA0, "rshift": 0xA1, "alt": 0xA4, "w": 0x57, "a": 0x41, "s": 0x53, "d": 0x44, "space": 0x20}
+STUCK_KEYS = ("ctrl", "shift", "rshift", "alt", "w", "a", "s", "d", "space")
 
 
 def release_stuck():
-    """Send key-up for every modifier and movement key the system still reads as down. A key-down sent with SendInput
-    stays down for the whole desktop until its key-up: a scenario that died between `@down ctrl` and `@up ctrl` left
-    Ctrl held (2026-11-20), so every later session typed Ctrl+letter chords into the console (nothing arrives, no hero
-    is selected), Enter opened chat, and Esc became Ctrl+Esc, the Start menu, which then took the foreground."""
-    user32.GetAsyncKeyState.restype = ctypes.c_short
-    stuck = [k for k, vk in _VK.items() if user32.GetAsyncKeyState(vk) & 0x8000]
-    for k in stuck:
-        _send(_key(SC[k], True))
+    """Send key-up for every modifier and movement key the system still reads as down. An injected key-down stays
+    down for the whole desktop until its key-up: a scenario that died between `@down ctrl` and `@up ctrl` left Ctrl
+    held (2026-11-20), so every later session typed Ctrl+letter chords into the console (nothing arrives, no hero is
+    selected), Enter opened chat, and Esc became Ctrl+Esc, the Start menu, which then took the foreground."""
+    stuck = D().keys_down(STUCK_KEYS)
+    D().keys(stuck, True)
     if stuck:
         print(f"console: released keys left held down by an earlier run: {', '.join(stuck)}")
         time.sleep(0.1)
@@ -288,19 +212,17 @@ def release_stuck():
 
 
 def release_held():
-    for k in sorted(HELD):
-        _send(_key(SC[k], True))
+    D().keys(sorted(HELD), True)
     HELD.clear()
 
 
 def ensure_focus():
     """Cheap check before each command or key: one call when the game is already in front."""
     hwnd = game_window()
-    user32.GetForegroundWindow.restype = wt.HWND
-    if hwnd and user32.GetForegroundWindow() == hwnd:
+    if hwnd and D().in_front(hwnd):
         guard()
         return
-    print(f"console: the game lost the foreground to {_describe(user32.GetForegroundWindow())}; taking it back")
+    print(f"console: the game lost the foreground to {_describe(D().foreground())}; taking it back")
     focus_game()
 
 
@@ -375,7 +297,7 @@ class Console:
             if wait_log(token, 3.0, start):
                 return
             print(f"console: probe {attempt} did not reach the console (in front: "
-                  f"{_describe(user32.GetForegroundWindow())}, blind state {self.blind})")
+                  f"{_describe(D().foreground())}, blind state {self.blind})")
             if attempt == 1:
                 self._track(None)      # forget any tracked state and read the screen again
                 release_stuck()
@@ -463,8 +385,7 @@ def _run_script(lines, key, out_dir, probe):
                 hwnd = find_window()
                 x, y, w, h = client_rect(hwnd)
                 write_png(os.path.join(out_dir, "harness_fail_game.png"), w, h, grab(x, y, w, h, hwnd))
-                vx, vy = user32.GetSystemMetrics(76), user32.GetSystemMetrics(77)
-                vw, vh = user32.GetSystemMetrics(78), user32.GetSystemMetrics(79)
+                vx, vy, vw, vh = D().desktop_rect()
                 write_png(os.path.join(out_dir, "harness_fail_desktop.png"), vw, vh, grab(vx, vy, vw, vh))
             except Exception as e:   # the evidence is a courtesy; the failure is what matters
                 print(f"console: could not save the failure shots ({e})")
@@ -497,16 +418,16 @@ def _run_script(lines, key, out_dir, probe):
             elif op == "hold":   # @hold <key[+key]> <name> <frames> <fps>: keys down for the whole burst
                 keys = parts[1].split("+")
                 for k in keys:
-                    _send(_key(SC[k], False))
+                    press(k, False)
                 try:
                     subprocess.run([sys.executable, "-I", os.path.join(HERE, "capture.py"), "burst",
                                     os.path.join(out_dir, parts[2]), "--frames", parts[3], "--fps", parts[4]], check=True)
                 finally:
                     for k in keys:
-                        _send(_key(SC[k], True))
+                        press(k, True)
             elif op in ("down", "up") and (ensure_focus() or True):   # @down <key[+key]> / @up <key[+key]>: hold game keys across later directives
                 for k in parts[1].split("+"):   # (a real key held while @mouse turns the view: no console on screen)
-                    _send(_key(SC[k], op == "up"))
+                    press(k, op == "up")
                     (HELD.discard if op == "up" else HELD.add)(k)
             elif op == "entity":   # @entity <name>: the bot the last citadel_create_unit made -> {entity}
                 import re
@@ -549,17 +470,11 @@ def _run_script(lines, key, out_dir, probe):
                 for k in range(1, steps + 1):
                     sx, sy = dx * k // steps - done_x, dy * k // steps - done_y
                     done_x += sx; done_y += sy
-                    i = INPUT(type=0)
-                    i.u.mi = MOUSEINPUT(sx, sy, 0, 0x1, 0, 0)   # MOUSEEVENTF_MOVE
-                    _send(i)
+                    D().mouse_move(sx, sy)
                     if steps > 1:
                         time.sleep(secs / steps)
-            elif op == "wheel":   # @wheel <notches>: mouse wheel, + away from you (120 per notch)
-                for _ in range(abs(int(parts[1]))):
-                    i = INPUT(type=0)
-                    i.u.mi = MOUSEINPUT(0, 0, ctypes.c_ulong(120 if int(parts[1]) > 0 else -120).value, 0x0800, 0, 0)
-                    _send(i)
-                    time.sleep(0.05)
+            elif op == "wheel":   # @wheel <notches>: mouse wheel, + away from you
+                D().wheel(int(parts[1]))
             elif op == "key":
                 ensure_focus()
                 hold = float(parts[2]) if len(parts) > 2 else 0.05
@@ -595,7 +510,7 @@ if __name__ == "__main__":
         sys.exit(__doc__)
     # One user of the game at a time (gamelock.py): take the game lock for --holder (else MAGICIAN_GAME_HOLDER, else
     # "anonymous") before typing anything. Exit 3 when another holder has the game; --wait-lock SECS waits instead.
-    # The lock stays with the holder across runs until stop_game.ps1 (or --release-lock on the last run).
+    # The lock stays with the holder across runs until stop_game.py (or --release-lock on the last run).
     holder, wait_lock, release_lock = None, 0.0, "--release-lock" in a
     if "--holder" in a:
         i = a.index("--holder"); holder = a[i + 1]; del a[i:i + 2]
@@ -610,6 +525,9 @@ if __name__ == "__main__":
     import gamelock
     holder = gamelock.holder_name(holder)
     os.environ["MAGICIAN_GAME_HOLDER"] = holder   # guard() checks every key against this holder's bound game
+    if a[0] != "--tail" and gameos.display_problem():   # refuse before the seat is taken, not halfway into a script
+        print(f"console: can't drive the game here: {gameos.display_problem()}", file=sys.stderr)
+        sys.exit(2)
     if a and a[0] != "--tail" and not gamelock.acquire(
             holder, os.path.basename(a[1]) if a[0] == "--script" and len(a) > 1 else "console", wait_lock):
         sys.exit(3)

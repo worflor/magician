@@ -5,93 +5,34 @@
     python -I capture.py sheet <in_dir> <out.png> --cols 6     # contact sheet of a burst
     python -I capture.py crop  <in.png> <out.png> x0 y0 x1 y1 [--zoom 2]
 
-Reads the window's own client area through PrintWindow, so a window on top of the game does not get into the frame;
-when PrintWindow fails it copies the area off the desktop instead. Works windowed and borderless; exclusive
-fullscreen can come back black, so launch.ps1 starts the game borderless. Zero dependencies: ctypes for GDI, zlib for PNG.
+On Windows it reads the window's own client area through PrintWindow, so a window on top of the game does not get
+into the frame; when PrintWindow fails it copies the area off the desktop instead. On X11 it reads the window with
+XGetImage (gameos.py). Works windowed and borderless; exclusive fullscreen can come back black, so launch.py starts the
+game borderless. Standard library only: ctypes for the system's own capture, zlib for PNG. `sheet` and `crop` read
+and write files only, and run anywhere.
 """
-import ctypes
-import ctypes.wintypes as wt
 import os
 import struct
 import sys
 import time
 import zlib
 
-user32 = ctypes.WinDLL("user32", use_last_error=True)
-gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
-user32.SetProcessDPIAware()
-
-# Typed signatures: handles are pointer-sized, and the default int return truncates them on 64-bit.
-for fn, res, args in [
-    (user32.GetDC, wt.HDC, [wt.HWND]),
-    (user32.ReleaseDC, ctypes.c_int, [wt.HWND, wt.HDC]),
-    (gdi32.CreateCompatibleDC, wt.HDC, [wt.HDC]),
-    (gdi32.CreateCompatibleBitmap, wt.HBITMAP, [wt.HDC, ctypes.c_int, ctypes.c_int]),
-    (gdi32.SelectObject, wt.HGDIOBJ, [wt.HDC, wt.HGDIOBJ]),
-    (gdi32.DeleteObject, wt.BOOL, [wt.HGDIOBJ]),
-    (gdi32.DeleteDC, wt.BOOL, [wt.HDC]),
-    (gdi32.BitBlt, wt.BOOL, [wt.HDC] + [ctypes.c_int] * 4 + [wt.HDC, ctypes.c_int, ctypes.c_int, wt.DWORD]),
-    (user32.PrintWindow, wt.BOOL, [wt.HWND, wt.HDC, wt.UINT]),
-    (gdi32.GetDIBits, ctypes.c_int, [wt.HDC, wt.HBITMAP, wt.UINT, wt.UINT, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]),
-]:
-    fn.restype, fn.argtypes = res, args
-
-SRCCOPY, CAPTUREBLT = 0x00CC0020, 0x40000000
-WNDENUMPROC = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gameos  # noqa: E402
 
 
 def find_window(title_part="Deadlock"):
-    found = []
-
-    def cb(hwnd, _):
-        if user32.IsWindowVisible(hwnd):
-            n = user32.GetWindowTextLengthW(hwnd)
-            buf = ctypes.create_unicode_buffer(n + 1)
-            user32.GetWindowTextW(hwnd, buf, n + 1)
-            cls = ctypes.create_unicode_buffer(256)
-            user32.GetClassNameW(hwnd, cls, 256)
-            # the game window's class is SDL_app; skip Steam, Explorer and editor windows that merely mention it
-            if title_part.lower() in buf.value.lower() and cls.value == "SDL_app":
-                found.append(hwnd)
-        return True
-
-    user32.EnumWindows(WNDENUMPROC(cb), 0)
-    return found[0] if found else None
+    """The game's window (on Windows, class SDL_app; under Proton, class steam_app_1422450), or None."""
+    return gameos.need_display().find_window(title_part)
 
 
 def client_rect(hwnd):
-    r = wt.RECT()
-    user32.GetClientRect(hwnd, ctypes.byref(r))
-    pt = wt.POINT(0, 0)
-    user32.ClientToScreen(hwnd, ctypes.byref(pt))
-    return pt.x, pt.y, r.right - r.left, r.bottom - r.top
+    return gameos.need_display().client_rect(hwnd)
 
 
 def grab(x, y, w, h, hwnd=None):
-    """BGRA rows, top-down. With hwnd: the window's own content through PrintWindow (PW_RENDERFULLCONTENT),
-    so windows stacked over the game (always-on-top tools, the desktop app) don't end up in the frame.
-    Without: a copy of the screen region."""
-    sdc = user32.GetDC(None)
-    mdc = gdi32.CreateCompatibleDC(sdc)
-    bmp = gdi32.CreateCompatibleBitmap(sdc, w, h)
-    old = gdi32.SelectObject(mdc, bmp)
-    if hwnd is None or not user32.PrintWindow(hwnd, mdc, 0x3):   # PW_CLIENTONLY | PW_RENDERFULLCONTENT
-        gdi32.BitBlt(mdc, 0, 0, w, h, sdc, x, y, SRCCOPY | CAPTUREBLT)
-
-    class BMI(ctypes.Structure):
-        _fields_ = [("biSize", wt.DWORD), ("biWidth", wt.LONG), ("biHeight", wt.LONG), ("biPlanes", wt.WORD),
-                    ("biBitCount", wt.WORD), ("biCompression", wt.DWORD), ("biSizeImage", wt.DWORD),
-                    ("biXPelsPerMeter", wt.LONG), ("biYPelsPerMeter", wt.LONG), ("biClrUsed", wt.DWORD),
-                    ("biClrImportant", wt.DWORD)]
-
-    bmi = BMI(ctypes.sizeof(BMI), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
-    buf = ctypes.create_string_buffer(w * h * 4)
-    gdi32.GetDIBits(mdc, bmp, 0, h, buf, ctypes.byref(bmi), 0)
-    gdi32.SelectObject(mdc, old)
-    gdi32.DeleteObject(bmp)
-    gdi32.DeleteDC(mdc)
-    user32.ReleaseDC(None, sdc)
-    return buf.raw
+    """BGRA rows, top-down: the window's own content with hwnd, else a copy of the screen region."""
+    return gameos.need_display().grab(x, y, w, h, hwnd)
 
 
 def write_png(path, w, h, bgra):
@@ -133,7 +74,7 @@ def read_png_rgb(path):
 def window_or_die():
     hwnd = find_window()
     if not hwnd:
-        sys.exit("capture: no Deadlock game window (class SDL_app) is open")
+        sys.exit("capture: no Deadlock game window is open")
     return (*client_rect(hwnd), None if "--screen" in sys.argv else hwnd)
 
 

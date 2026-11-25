@@ -150,11 +150,7 @@ def crc_of(path):
 
 
 def magician_exe():
-    for c in (os.environ.get("MAGICIAN_EXE"), os.path.join(TOOLKIT, "target", "release", "magician.exe"),
-              os.path.join(TOOLKIT, "target", "release", "magician")):
-        if c and os.path.isfile(c):
-            return c
-    return "magician"
+    return gamepaths.magician()
 
 
 def magician(*args):
@@ -253,9 +249,10 @@ def ours(st):
         raise Stop(9, f"NOT OURS: {why}; nothing done")
 
 
-def ps(script, *args, timeout=None):
-    return subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", os.path.join(HERE, script)]
-                          + [str(a) for a in args], capture_output=True, text=True, timeout=timeout)
+def tool(script, *args, timeout=None):
+    """One of this folder's tools (launch.py, stop_game.py) in this Python, its output kept."""
+    return subprocess.run([sys.executable, "-I", os.path.join(HERE, script)] + [str(a) for a in args],
+                          capture_output=True, text=True, timeout=timeout)
 
 
 def last_line(text, default="(no output)"):
@@ -280,6 +277,10 @@ def up(o):
     st = {"out": out, "holder": holder, "mod": mod["toml"], "mod_dir": mod["dir"], "slug": mod["slug"],
           "owner": mod["owner"], "owners": mod["owners"], "hero": hero, "key": o.get("key"), "runs": [], "up": False}
     say(f"mod {mod['slug']} ({mod['toml']}), holder {holder}, hero {hero or 'none'}")
+    import gameos
+    why = gameos.process_problem() or gameos.display_problem()
+    if why:   # before the seat is taken or anything is installed: a session that can't type or look is no session
+        raise Stop(2, f"can't drive the game on this machine: {why}")
     if not gamelock.acquire(holder, f"session {mod['slug']}", float(o.get("wait", 1800)), launching=True, say=say):
         raise Stop(3, "the game seat is someone else's (see above)")
     st["held"] = True
@@ -332,7 +333,8 @@ def _up(st, o, mod):
     st["launched_at"] = time.time()
     save(st)
     say("launching " + " ".join(extra))
-    r = ps("launch.ps1", "-Holder", holder, "-Timeout", o.get("timeout", 900), "-Width", w, "-Height", h, "-Extra", " ".join(extra))
+    r = tool("launch.py", "--holder", holder, "--timeout", o.get("timeout", 900), "--size", f"{w}x{h}",
+             *(["--extra", " ".join(extra)] if extra else []))
     say(last_line(r.stdout))
     if r.returncode == 3:
         st["held"] = False
@@ -472,7 +474,7 @@ def down_state(st):
         st["held"] = False
         save(st)
         if st.get("restore"):
-            raise Stop(9, f"the seat is no longer {holder}'s: the kept paks in {st['out']}\\restore were NOT put back")
+            raise Stop(9, f"the seat is no longer {holder}'s: the kept paks in {os.path.join(st['out'], 'restore')} were NOT put back")
         say("the seat is not this session's any more; nothing to stop")
         return 0
     try:
@@ -482,7 +484,7 @@ def down_state(st):
     if not gamelock.acquire(holder, "session hand-back", 0, hold=600, say=say):
         raise Stop(9, "the seat was taken during the hand-back")
     if gamelock.game_running():
-        r = ps("stop_game.ps1", "-Holder", holder, "-KeepLock", timeout=360)
+        r = tool("stop_game.py", "--holder", holder, "--keep-lock", timeout=360)
         say(last_line(r.stdout))
         if r.returncode == 3:
             raise Stop(9, "stop_game refused: the running game is not this session's (left alone)")
@@ -491,7 +493,7 @@ def down_state(st):
         gamelock.acquire(holder, "session hand-back", 0, hold=600, say=say)
         time.sleep(3)
     if gamelock.bound_alive(gamelock.read()):
-        raise Stop(1, "GAME STILL RUNNING: the seat is kept; stop it with stop_game.ps1 -Holder " + holder)
+        raise Stop(1, "GAME STILL RUNNING: the seat is kept; stop it with stop_game.py --holder " + holder)
     if st.get("restore"):
         restore_installs(st, holder)
     if not gamelock.release(holder, say=say):

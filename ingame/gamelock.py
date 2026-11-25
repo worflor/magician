@@ -4,22 +4,22 @@ Several pipelines drive the one retail game (launch, console scenarios, captures
 `map` or `selecthero` mid-scenario wrecks the first one's shots. The lock is a small JSON file naming the holder
 (a pipeline, a scenario, a caller):
 
-    <reference>\\work\\ingame-game.lock   (MAGICIAN_GAME_LOCK overrides; gamepaths.py resolves it as magician.exe does)
+    <reference>/work/ingame-game.lock   (MAGICIAN_GAME_LOCK overrides; gamepaths.py resolves it as magician does)
 
 Rules:
-- The holder is `--holder NAME`, else `$env:MAGICIAN_GAME_HOLDER`, else "anonymous" (all unnamed callers share one
-  name, so they do not exclude each other; name your pipeline to be protected from the others).
-- The game is bound to the lock: launch.ps1 records the pid (and start time) of the deadlock.exe it started
-  (`bind`). Only the holder, and only in that game, may type (console.py) or stop it (stop_game.ps1): a game the
+- The holder is `--holder NAME`, else the MAGICIAN_GAME_HOLDER environment variable, else "anonymous" (all unnamed
+  callers share one name, so they do not exclude each other; name your pipeline to be protected from the others).
+- The game is bound to the lock: launch.py records the pid (and start time) of the deadlock.exe it started
+  (`bind`). Only the holder, and only in that game, may type (console.py) or stop it (stop_game.py): a game the
   holder did not launch, or one left running by another pipeline, is never driven (`may_drive`). Adopting a game you
-  started yourself is explicit (launch.ps1 -Adopt).
+  started yourself is explicit (launch.py --adopt).
 - The lock is stale when its bound game has exited and no deadlock.exe is running, so a closed or crashed game frees
   it. Exceptions: a launch in progress (`launching`, at most LAUNCH_GRACE seconds), a lock taken moments ago
   (FRESH_GRACE), and a hold (`--hold`: a hand-back still working on the closed game's files).
 - A holder's release is refused while the game it launched is still running or exiting: the seat is free only once
   the process is gone, so the next holder can never launch beside (or be killed by) a game that is closing.
   `--leave-running` hands the seat back over a live game on purpose; the next holder still cannot drive it.
-- `stop_game.ps1` clears it. A caller that is not the holder is refused, and the lock names who holds it.
+- `stop_game.py` clears it. A caller that is not the holder is refused, and the lock names who holds it.
 
     python -I gamelock.py acquire [--holder NAME] [--what TEXT] [--wait SECS] [--launching] [--hold SECS]
     python -I gamelock.py bind [--holder NAME] [--pid N]      (the running deadlock.exe, or that one)
@@ -33,11 +33,11 @@ Exit codes: 0 ok, 3 held by someone else, the wait ran out, or refused (the reas
 """
 import json
 import os
-import subprocess
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # python -I leaves the script folder off the path
+import gameos  # noqa: E402
 import gamepaths  # noqa: E402
 
 LOCK = gamepaths.game_lock()
@@ -47,52 +47,18 @@ DEFAULT_HOLDER = "anonymous"
 
 
 def game_pids():
-    """The pids of every running deadlock.exe (tasklist, so no extra modules and no admin rights)."""
-    try:
-        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq deadlock.exe", "/NH", "/FO", "CSV"],
-                             capture_output=True, text=True).stdout
-    except OSError:
-        return []
-    pids = []
-    for line in out.splitlines():
-        cols = [c.strip('"') for c in line.split('","')]
-        if len(cols) > 1 and cols[0].lower().strip('"') == "deadlock.exe" and cols[1].isdigit():
-            pids.append(int(cols[1]))
-    return pids
+    """The pids of every running game (gameos.py: tasklist on Windows, /proc on Linux)."""
+    return gameos.game_pids()
 
 
 def game_running():
-    """Is deadlock.exe running?"""
+    """Is the game running?"""
     return bool(game_pids())
 
 
 def process_started(pid):
     """When process `pid` was created (Unix time), or None when it is not running (or cannot be asked)."""
-    if not isinstance(pid, int) or pid <= 0:
-        return None
-    if os.name != "nt":
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            return None
-        return 0.0
-    import ctypes
-    import ctypes.wintypes as wt
-    k = ctypes.WinDLL("kernel32", use_last_error=True)
-    k.OpenProcess.restype = wt.HANDLE
-    h = k.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
-    if not h:
-        return None
-    try:
-        code = wt.DWORD()
-        if not k.GetExitCodeProcess(wt.HANDLE(h), ctypes.byref(code)) or code.value != 259:   # STILL_ACTIVE
-            return None
-        made, a, b, c = wt.FILETIME(), wt.FILETIME(), wt.FILETIME(), wt.FILETIME()
-        if not k.GetProcessTimes(wt.HANDLE(h), ctypes.byref(made), ctypes.byref(a), ctypes.byref(b), ctypes.byref(c)):
-            return None
-        return ((made.dwHighDateTime << 32) | made.dwLowDateTime) / 1e7 - 11644473600.0
-    finally:
-        k.CloseHandle(wt.HANDLE(h))
+    return gameos.process_started(pid)
 
 
 def process_alive(pid, started=None):
@@ -146,7 +112,7 @@ def read(path=None):
 def is_stale(lock, running, now=None, alive=None):
     """No lock content, or no game running (unless a launch is still booting it, or the lock was just taken:
     a pipeline that takes the lock and then launches must not lose it to another pipeline in between).
-    A lock whose bound game is still alive is never stale, whatever tasklist said a moment ago."""
+    A lock whose bound game is still alive is never stale, whatever the process list said a moment ago."""
     if lock is None:
         return True
     if running or bound_alive(lock, alive):
@@ -205,7 +171,7 @@ def acquire(holder, what="", wait=0.0, launching=False, path=None, running=game_
             _write(path, lock, exclusive=False)
             return True
         if time.time() >= deadline:
-            say(f"game lock: the game is in use by {describe(lock)}. Wait for it, or ask them to run stop_game.ps1 "
+            say(f"game lock: the game is in use by {describe(lock)}. Wait for it, or ask them to run stop_game.py "
                 f"(you are '{holder}'; set MAGICIAN_GAME_HOLDER to name your pipeline)")
             return False
         if time.time() - said >= 30:
@@ -222,7 +188,7 @@ def release_refusal(lock, holder, leave_running=False, force=False, alive=None):
         return f"held by {describe(lock)}, not by '{holder}'"
     if not leave_running and bound_alive(lock, alive):
         return (f"the game '{holder}' launched (pid {lock['game_pid']}) is still running or exiting; the seat is free "
-                f"only once it is gone (stop_game.ps1 waits for that; --leave-running hands it back over a live game)")
+                f"only once it is gone (stop_game.py waits for that; --leave-running hands it back over a live game)")
     return None
 
 
@@ -275,14 +241,14 @@ def may_drive(lock, holder, pid, alive=None):
     seat must be the holder's, and the game the one bound to the seat at launch."""
     alive = alive or process_alive
     if lock is None:
-        return f"nobody holds the game seat; take it with launch.ps1 (or mod_session.py up), which binds the game it starts"
+        return f"nobody holds the game seat; take it with launch.py (or mod_session.py up), which binds the game it starts"
     if lock["holder"] != holder:
         return f"the game is in use by {describe(lock)} (you are '{holder}')"
     if not pid:
         return "no Deadlock window is running"
     if not isinstance(lock.get("game_pid"), int):
         return (f"'{holder}' holds the seat but no game is bound to it: this game (pid {pid}) was not launched by this "
-                f"holder. Launch through launch.ps1, or adopt your own instance with launch.ps1 -Adopt")
+                f"holder. Launch through launch.py, or adopt your own instance with launch.py --adopt")
     if lock["game_pid"] != pid or not alive(pid, lock.get("game_started")):
         return (f"the running game (pid {pid}) is not the one '{holder}' launched (pid {lock['game_pid']}); "
                 f"it belongs to someone else, or the seat's game has exited")

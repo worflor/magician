@@ -11,7 +11,7 @@ as the plan says. A stage plan films nothing: each beat's wall-clock start goes 
 cinema/replay.py films the take afterwards from free cameras, where a beat's demo tick is
 (wall time - take start) * 64, calibrated once.
 
-The caller holds the game seat (mod_session.py up, or launch.ps1) and the hero is selected; every key goes through
+The caller holds the game seat (mod_session.py up, or launch.py) and the hero is selected; every key goes through
 console.py's guard, so nothing reaches a game this holder did not launch.
 
 Plan lines (blank lines and # comments skipped), both kinds:
@@ -35,7 +35,6 @@ second apart that are the same picture mean the hero is not moving (a `setpos` s
 frozen for an hour of film, 2026-11-23). The take is marked FROZEN in its output and in <out>/frozen.tsv, and the
 run exits 8 at the end.
 """
-import ctypes
 import os
 import subprocess
 import sys
@@ -46,8 +45,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 MOVE_KEYS = ("w", "a", "s", "d")
-MOUSE = {"m1": (0x0002, 0x0004, 0), "m2": (0x0008, 0x0010, 0), "m3": (0x0020, 0x0040, 0), "m4": (0x0080, 0x0100, 1),
-         "m5": (0x0080, 0x0100, 2)}
+MOUSE = {"m1": 1, "m2": 2, "m3": 3, "m4": 4, "m5": 5}   # left, right, middle, back, forward (gameos.py)
 # degrees are approximate: the orbit's mouse units per degree vary by session (README: 15.5 one day, 23 another)
 CAMS = {"SIDE": (2100, 0), "FRONT": (4200, 0), "Q3": (3150, 0), "LOW": (4200, -260), "HIGH": (0, 500), "SIDE_L": (-2100, 0),
         "TURN_A": (700, 0), "TURN_B": (1400, 0), "TURN_C": (2800, 0), "TURN_D": (3500, 0)}
@@ -163,18 +161,11 @@ class Driver:
         self.frozen = []
 
     # input
-    def send_mouse(self, dx, dy, data, flags):
-        C = self.C
-        i = C.INPUT(type=0)
-        i.u.mi = C.MOUSEINPUT(dx, dy, data, flags, 0, 0)
-        ctypes.windll.user32.SendInput(1, ctypes.byref(i), ctypes.sizeof(i))
-
     def key(self, name, up):
         if name in MOUSE:
-            d, u, data = MOUSE[name]
-            self.send_mouse(0, 0, data, u if up else d)
+            self.C.D().button(MOUSE[name], up)
         else:
-            self.C._send(self.C._key(self.C.SC[name], up))
+            self.C.press(name, up)
         (self.down.discard if up else self.down.add)(name)
 
     def move(self, dx, dy, secs=0.25):
@@ -189,7 +180,7 @@ class Driver:
         for k in range(1, n + 1):
             tx, ty = round(dx * k / n), round(dy * k / n)
             if tx != ax or ty != ay:
-                self.send_mouse(tx - ax, ty - ay, 0, 0x0001)
+                self.C.D().mouse_move(tx - ax, ty - ay)
             ax, ay = tx, ty
             t += step
             while time.perf_counter() < t:
