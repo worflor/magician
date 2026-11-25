@@ -141,7 +141,7 @@ The case Magician is shaped around: a spare Windows box that is on anyway, with 
    magician patchday --capture
    ```
 
-   It snapshots the new build (every path and CRC, plus every skeleton's bones and every anim graph's parameters), checks that the game still mounts the addons folder, works out what changed under every installed pak since the last build a proof holds its bytes on (the mod's `proofs.tsv`), checks each mod's `mod.toml` targets, and ends with a verdict. On the 6861 to 6864 patch, with both skins last proven on 6861, it reads:
+   It snapshots the new build (every path and CRC, every skeleton's bones and every anim graph's parameters, and a hash of every executable, library and shader archive, so it can say whether a patch changed only data or the engine too), checks that the game still mounts the addons folder, works out what changed under every installed pak since the last build a proof holds its bytes on (the mod's `proofs.tsv`), checks each mod's `mod.toml` targets, and ends with a verdict. On the 6861 to 6864 patch, with both skins last proven on 6861, it reads:
 
    ```
    [3] drift: each mod from its last proven build -> installed 6864

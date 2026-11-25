@@ -113,6 +113,125 @@ fn param_delta(path: &str, then: &[String], now: &[String]) -> Vec<String> {
     gone.iter().map(|p| format!("{path}: control parameter '{p}' removed or renamed; anything driving it (an event, a clip selector) goes quiet")).collect()
 }
 
+// ------------------------------------------------------------------------------------------------ engine sidecar
+
+/// The code and shader archives a build's files are run by, per build (`<build>/engine.tsv`): the executables and
+/// libraries under `bin/win64` and `citadel/bin/win64`, every `shaders_*_dir.vpk` of `citadel` and `core`, and
+/// `gameinfo.gi` of both as shipped. A baseline says what data changed; this says whether the engine reading it did,
+/// which is what decides how hard an in-game re-prove should look. Paths are relative to the `game` folder, with `/`.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Engine {
+    pub build: String,
+    /// path -> (size, sha256); `None` when the file is in the set but its shipped bytes can't be known (a `gameinfo.gi`
+    /// an install has edited, with no stock backup of this build).
+    pub files: BTreeMap<String, Option<(u64, String)>>,
+}
+
+pub fn engine_path(reference: &Path, build: &str) -> PathBuf {
+    reference.join(build).join("engine.tsv")
+}
+
+/// The files of a `game` folder that are the engine, sorted: (path relative to `game`, absolute path).
+pub fn engine_files(game: &Path) -> Vec<(String, PathBuf)> {
+    let mut out: Vec<(String, PathBuf)> = Vec::new();
+    for dir in ["bin/win64", "citadel/bin/win64"] {
+        let abs = game.join(dir);
+        for e in std::fs::read_dir(&abs).into_iter().flatten().flatten() {
+            let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+            if e.path().is_file() && (name.ends_with(".dll") || name.ends_with(".exe")) {
+                out.push((format!("{dir}/{name}"), e.path()));
+            }
+        }
+    }
+    for dir in ["citadel", "core"] {
+        for e in std::fs::read_dir(game.join(dir)).into_iter().flatten().flatten() {
+            let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+            if e.path().is_file() && name.starts_with("shaders_") && name.ends_with("_dir.vpk") {
+                out.push((format!("{dir}/{name}"), e.path()));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+impl Engine {
+    pub fn write(&self, mut w: impl Write) -> std::io::Result<()> {
+        writeln!(w, "# magician engine build={} files={}", self.build, self.files.len())?;
+        for (path, f) in &self.files {
+            match f {
+                Some((size, sha)) => writeln!(w, "{path}\t{size}\t{sha}")?,
+                None => writeln!(w, "{path}\t-\t-")?,
+            }
+        }
+        Ok(())
+    }
+
+    pub fn parse(text: &str) -> Result<Engine, String> {
+        let mut e = Engine::default();
+        for (n, line) in text.lines().enumerate() {
+            let line = line.trim_end();
+            if line.is_empty() {
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix('#') {
+                if let Some(i) = rest.find("build=") {
+                    e.build = rest[i + 6..].split_whitespace().next().unwrap_or("").to_string();
+                }
+                continue;
+            }
+            let c: Vec<&str> = line.split('\t').collect();
+            let [path, size, sha] = c[..] else { return Err(format!("engine line {}: {} field(s), not 3", n + 1, c.len())) };
+            let f = match (size, sha) {
+                ("-", "-") => None,
+                (s, h) => Some((s.parse::<u64>().map_err(|_| format!("engine line {}: size '{s}'", n + 1))?, h.to_string())),
+            };
+            e.files.insert(path.to_string(), f);
+        }
+        Ok(e)
+    }
+
+    pub fn load(path: &Path) -> Result<Engine, String> {
+        Engine::parse(&std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?)
+    }
+}
+
+/// What changed in the engine between two builds.
+#[derive(Debug, Default, PartialEq)]
+pub struct EngineDelta {
+    pub changed: Vec<String>,
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    /// In both, but one side's bytes are not known: not called the same, not called changed.
+    pub unknown: Vec<String>,
+}
+
+impl EngineDelta {
+    pub fn same(&self) -> bool {
+        self.changed.is_empty() && self.added.is_empty() && self.removed.is_empty()
+    }
+    /// Every file that differs, in path order, for a report line.
+    pub fn files(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.changed.iter().chain(&self.added).chain(&self.removed).cloned().collect();
+        v.sort();
+        v
+    }
+}
+
+pub fn engine_delta(then: &Engine, now: &Engine) -> EngineDelta {
+    let mut d = EngineDelta::default();
+    for (p, a) in &then.files {
+        match (a, now.files.get(p)) {
+            (_, None) => d.removed.push(p.clone()),
+            (Some(a), Some(Some(b))) if a != b => d.changed.push(p.clone()),
+            (None, Some(_)) | (_, Some(None)) => d.unknown.push(p.clone()),
+            _ => {}
+        }
+    }
+    d.added = now.files.keys().filter(|p| !then.files.contains_key(*p)).cloned().collect();
+    d
+}
+
 // ------------------------------------------------------------------------------------------------ drift core
 
 /// What changed under one mod between two builds.
@@ -550,6 +669,45 @@ mod tests {
         r.write(&mut out).unwrap();
         assert_eq!(Rig::parse(&String::from_utf8(out).unwrap()).unwrap(), r);
         assert!(Rig::parse("bogus\tx\ty\n").is_err());
+    }
+
+    fn engine(build: &str, rows: &[(&str, Option<(u64, &str)>)]) -> Engine {
+        Engine { build: build.into(), files: rows.iter().map(|(p, f)| (p.to_string(), f.map(|(s, h)| (s, h.to_string())))).collect() }
+    }
+
+    #[test]
+    fn the_engine_sidecar_round_trips_and_says_data_only_or_engine_too() {
+        let then = engine("6866", &[("bin/win64/engine2.dll", Some((10, "aa"))), ("citadel/bin/win64/client.dll", Some((20, "bb"))), ("citadel/gameinfo.gi", None), ("core/shaders_pc_dir.vpk", Some((5, "cc")))]);
+        let mut out = Vec::new();
+        then.write(&mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.starts_with("# magician engine build=6866 files=4\n") && text.contains("citadel/gameinfo.gi\t-\t-\n"), "{text}");
+        assert_eq!(Engine::parse(&text).unwrap(), then);
+        assert!(Engine::parse("a\tb\n").is_err() && Engine::parse("a\tx\tff\n").is_err());
+        // data only: every executable and shader archive the same; an unknown gameinfo is not called a change
+        let d = engine_delta(&then, &engine("6868", &[("bin/win64/engine2.dll", Some((10, "aa"))), ("citadel/bin/win64/client.dll", Some((20, "bb"))), ("citadel/gameinfo.gi", Some((3, "dd"))), ("core/shaders_pc_dir.vpk", Some((5, "cc")))]));
+        assert!(d.same() && d.unknown == ["citadel/gameinfo.gi"], "{d:?}");
+        // engine too: a changed library, a new one, a removed shader archive
+        let now = engine("6868", &[("bin/win64/engine2.dll", Some((11, "ab"))), ("bin/win64/new.dll", Some((1, "ee"))), ("citadel/bin/win64/client.dll", Some((20, "bb"))), ("citadel/gameinfo.gi", None)]);
+        let d = engine_delta(&then, &now);
+        assert!(!d.same());
+        assert_eq!((d.changed.clone(), d.added.clone(), d.removed.clone()), (names(&["bin/win64/engine2.dll"]), names(&["bin/win64/new.dll"]), names(&["core/shaders_pc_dir.vpk"])));
+        assert_eq!(d.files(), names(&["bin/win64/engine2.dll", "bin/win64/new.dll", "core/shaders_pc_dir.vpk"]));
+    }
+
+    #[test]
+    fn the_engine_is_the_libraries_executables_and_shader_archives_that_ship() {
+        let g = std::env::temp_dir().join(format!("magician-engine-files-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&g);
+        for d in ["bin/win64", "citadel/bin/win64", "core"] {
+            std::fs::create_dir_all(g.join(d)).unwrap();
+        }
+        for f in ["bin/win64/engine2.dll", "bin/win64/deadlock.exe", "bin/win64/crash_0001.mdmp", "bin/win64/steam_appid.txt", "citadel/bin/win64/Server.dll", "citadel/shaders_vulkan_dir.vpk", "citadel/shaders_vulkan_000.vpk", "citadel/pak01_dir.vpk", "core/shaders_pc_dir.vpk"] {
+            std::fs::write(g.join(f), f).unwrap();
+        }
+        let got: Vec<String> = engine_files(&g).into_iter().map(|(p, _)| p).collect();
+        assert_eq!(got, names(&["bin/win64/deadlock.exe", "bin/win64/engine2.dll", "citadel/bin/win64/server.dll", "citadel/shaders_vulkan_dir.vpk", "core/shaders_pc_dir.vpk"]));
+        let _ = std::fs::remove_dir_all(&g);
     }
 
     #[test]

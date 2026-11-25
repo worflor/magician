@@ -86,6 +86,8 @@ and what was used is said on stderr. Anything given explicitly wins. A hero is n
 Every command:
   magician baseline [--game DIR] [--out FILE]   snapshot the installed build's file table (citadel + core) and, beside it,
                                                 rig.tsv (every skeleton's bones, every anim graph's control parameters)
+                                                and engine.tsv (size and sha256 of every executable, library and shader
+                                                archive the build ships, and gameinfo.gi as shipped)
   magician ls <vpk> [prefix]                    list files: path, crc, size
   magician refs <vpk> <path>                    what a compiled resource depends on, and whether each resolves
   magician dump <vpk> <path> [--block TAG]      a compiled file's KV3 (DATA by default) as text, or a texture header
@@ -179,8 +181,10 @@ Every command:
                                                 the patch-day check: baseline for the installed build (--capture writes it),
                                                 install state, every installed pak's drift grouped by mod and compared from
                                                 the last build a proof holds its installed bytes on (proofs.tsv; owners it installs
-                                                under other names in [mod] owners = [...]), `proven on N of M`; exit 1
-                                                broken, 4 re-prove, 0 clear
+                                                under other names in [mod] owners = [...]), `proven on N of M`, and per
+                                                era whether the engine changed too (`data only` / `engine too`, from
+                                                engine.tsv; it never changes the verdict); exit 1 broken, 4 re-prove,
+                                                0 clear
   magician prove <mod.toml> [--evidence DIR] [--build <build>] [--date YYYY-MM-DD] [--pak FILE]... [--json]
                                                 after the in-game pass was looked at: record a proof of the mod's bytes in
                                                 proofs.tsv beside the mod.toml (the build, the date, every file the install
@@ -568,7 +572,40 @@ fn capture_era(game: &Path, b: &Baseline, out: &Path) -> Result<Vec<String>, Str
     install::write_atomic(out, &text).map_err(|e| format!("{}: {e}", out.display()))?;
     let mut lines = vec![format!("build {} : {} files -> {}", b.build, b.files.len(), out.display())];
     lines.push(capture_rig(game, &b.build, &out.with_file_name("rig.tsv"))?);
+    lines.push(capture_engine(game, &b.build, &out.with_file_name("engine.tsv"))?);
     Ok(lines)
+}
+
+/// The engine sidecar (`engine.tsv`): size and sha256 of every executable, library and shader archive the build ships
+/// (patchday.rs, `Engine`), and of `gameinfo.gi` as shipped: the citadel one from its stock backup of this build, or
+/// as it is when no install has edited it; otherwise recorded as not known, never guessed.
+fn capture_engine(game: &Path, build: &str, out: &Path) -> Result<String, String> {
+    let mut e = patchday::Engine { build: build.to_string(), ..Default::default() };
+    for (rel, abs) in patchday::engine_files(game) {
+        let bytes = std::fs::read(&abs).map_err(|err| format!("{}: {err}", abs.display()))?;
+        e.files.insert(rel, Some((bytes.len() as u64, grade::sha256::hex(&bytes))));
+    }
+    let ip = install::Paths { citadel: game.join("citadel") };
+    let stock = |p: &Path| std::fs::read(p).ok().map(|b| (b.len() as u64, grade::sha256::hex(&b)));
+    let citadel_gi = if ip.backup(build).is_file() {
+        stock(&ip.backup(build))
+    } else {
+        std::fs::read_to_string(ip.gameinfo()).ok().filter(|t| install::add_addons_search_path(t).ok().flatten().is_some()).and_then(|_| stock(&ip.gameinfo()))
+    };
+    let mut unknown = "";
+    if ip.gameinfo().is_file() {
+        if citadel_gi.is_none() {
+            unknown = "; citadel/gameinfo.gi not known as shipped (an install edited it and no stock backup of this build exists)";
+        }
+        e.files.insert("citadel/gameinfo.gi".into(), citadel_gi);
+    }
+    if let Some(core) = stock(&game.join("core").join("gameinfo.gi")) {
+        e.files.insert("core/gameinfo.gi".into(), Some(core));
+    }
+    let mut text = Vec::new();
+    e.write(&mut text).map_err(|err| err.to_string())?;
+    install::write_atomic(out, &text).map_err(|err| format!("{}: {err}", out.display()))?;
+    Ok(format!("engine {build} : {} files (executables, libraries, shader archives, gameinfo){unknown} -> {}", e.files.len(), out.display()))
 }
 
 fn write_rig(game: &Path, build: &str, out: &Path) -> Result<(), String> {

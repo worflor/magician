@@ -220,6 +220,48 @@ fn patchday_compares_each_mod_from_its_last_proven_build() {
 }
 
 #[test]
+fn patchday_says_per_era_whether_the_engine_changed_too() {
+    let d = scratch("patchday-engine");
+    let game = fake_install(&d, "6864", b"valve clip");
+    let g = game.to_string_lossy().into_owned();
+    let bin = game.join("bin").join("win64");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bin.join("engine2.dll"), b"engine v1").unwrap();
+    std::fs::write(game.join("citadel").join("shaders_pc_dir.vpk"), b"shaders v1").unwrap();
+    assert_eq!(magician(&d, &["baseline", "--game", &g]).status.code(), Some(0));
+    let engine = d.join("reference").join("6864").join("engine.tsv");
+    let sidecar = std::fs::read_to_string(&engine).unwrap();
+    assert!(sidecar.contains("bin/win64/engine2.dll\t9\t") && sidecar.contains("citadel/shaders_pc_dir.vpk\t10\t"), "{sidecar}");
+    // gameinfo.gi already mounts the addons folder and there is no stock backup: not known as shipped, said so
+    assert!(sidecar.contains("citadel/gameinfo.gi\t-\t-"), "{sidecar}");
+    let toml = d.join("mod.toml");
+    std::fs::write(&toml, "[mod]\nslug = \"mod-a\"\n[proven]\nbuilds = []\n").unwrap();
+    let ts = toml.to_string_lossy().into_owned();
+    assert_eq!(magician(&d, &["prove", &ts, "--game", &g]).status.code(), Some(0));
+    // a data-only patch: the clip changes, the engine does not
+    std::fs::write(game.join("citadel").join("steam.inf"), "ClientVersion=6865\n").unwrap();
+    vpk::write(game.join("citadel").join("pak01_dir.vpk"), &[(CLIP.to_string(), b"valve clip v2".to_vec()), ("models/heroes/x/x.vmdl_c".to_string(), b"valve model".to_vec())]).unwrap();
+    let o = magician(&d, &["patchday", "--game", &g, "--mod", &ts, "--capture"]);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert_eq!(o.status.code(), Some(4), "{}", text(&o));
+    assert!(out.contains("engine 6864 -> 6865: data only: the same 2 executables, libraries and shader archives (1 not known as shipped on one side: citadel/gameinfo.gi)"), "{out}");
+    // the engine changes too: said per file, and the verdict is the same
+    std::fs::write(game.join("citadel").join("steam.inf"), "ClientVersion=6866\n").unwrap();
+    std::fs::write(bin.join("engine2.dll"), b"engine v2").unwrap();
+    let o = magician(&d, &["patchday", "--game", &g, "--mod", &ts, "--capture", "--json"]);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert_eq!(o.status.code(), Some(4), "the engine never decides the verdict: {}", text(&o));
+    assert!(out.contains("\"engine\":[{\"from\":\"6864\",\"to\":\"6866\",\"changed\":[\"bin/win64/engine2.dll\"],\"added\":[],\"removed\":[],\"unknown\":[\"citadel/gameinfo.gi\"],\"state\":\"engine-too\"}"), "{out}");
+    let o = magician(&d, &["patchday", "--game", &g, "--mod", &ts]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("engine 6864 -> 6866: engine too: 1 file(s) changed, added or removed: bin/win64/engine2.dll (1 not known"),"{}", text(&o));
+    // an era captured before the sidecar existed: no record, never a guess
+    std::fs::remove_file(&engine).unwrap();
+    let o = magician(&d, &["patchday", "--game", &g, "--mod", &ts]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("engine 6864 -> 6866: no engine record for build 6864"), "{}", text(&o));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
 fn prove_records_the_installed_bytes_and_the_evidence_and_release_copies_with_pak() {
     let d = scratch("prove");
     let game = fake_install(&d, "6865", b"valve clip").to_string_lossy().into_owned();

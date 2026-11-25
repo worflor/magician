@@ -56,6 +56,38 @@ fn installed_files(ledger: &[install::Installed], rows: &[(String, String, Optio
     Some(v)
 }
 
+/// Whether the engine changed between two builds, from their engine sidecars: a report line and its JSON. A build with
+/// no sidecar is said to have none, never guessed at.
+fn engine_report(reference: &Path, from: &str, to: &str) -> (String, String) {
+    let j = jsonout::Obj::new().str("from", from).str("to", to);
+    let (a, b) = (patchday::Engine::load(&patchday::engine_path(reference, from)), patchday::Engine::load(&patchday::engine_path(reference, to)));
+    let (a, b) = match (a, b) {
+        (Ok(a), Ok(b)) => (a, b),
+        (a, _) => {
+            let missing = if a.is_err() { from } else { to };
+            return (format!("engine {from} -> {to}: no engine record for build {missing}, so whether the engine changed is not known"), j.str("state", "unknown").str("no_record", missing).build());
+        }
+    };
+    let d = patchday::engine_delta(&a, &b);
+    let unknown = if d.unknown.is_empty() { String::new() } else { format!(" ({} not known as shipped on one side: {})", d.unknown.len(), d.unknown.join(", ")) };
+    let j = j.strs("changed", &d.changed).strs("added", &d.added).strs("removed", &d.removed).strs("unknown", &d.unknown);
+    if d.same() {
+        (format!("engine {from} -> {to}: data only: the same {} executables, libraries and shader archives{unknown}", b.files.len() - d.unknown.len()), j.str("state", "data-only").build())
+    } else {
+        let files = d.files();
+        let shown: Vec<&str> = files.iter().take(8).map(String::as_str).collect();
+        (
+            format!(
+                "engine {from} -> {to}: engine too: {} file(s) changed, added or removed: {}{}{unknown}. The mods' files are run by new code: look harder in game",
+                files.len(),
+                shown.join(", "),
+                if files.len() > 8 { format!(" and {} more (--json lists them)", files.len() - 8) } else { String::new() }
+            ),
+            j.str("state", "engine-too").build(),
+        )
+    }
+}
+
 /// The patch-day check: one command that answers "did the new build break our skins, and what must be re-proven".
 /// Each installed mod is compared from its own last proven build (its `mod.toml`), so a mod proven on the installed
 /// build is current. Exit 1 when something is broken, 4 when everything loads but something must be re-proven in
@@ -115,6 +147,18 @@ pub fn cmd_patchday(args: &[String]) -> R {
         say!("  rig sidecar present: {}", rpath.display());
         "present"
     };
+    // The engine sidecar: the executables and shader archives the data is run by.
+    let epath = patchday::engine_path(&reference, &installed);
+    let engine_state = if epath.is_file() {
+        say!("  engine sidecar present: {}", epath.display());
+        "present"
+    } else if capture {
+        say!("  {}", capture_engine(&game, &installed, &epath)?);
+        "captured"
+    } else {
+        say!("  no engine sidecar {}: whether the engine changed can't be said next patch; `magician patchday --capture` writes it", epath.display());
+        "missing"
+    };
     // The hero data as text, kept per build like the baseline: the next patch compares each mod's hero against it.
     let hpath = patchday::hero_data_path(&reference, &installed);
     if capture && !hpath.is_file() {
@@ -123,7 +167,10 @@ pub fn cmd_patchday(args: &[String]) -> R {
             Err(e) => say!("  hero data not captured ({e}): the next patch can't say what moved for a hero; it needs Source 2 Viewer"),
         }
     }
-    let doc = doc.raw("baseline", baseline.build()).raw("rig", jsonout::Obj::new().str("state", rig_state).str("path", &rpath.display().to_string()).build());
+    let doc = doc
+        .raw("baseline", baseline.build())
+        .raw("rig", jsonout::Obj::new().str("state", rig_state).str("path", &rpath.display().to_string()).build())
+        .raw("engine_sidecar", jsonout::Obj::new().str("state", engine_state).str("path", &epath.display().to_string()).build());
 
     // 2. Install state.
     say!("\n[2] install state");
@@ -245,6 +292,17 @@ pub fn cmd_patchday(args: &[String]) -> R {
             }
         }
     }
+    // Per era: did the engine change too, or only the data? It decides how hard to look in game, never the verdict.
+    let mut era_list: Vec<String> = eras.keys().cloned().chain(std::iter::once(previous.clone())).filter(|e| *e != installed).collect();
+    era_list.sort_by_key(|b| b.parse::<u64>().unwrap_or(0));
+    era_list.dedup();
+    let mut engine_json: Vec<String> = Vec::new();
+    for from in &era_list {
+        let (text, j) = engine_report(&reference, from, &installed);
+        say!("  {text}");
+        engine_json.push(j);
+    }
+    let doc = doc.raw("engine", jsonout::arr(engine_json));
     let mut reprove: Vec<String> = Vec::new();
     let mut mods_json: Vec<String> = Vec::new();
     for (owner, paks) in &by_owner {

@@ -110,6 +110,9 @@ pub fn checks(args: &[String]) -> Vec<Check> {
         if !rig.is_file() && base.is_file() {
             out.push(c("rig", State::Todo, format!("no rig sidecar for build {b}: drift can't name a renamed bone"), Some("magician baseline".into())));
         }
+        if !patchday::engine_path(&reference.path, b).is_file() && base.is_file() {
+            out.push(c("engine", State::Todo, format!("no engine sidecar for build {b}: the next patch day can't say whether the engine changed"), Some("magician patchday --capture   (writes only what is missing)".into())));
+        }
         let users = users_index_path(b);
         if users.is_file() {
             out.push(c("users", State::Ok, format!("users index for build {b}"), None));
