@@ -2,8 +2,8 @@
 //!
 //! Two kinds of toolkit folder, told apart by a `.git` in it:
 //!
-//! - **A release install** (the folder a release zip unpacks to): read the source's `VERSION`, and when it is newer
-//!   fetch the zip and `SHA256SUMS`, check the zip's SHA-256, unpack it beside the toolkit (`<toolkit>.update`), run the
+//! - **A release install** (the folder a release archive unpacks to): read the source's `VERSION`, and when it is newer
+//!   fetch the archive and `SHA256SUMS`, check its SHA-256, unpack it beside the toolkit (`<toolkit>.update`), run the
 //!   new `magician --version` from there, then swap the entries in. Each live entry moves into
 //!   `.magician-previous.partial` inside the toolkit and the staged one takes its place; a step that fails puts every
 //!   entry back. When the swap and a second `--version` of the installed executable hold, the folder is renamed

@@ -396,7 +396,7 @@ pub fn read_text(src: &Source, name: &str) -> Result<String, String> {
     }
 }
 
-/// A file of the release (the zip) written to `dest`: copied from a folder, or fetched, giving up when it stalls.
+/// A file of the release (the archive) written to `dest`: copied from a folder, or fetched, giving up when it stalls.
 pub fn fetch(src: &Source, name: &str, dest: &Path) -> Result<(), String> {
     src.usable()?;
     let at = src.join(name);

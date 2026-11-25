@@ -137,7 +137,7 @@ Every command:
                                                 references that don't resolve in the build (the installed one, or the
                                                 one --baseline holds)
   magician mesh <vpk> <model path> [--against valve|none] [--with <vpk>]... [--out DIR] [--glb FILE] [--no-png]
-                [--json-out FILE]               a compiled model's mesh verdict against Valve's (mesh rules M100-M147),
+                [--json-out FILE]               a compiled model's mesh verdict against Valve's (mesh rules M100-M148),
                                                 silhouettes, x-ray sheet; --glb proves the native decode against an
                                                 export; --json-out writes the verdict to a file as JSON
   magician cloth <vpk> <model path> [--against valve|none] [--shapes]
@@ -267,8 +267,8 @@ Every command:
                                                 is available, 3 could not check. This and `update` are the only commands
                                                 that touch the network, each step bounded to 10 s
   magician update [--dry-run] [--source LOCATION] [--json]
-                                                apply it, only when asked. A release install (the folder a release zip
-                                                unpacks to): fetch the zip and SHA256SUMS, check the zip's SHA-256, unpack
+                                                apply it, only when asked. A release install (the folder its archive
+                                                unpacks to): fetch the archive and SHA256SUMS, check its SHA-256, unpack
                                                 beside the toolkit, swap the files in keeping the previous ones, roll
                                                 everything back if a step fails. A git checkout: refuse with local
                                                 changes, no upstream or no fast-forward, else fast-forward and rebuild
@@ -293,7 +293,7 @@ FAIL, drift or patchday BROKEN, a scene patch that no longer fits the game, an e
 release whose lint failed, `grade --gate` with a blocker); 2 usage error (bad arguments, a missing file, a tool that is
 not there); 3 refused on purpose, nothing changed (lint errors at install, a game seat or build lock someone else
 holds, a slot another mod owns, an update that could not be fetched or verified); 4 re-prove: it loads, but must be
-proven in game on this build (drift, patchday); 5 an update is available (`update --check`, and nothing else).
+proven in game on this build (check, drift, patchday); 5 an update is available (`update --check`, and nothing else).
 The reason for 1, 2 and 3 follows `magician:` on stderr; with --json, a command that stops on one prints it as the one
 document on stdout too (schema magician.error/1). `--help` (or -h) after any command prints its usage and
 exits 0 without doing anything; `--version` prints the toolchain version.
