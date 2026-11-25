@@ -35,7 +35,7 @@ pub fn summary(c: &Cloth) -> Vec<(&'static str, String)> {
         ("nodes", format!("{} ({} chains, {} shape anchors)", c.node_count, chains.len(), anchors.len())),
         ("static", format!("{} ({} rotation-locked)", n(Kind::Static), c.rot_lock_static)),
         ("free", format!("{}", free.len())),
-        ("position-driven", format!("{}", n(Kind::Driven))),
+        ("position-driven", format!("{} (not simulated; on an extruded chain, joints' bone centres set between side nodes)", n(Kind::Driven))),
         ("goal attraction", if free.is_empty() { "-".into() } else { format!("mean {gm:.4}, max {gx:.4} (goal strength {:.3} mean)", gm.cbrt()) }),
         ("vertex attraction", if free.is_empty() { "-".into() } else { format!("mean {vm:.4}, max {vx:.4}") }),
         ("gravity", if free.is_empty() { "-".into() } else { format!("{gmin:.0} to {gmax:.0}") }),
@@ -93,7 +93,7 @@ pub fn report(path: &str, ours: &Cloth, valve: Option<&Cloth>, shapes: bool) -> 
         let Some(c) = c else { continue };
         let (chains, anchors) = cloth::chains(c);
         out.push(String::new());
-        out.push(format!("{side}: {} chains ({path}); goal in parentheses is the goal strength g, goal attraction = g^3; vertex attraction is the goal damping", chains.len()));
+        out.push(format!("{side}: {} chains ({path}); goal in parentheses is the goal strength g, goal attraction = g^3; vertex attraction is the goal damping; drvn (position-driven) nodes are not simulated: on an extruded chain they are the joints' bone centres, set between their two simulated side nodes (as on Valve's rope), not nodes that follow the skeleton", chains.len()));
         out.push(HEAD.to_string());
         out.extend(chains.iter().map(row));
         if !anchors.is_empty() {

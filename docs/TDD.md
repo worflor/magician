@@ -11,7 +11,7 @@ How Magician is built and why. What it is for is in [PDD.md](PDD.md); facts abou
 | Program | A mod: one or more VPKs built from an addon's sources, described by a `mod.toml` (`[target]` model and skeleton, `[proven] builds`) |
 | Link | Every reference a mod's compiled files make (the RERL of each resource), resolved against the mod plus the build |
 | Contract | What a replaced file must keep from Valve's file at the same path: bones, attachments, hitboxes (M062), the material and texture expectations of the mesh family |
-| Diagnostics | Lint rules M001 to M148, each with an in-game consequence and a fixture that triggers it |
+| Diagnostics | Lint rules M001 to M149, each with an in-game consequence and a fixture that triggers it |
 | Re-link on a new target | `drift` and `patchday`: what changed under a mod between two builds |
 | Test on hardware | The in-game harness (`ingame/`, `magician session` and `reprove`), recorded with `prove` as a proof of the bytes that were seen |
 
@@ -215,6 +215,15 @@ The decode is proven, not trusted: `magician mesh ... --glb <Source 2 Viewer exp
 - `mcp/`: Python stdlib.
 - `tools/`: `bundle.py` (player release bundles with `mod-interchange.json`; Pillow for previews) and `source.py` (a static Deadlock Mod Manager mod source from bundles), behind `magician bundle` and `magician source`; `scene_lump.py` (re-dress a UI scene map's entity lump through `magician dump` and back), `scene_install.ps1` and `scene_install.py` (the player-side scene installers bundles carry: Windows PowerShell 5.1 or Python 3 stdlib, no Magician), `s2v_mcp.py` (the Source 2 Viewer MCP server: started on Windows, where its GUI runs, and spoken to from anywhere), `rip_heroes.py` (hero models to glb for reference work, keyed by build, never committed); each keeps a `.ps1` caller.
 - `cinema/`: the dev-only film kit, with its own README.
+
+## How a rule earns its words
+
+A rule says what the game will do. Two pieces of machinery check that against the game, not against anyone's opinion, and keep what they find per build:
+
+- **The corpus** (`magician corpus`, `lint::corpus`): a rule's own test run over Valve's shipped content, which works by definition. It writes `<reference>/<build>/corpus.tsv`, and `magician rules` prints each calibration under its rule. A test that fires on Valve's content cannot tell a mod's fault from Valve's design, so it is not a rule, or not at that line. On 6868: M063's length test fails one Valve voice against another on 46% of the 79,572 pairs of emote lines two heroes share, so voice lines (`sounds/vo/`) are not judged by length; 15 attachment names sit on most of Valve's 43 hero models but not all; and a candidate cloth rule (a loose chain lighter than the hero's fall rises while he is airborne, which a skin's headband ribbons did in game) fires on 59 of Valve's 200 cloth groups, so it was not written.
+- **The witness** (`magician witness`, `witness.rs`): a mod's findings held against the console log of an in-game pass with `snd_showstart 1`, and a vanilla run of the same scenarios. The engine logs a resource it could not load, an attachment looked up and missing, the camera poses it zeroed, and every sound file it starts, so each finding is confirmed, contradicted, not reached (with what would reach it), a frame's (the log cannot say; the stock `witness` scenario is the probe) or a file fact. Every outcome goes into `<reference>/<build>/witness.tsv`, and `magician rules` prints each rule's record. The game's complaints that no finding predicted are listed too: what lint missed.
+
+The policy severities follow: **an error says the game will not load or play something**. It is held by a consequence the engine reports or a pass confirmed, or by a file fact that has that consequence by construction (a reference to a file no build ships). A fact whose consequence a file measure rules out is a warning that says the measure (M071 on Valve's own pixels); a fact whose consequence the game showed to be cosmetic is a warning that says what was seen. The changes made under this policy, with their evidence, are in the changelog under "judgement changed".
 
 ## Verification
 

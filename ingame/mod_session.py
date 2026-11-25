@@ -410,6 +410,21 @@ def newest_take(since):
     return files[-1] if files else None
 
 
+def with_hero(path, hero, d):
+    """A scenario that names `{hero}` (the session's hero key, `hero_lash`) as written for this session, in `d`; any
+    other scenario as it is. So one stock scenario can spawn a bot of whatever hero the mod is for."""
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    if "{hero}" not in text:
+        return path
+    if not hero:
+        raise Stop(2, f"{os.path.basename(path)} names {{hero}} and this session selected no hero")
+    out = os.path.join(d, os.path.basename(path))
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(text.replace("{hero}", hero))
+    return out
+
+
 def run(o, items):
     st = load(o["out"])
     os.environ["MAGICIAN_GAME_HOLDER"] = st["holder"]
@@ -428,6 +443,7 @@ def run(o, items):
         if path.endswith((".plan", ".stage")):
             cmd = [sys.executable, "-I", os.path.join(HERE, "takes.py"), "live" if path.endswith(".plan") else "stage", path, d] + key
         else:
+            path = with_hero(path, st.get("hero"), d)
             cmd = ([sys.executable, "-I", os.path.join(HERE, "console.py"), "--holder", st["holder"], "--script", path, "--out", d]
                    + key + (["--no-probe"] if o.get("no-probe") else []))
         with open(os.path.join(st["out"], f"run_{n}.log"), "w", encoding="utf-8") as f:

@@ -1,11 +1,11 @@
 ---
 name: using-magician
-description: Drive Magician, the headless toolchain for Deadlock (Valve, Source 2) mods, to validate, build, release, install, patch-check, re-prove, grade, bundle or start a mod. Use when a task mentions Deadlock mods, VPKs or paks, lint rules (M001-M148), a new Deadlock build or patch day, drift, proving a mod on a build, grading an overhaul, hero-page scenes, release bundles or a mod source, whether a person is pairing with you or the whole prompt is something like "validate the lash skins for the newest Deadlock release". Covers what Magician is for, the safe order of operations, exit codes, and how to report.
+description: Drive Magician, the headless toolchain for Deadlock (Valve, Source 2) mods, to validate, build, release, install, patch-check, re-prove, grade, bundle or start a mod. Use when a task mentions Deadlock mods, VPKs or paks, lint rules (M001-M149), a new Deadlock build or patch day, drift, proving a mod on a build, grading an overhaul, hero-page scenes, release bundles or a mod source, whether a person is pairing with you or the whole prompt is something like "validate the lash skins for the newest Deadlock release". Covers what Magician is for, the safe order of operations, exit codes, and how to report.
 ---
 
 # Using Magician
 
-Magician treats a Deadlock mod as a program and each game build as a compiler target. It builds mods reproducibly, lints them against the installed build (79 rules, each with its in-game consequence), works out what a new build changed under a mod, grades a hero mod (what it makes its own, identity, fair play, freshness, release gate) as one reproducible record, drives the retail game to film a mod, records which bytes were proven on which build, and installs or rolls back paks through a ledger. Every command is deterministic and its exit code means something, so you can act on results without a person watching.
+Magician treats a Deadlock mod as a program and each game build as a compiler target. It builds mods reproducibly, lints them against the installed build (80 rules, each with its in-game consequence), works out what a new build changed under a mod, grades a hero mod (what it makes its own, identity, fair play, freshness, release gate) as one reproducible record, drives the retail game to film a mod, records which bytes were proven on which build, and installs or rolls back paks through a ledger. Every command is deterministic and its exit code means something, so you can act on results without a person watching.
 
 **Good for:** checking a mod against the installed build; patch day (did Valve's update break anything, and what must be re-filmed); the in-game pass that re-proves a mod; building and releasing from an addon's sources; installing and removing paks safely; starting a mod folder for a hero; shipping hero-page scenes without Valve's bytes; packaging releases and a mod source for Deadlock Mod Manager.
 
@@ -83,6 +83,14 @@ magician reprove                         # every mod to re-prove: a vanilla pass
 magician reprove accept <pass folder>    # only after the contact sheets were looked at (rule 6)
 ```
 It holds the seat only while it plays, puts back any pak it took out, and gives each mod `ready`, `look` or `failed` (exit 0, 4, 1) in a report under `<reference>/work/passes/`. None of the three is proof: it judges warnings, not pictures. Open the contact sheets and say what you saw, or say that you could not look. `accept` refuses a pass that is not whole, not on the installed build, or not of the installed paks, then records the proof with the pass as evidence. One mod by hand: `magician session qa --mod <folder> --out <dir>`.
+
+**Is a finding true?** (a mod is BROKEN and someone asks whether it really is; rules 3 and 4 first):
+```
+magician session qa --mod <folder> --out <dir> --pak <pak> --as pak02_dir.vpk --restore [--force] witness   # the mod in, the stock probe, the pak out again
+magician session qa --mod <folder> --out <vanilla dir> witness                                              # the same probe without the mod (a mod already installed for that hero: --vanilla --restore)
+magician witness <pak> --log <dir>/console_witness.txt --vanilla <vanilla dir>/console_witness.txt
+```
+Each finding comes back confirmed (the game said it), contradicted, not reached (with what would reach it), a frame's (look at the frames it names) or a file fact, then the game's complaints no finding predicted. `--force` installs a pak lint refuses, only for that look; say that you used it. `magician rules` shows each rule's record on this build.
 
 **Build, release, install** (only when asked to ship or test in game; check the seat first, rule 3):
 ```

@@ -63,6 +63,19 @@ class Mod(unittest.TestCase):
         self.assertIsNone(S.resolve_item("nowhere", self.mod))
         self.assertEqual(S.item_name(own), "angles")
 
+    def test_a_scenario_that_names_the_hero_is_written_for_the_session(self):
+        src = os.path.join(self.mod, "source", "ingame", "scenarios", "bots.txt")
+        write(src, "citadel_create_unit {hero} enemy\n")
+        out = os.path.join(self.d, "out")
+        os.makedirs(out)
+        got = S.with_hero(src, "hero_haze", out)
+        with open(got, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "citadel_create_unit hero_haze enemy\n")
+        plain = os.path.join(self.mod, "source", "ingame", "scenarios", "own_pass.txt")
+        self.assertEqual(S.with_hero(plain, None, out), plain, "a scenario without {hero} runs as it is")
+        with self.assertRaises(S.Stop):
+            S.with_hero(src, None, out)
+
     def test_the_toolkit_examples_are_on_a_stock_hero_and_parse(self):
         import takes as T
         for n in ("enter_haze", "angles", "motion"):
@@ -170,7 +183,7 @@ class InstallAndRestore(unittest.TestCase):
         import scene_install
         bad = os.path.join(self.d, "bad", "pak50_dir.vpk")
         os.makedirs(os.path.dirname(bad))
-        scene_install.write_vpk(bad, {"sounds/Example/Loud.txt": b"capitals: a path-case error"})
+        scene_install.write_vpk(bad, {"sounds/Example/loud.vsnd_c": b"not a compiled resource, at a path with capitals"})
         rows = S.status_rows(self.st["installed_before"])
         with self.assertRaises(S.Stop) as e:
             S.install_for(dict(self.st), bad, "pak41_dir.vpk", "drill", restore=True)

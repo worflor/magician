@@ -1,0 +1,87 @@
+# The probe `magician witness` names: what lint's findings predict, put to the game so its console log can answer. Sound
+# starts are logged (snd_showstart), then a light and a heavy melee, every ability cast and fired, a bot of the mod's
+# own hero ({hero}, filled in by the session) beside a Haze bot for the overhead bars, and the head close from behind
+# and above. Any hero; run it after the session selected the hero, and run it again with --vanilla for the vanilla log
+# witness compares against.
+sv_cheats 1
+snd_showstart 1
+citadel_ability_cooldown_max 2
+citadel_hud_visible 1
+citadel_camera_overrides_enabled 0
+setpos 1375 -1360 20;setang 0 54 0
+@wait 1.5
+@shot witness/start
+# melee: tapped, then held (the charged swing)
++in_weapon1
+@wait 0.15
+-in_weapon1
+@wait 1.5
++in_weapon1
+@wait 1.2
+-in_weapon1
+@wait 1.8
+@shot witness/after_melee
+# every ability: armed, then fired (a thrown or aimed one fires on +attack)
++in_ability1
+@wait 0.4
+-in_ability1
+@wait 0.6
++attack
+@wait 0.3
+-attack
+@wait 2
+@shot witness/a1
++in_ability2
+@wait 0.4
+-in_ability2
+@wait 0.6
++attack
+@wait 0.3
+-attack
+@wait 2.5
+@shot witness/a2
++in_ability3
+@wait 0.4
+-in_ability3
+@wait 0.5
++attack
+@wait 0.3
+-attack
+@wait 3
+@shot witness/a3
++in_ability4
+@wait 0.5
+-in_ability4
+@wait 0.6
++attack
+@wait 0.3
+-attack
+@wait 3
+@shot witness/a4
+# bots: the mod's hero and Haze, enemies so they face the camera, for the overhead bars
+setpos 1375 -1360 20;setang 8 54 0
+@wait 1
+citadel_bot_brain_disable_movement 1
+citadel_bot_brain_disable_attacks 1
+citadel_create_unit {hero} enemy
+@wait 4
+setang 8 44 0
+@wait 1
+citadel_create_unit hero_haze enemy
+@wait 4
+setang 6 49 0
+@wait 2
+@shot witness/bots_bars
+# the head close from behind and above (openings a gameplay camera could find)
+setpos 1375 -1360 20;setang 35 54 0
+citadel_camera_overrides_enabled 1;citadel_camera_override_x_offset -70;citadel_camera_override_y_offset 0;citadel_camera_override_fov 50
+@wait 1
+@shot witness/head_down35
+setang 60 54 0
+@wait 1
+@shot witness/head_down60
+setang -20 54 0
+@wait 1
+@shot witness/head_up20
+citadel_camera_overrides_enabled 0;citadel_camera_override_x_offset -135;citadel_camera_override_y_offset -34;citadel_camera_override_z_offset 0;citadel_camera_override_fov 90
+@wait 1

@@ -46,6 +46,8 @@ mod cli;
 mod checkcmd;
 mod diffcmd;
 mod clothcmd;
+mod corpuscmd;
+mod witness;
 mod doctor;
 mod frontdoor;
 mod gamefiles;
@@ -142,6 +144,10 @@ Every command:
   magician dump <vpk> <path> [--block TAG]      a compiled file's KV3 (DATA by default) as text, or a texture header
   magician dump --text FILE                     re-print a KV3 text file (e.g. a decompile) in the same form, to diff
   magician index [--game DIR] [--out FILE]      build the users index (who uses each game file) for shared-file lint
+  magician corpus [--game DIR] [--out FILE]     calibrate the rules on Valve's own content: how often each calibrated
+                                                rule's test fires on the installed build's heroes, which are known to
+                                                work (cloth in the air, voice line length, attachments); writes
+                                                <reference>/<build>/corpus.tsv, which `rules` reads
   magician kv <vpk> <prefix> <key> [--block TAG]  every scalar under a key containing <key>, across files (evidence)
   magician textures <vpk> [prefix] [--list]     texture formats and non-power-of-two sizes, per top folder
   magician scan <vpk> [prefix] [--baseline FILE]
@@ -168,8 +174,18 @@ Every command:
                                                 referenced file with no source left in them is M032 (an addon root's
                                                 magician.allow is read when no --allow is given); --users names the
                                                 users index (default: the build's, which `magician index` writes)
+  magician witness <pak>... --log FILE [--vanilla FILE] [--pass NAME]
+                                                hold the paks' lint findings (with lint's options) against what the game
+                                                said in an in-game pass: --log is that pass's console.log (snd_showstart
+                                                on), --vanilla the same scenarios' log without the mod; each finding is
+                                                confirmed, contradicted, not reached (with what would reach it), a
+                                                frame's (with the probe) or a file fact, and the game's complaints no
+                                                finding predicted are listed; every outcome is added to
+                                                <reference>/<build>/witness.tsv under --pass (default: the log's folder)
   magician pack <src_dir> <out/pakNN_dir.vpk>   deterministic single-file VPK, then lint it (with lint's options)
-  magician rules [--json]                       list lint rules and what each means in-game
+  magician rules [--json]                       list lint rules and what each means in-game, with each rule's record
+                                                on the installed build: Valve's own content it fires on (`corpus`) and
+                                                what the game confirmed or contradicted (`witness`)
   magician footprint <hero> [--list]            everything a hero is made of, from the game's own data
   magician grade <pak>... [--hero <hero> | --mod <mod.toml>] [--target BUILD] [--light | --findings FILE] [--allow FILE]...
                 [--addon-root DIR]... [--scene-root DIR]... [--gate] [--json] [--record-out FILE] [--baseline FILE]
@@ -322,7 +338,7 @@ use cli::{Shared, Takers};
 
 /// The commands that read the game folder (the game itself, its build, its ledger or its hero table).
 const GAME_TAKERS: &[&str] = &[
-    "doctor", "new", "init", "check", "baseline", "index", "scan", "mesh", "cloth", "lint", "pack", "footprint", "grade", "install", "uninstall", "scene", "build", "release",
+    "doctor", "new", "init", "check", "baseline", "index", "corpus", "witness", "scan", "mesh", "cloth", "lint", "pack", "footprint", "grade", "install", "uninstall", "scene", "build", "release",
     "drift", "patchday", "prove", "paths",
 ];
 
@@ -345,7 +361,7 @@ const SHARED: &[Shared] = &[
 
 /// Commands that run another command's work with their own arguments, and so take its options too: pack, build and
 /// install lint the pak they made or were given.
-const INHERITS: &[(&str, &str)] = &[("pack", "lint"), ("install", "lint"), ("build", "lint")];
+const INHERITS: &[(&str, &str)] = &[("pack", "lint"), ("install", "lint"), ("build", "lint"), ("witness", "lint")];
 
 /// The whole usage text, with the section on the shared options written from `SHARED`.
 static USAGE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| format!("{USAGE_HEAD}\n\n{}\n{USAGE_TAIL}", cli::shared_section(SHARED)));
@@ -425,6 +441,8 @@ fn dispatch(args: &[String]) -> R {
         Some("dump") => cmd_dump(&args[1..]),
         Some("kv") => cmd_kv(&args[1..]),
         Some("index") => cmd_index(&args[1..]),
+        Some("corpus") => cmd_corpus(&args[1..]),
+        Some("witness") => cmd_witness(&args[1..]),
         Some("textures") => cmd_textures(&args[1..]),
         Some("mesh") => cmd_mesh(&args[1..]),
         Some("cloth") => compare_game(&args[1..]).and_then(|g| clothcmd::cmd_cloth(&args[1..], &g)).map_err(Stop::from),
@@ -563,7 +581,7 @@ fn flag(args: &[String], name: &str) -> Option<String> {
 }
 /// Every command `main` dispatches, for "did you mean" on a typo.
 const COMMANDS: &[&str] = &[
-    "baseline", "ls", "diff", "refs", "dump", "kv", "index", "textures", "mesh", "cloth", "lint", "cache", "pack", "rules", "scan", "footprint", "grade", "rubric",
+    "baseline", "ls", "diff", "refs", "dump", "kv", "index", "corpus", "witness", "textures", "mesh", "cloth", "lint", "cache", "pack", "rules", "scan", "footprint", "grade", "rubric",
     "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "update", "help", "session", "reprove", "bundle", "source",
 ];
 
@@ -1374,6 +1392,158 @@ fn cmd_index(args: &[String]) -> R {
         "build {build}: {} compiled files, {} references, {} owners, {} files with users -> {} ({:.0}s)",
         s.files, s.edges, s.owners, s.targets, out.display(), t.elapsed().as_secs_f64()
     );
+    Ok(ExitCode::SUCCESS)
+}
+
+fn cmd_corpus(args: &[String]) -> R {
+    let game = game_dir(args)?;
+    let build = game_build(&game)?;
+    let out = flag(args, "--out").map(PathBuf::from).unwrap_or_else(|| reference_root().join(&build).join("corpus.tsv"));
+    let base = installed_baseline(&game)?;
+    Ok(corpuscmd::run(&game, &build, &out, &base)?)
+}
+
+fn cmd_witness(args: &[String]) -> R {
+    use witness::Outcome;
+    let paks: Vec<PathBuf> = positional(args).into_iter().map(PathBuf::from).collect();
+    if paks.is_empty() {
+        return Err(Stop::Usage("witness <pak>... --log FILE: name the paks the pass ran with".into()));
+    }
+    let read_log = |flag_name: &str| -> Result<Option<witness::Log>, Stop> {
+        match flag(args, flag_name) {
+            None => Ok(None),
+            Some(p) => std::fs::read(&p).map(|b| Some(witness::parse_log(&String::from_utf8_lossy(&b)))).map_err(|e| Stop::Usage(format!("{flag_name} {p}: {e}"))),
+        }
+    };
+    let log_path = flag(args, "--log").ok_or_else(|| Stop::Usage("witness needs --log <the pass's console log>".into()))?;
+    let log = read_log("--log")?.unwrap_or_default();
+    let vanilla = read_log("--vanilla")?;
+    let pass = flag(args, "--pass").unwrap_or_else(|| Path::new(&log_path).parent().map(|p| p.display().to_string()).unwrap_or_default());
+    // lint each pak as `lint` would, its report muted
+    QUIET.store(true, Ordering::Relaxed);
+    let runs: Result<Vec<LintOut>, Stop> = paks.iter().map(|p| lint_run(p, args)).collect();
+    QUIET.store(false, Ordering::Relaxed);
+    let runs = runs?;
+    let build = runs.first().map(|r| r.build.clone()).unwrap_or_default();
+    let gf = game_files(args, &build)?;
+    // every event the game defines, so an event's files include those its bases play (Valve's melee swings name no
+    // file of their own: Hero.Default.Melee.Charged plays them)
+    let base = load_base(args)?;
+    let mut game_events: std::collections::HashMap<String, resource::kv3::Value> = std::collections::HashMap::new();
+    let mut evfiles: Vec<&String> = base.files.keys().filter(|k| k.starts_with("soundevents/") && k.ends_with(".vsndevts_c")).collect();
+    evfiles.sort();
+    for p in evfiles {
+        if let Some(Ok(resource::kv3::Value::Object(evs))) = lint::Game::read(&gf, p).as_deref().and_then(|d| resource::kv3_block(d, b"DATA")) {
+            for (k, v) in evs {
+                game_events.entry(k).or_insert(v);
+            }
+        }
+    }
+    let lookup = |n: &str| game_events.get(n).cloned();
+    let resolved = |kv: &resource::kv3::Value| -> std::collections::BTreeMap<String, Vec<String>> {
+        witness::event_files(kv)
+            .into_iter()
+            .map(|(e, mut files)| {
+                let own_base = kv.get(&e).and_then(|d| d.get("base")).cloned();
+                // the event's bases as this file names them, then on through the game's own
+                let mut todo: Vec<String> = match own_base {
+                    Some(resource::kv3::Value::Str(s)) => vec![s],
+                    Some(resource::kv3::Value::Array(a)) => a.iter().filter_map(|x| x.get("event_name").and_then(resource::kv3::Value::as_str).map(String::from)).collect(),
+                    _ => Vec::new(),
+                };
+                let mut seen = std::collections::BTreeSet::new();
+                while let Some(b) = todo.pop() {
+                    for anc in lint::deep::base_closure(&b, &lookup) {
+                        if seen.insert(anc.clone()) {
+                            if let Some(def) = game_events.get(&anc) {
+                                files.extend(lint::deep::vsnd_refs(def));
+                            }
+                        }
+                    }
+                }
+                files.sort();
+                files.dedup();
+                (e, files)
+            })
+            .collect()
+    };
+    let (mut ours, mut valve, mut models) = (std::collections::BTreeMap::new(), std::collections::BTreeMap::new(), Vec::new());
+    for p in &paks {
+        let v = open(p)?;
+        for f in ModFile::from_vpk(&v).map_err(|e| e.to_string())? {
+            if f.path.ends_with(".vmdl_c") {
+                models.push(f.path.clone());
+            }
+            if f.path.ends_with(".vsndevts_c") {
+                if let Some(Ok(kv)) = resource::kv3_block(&f.data, b"DATA") {
+                    ours.insert(f.path.clone(), resolved(&kv));
+                }
+                if let Some(Ok(kv)) = lint::Game::read(&gf, &f.path).as_deref().and_then(|d| resource::kv3_block(d, b"DATA")) {
+                    valve.insert(f.path.clone(), resolved(&kv));
+                }
+            }
+        }
+    }
+    let findings: Vec<lint::Finding> = runs.iter().flat_map(|r| r.r.kept.iter().cloned().chain(r.r.allowed.iter().map(|(f, _)| f.clone()))).collect();
+    let ev = witness::Evidence { log: &log, vanilla: vanilla.as_ref(), ours: &ours, valve: &valve, models: &models };
+    let judged: Vec<(lint::Finding, Outcome, String)> = findings
+        .iter()
+        .filter(|f| f.severity > Severity::Info)
+        .map(|f| {
+            let (o, why) = witness::judge(f, &ev);
+            (f.clone(), o, why)
+        })
+        .collect();
+    say!(
+        "witness: {} finding(s) of {} pak(s) against the pass in {}{}",
+        judged.len(),
+        paks.len(),
+        pass,
+        if vanilla.is_some() { ", with a vanilla run" } else { ", no vanilla run (an event that played nothing stays not reached)" }
+    );
+    for o in [Outcome::Confirmed, Outcome::Contradicted, Outcome::NotReached] {
+        let these: Vec<_> = judged.iter().filter(|(_, x, _)| *x == o).collect();
+        if these.is_empty() {
+            continue;
+        }
+        say!("{}:", o.word());
+        for (f, _, why) in these {
+            say!("  {} {:<26} {}\n        {}: {}", if f.severity == Severity::Error { "error" } else { "warn " }, format!("{} {}", f.code, f.name), f.path.as_deref().unwrap_or("(vpk)"), f.message, why);
+        }
+    }
+    let mut frames: std::collections::BTreeMap<(&str, Outcome), (usize, &str)> = std::collections::BTreeMap::new();
+    for (f, o, why) in judged.iter().filter(|(_, x, _)| matches!(x, Outcome::Frame | Outcome::FileFact)) {
+        frames.entry((f.code, *o)).or_insert((0, why.as_str())).0 += 1;
+    }
+    if !frames.is_empty() {
+        say!("the log cannot say (a frame's: look; a file fact: the files settle it):");
+        for ((code, o), (n, why)) in frames {
+            say!("  {code} x{n} {}: {why}", o.word());
+        }
+    }
+    let missed = witness::unpredicted(&ev, &findings);
+    say!(
+        "the game's complaints no finding predicted{}: {}",
+        if vanilla.is_some() { " (vanilla's own left out)" } else { " (no vanilla run: the game's own are among them)" },
+        if missed.is_empty() { "none".to_string() } else { missed.len().to_string() }
+    );
+    for m in &missed {
+        say!("  {m}");
+    }
+    say!("by rule:");
+    for (code, sev, counts) in witness::tally(&judged) {
+        let parts: Vec<String> = counts.iter().map(|(o, n)| format!("{n} {}", o.word())).collect();
+        say!("  {} {code}  {}", if sev == Severity::Error { "error" } else { "warn " }, parts.join(", "));
+    }
+    let ledger = reference_root().join(&build).join("witness.tsv");
+    if let Some(d) = ledger.parent() {
+        std::fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
+    }
+    let mut text = std::fs::read_to_string(&ledger).unwrap_or_default();
+    text.push_str(&witness::ledger_rows(&build, &pass, &judged));
+    let tmp = ledger.with_extension("tsv.partial");
+    std::fs::write(&tmp, &text).and_then(|_| std::fs::rename(&tmp, &ledger)).map_err(|e| format!("{}: {e}", ledger.display()))?;
+    say!("-> {}", ledger.display());
     Ok(ExitCode::SUCCESS)
 }
 
@@ -2651,8 +2821,20 @@ fn cmd_rules(_args: &[String]) -> R {
         out!("{}", jsonout::rules());
         return Ok(ExitCode::SUCCESS);
     }
+    // each rule's record on the installed build, when there is one: Valve's own content it fires on, and what the game
+    // said of its findings in witnessed passes
+    let build = game_dir(_args).ok().and_then(|g| game_build(&g).ok());
+    let read = |f: &str| build.as_ref().and_then(|b| std::fs::read_to_string(reference_root().join(b).join(f)).ok()).unwrap_or_default();
+    let corpus = lint::corpus::read_calibrations(&read("corpus.tsv"));
+    let record = build.as_ref().map(|b| witness::record(&read("witness.tsv"), b)).unwrap_or_default();
     for r in RULES {
         say!("{} {:<26} {:?}\n     {}", r.code, r.name, r.severity, r.in_game);
+        for (_, fires, of, reading) in corpus.iter().filter(|c| c.0 == r.code) {
+            say!("     on Valve's own content ({}): fires on {fires} of {of}: {reading}", build.as_deref().unwrap_or(""));
+        }
+        if let Some([c, x, n, f]) = record.get(r.code) {
+            say!("     witnessed in game ({}): {c} confirmed, {x} contradicted, {n} not reached, {f} for a frame or the files", build.as_deref().unwrap_or(""));
+        }
     }
     say!("\nThe severities are each rule's own. Fair play is lenient unless the policy enforces it ([fair_play] enforce = true): until then the fair-play rules ({}; M062 for hitboxes only) and M144 report as warnings.", grade::rubric::FAIR_PLAY_RULES.join(" "));
     Ok(ExitCode::SUCCESS)
