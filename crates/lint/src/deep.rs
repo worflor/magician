@@ -459,20 +459,55 @@ fn first_position(sig: &str) -> Option<[f64; 3]> {
     (v.len() == 3).then(|| [v[0], v[1], v[2]])
 }
 
-/// Whether our attachment sits at Valve's position with its axes turned round (Valve's x, y, z as our z, x, y or
-/// y, z, x): the mark of an export that moved the attachment between a Y-up and a Z-up frame. Said beside the
+/// The first rotation of an attachment signature (`... rot x,y,z,w;...`), as a quaternion.
+fn first_rotation(sig: &str) -> Option<[f64; 4]> {
+    let r = sig.split(" rot ").nth(1)?.split([';', ' ']).next()?;
+    let v: Vec<f64> = r.split(',').map(|x| x.parse().ok()).collect::<Option<_>>()?;
+    (v.len() == 4).then(|| [v[0], v[1], v[2], v[3]])
+}
+
+/// The Hamilton product a * b of two quaternions written x, y, z, w.
+fn qmul(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
+    let ([ax, ay, az, aw], [bx, by, bz, bw]) = (a, b);
+    [
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    ]
+}
+
+/// The message said once an attachment is Valve's own, turned by an exporter's change of frame.
+pub const AXES_TURNED: &str = "that is Valve's attachment with its axes in another order: it came through a Y-up/Z-up swap on export (a compile of Valve's own attachments keeps Valve's numbers)";
+
+/// Whether our attachment is Valve's with its axes turned round: at Valve's position with x, y, z read as y, z, x (or
+/// z, x, y), or at Valve's position (the origin, often) with Valve's rotation turned by the same 120 degrees about
+/// (1, 1, 1). The mark of an export that moved the attachments between a Y-up and a Z-up frame. Said beside the
 /// finding, since the cause and the fix are the same for every attachment it explains.
 fn axes_turned(ours: &str, valve: &str) -> Option<&'static str> {
     let (o, v) = (first_position(ours)?, first_position(valve)?);
-    let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() <= 0.02);
-    if near(o, v) || v.iter().all(|x| x.abs() <= 0.02) {
-        return None;
+    let near = |a: &[f64], b: &[f64]| a.iter().zip(b).all(|(x, y)| (x - y).abs() <= 0.02);
+    // the two cycles of the axes: where Valve's position goes, and the rotation that takes it there
+    let cycles: [([f64; 3], [f64; 4]); 2] = [([v[1], v[2], v[0]], [-0.5, -0.5, -0.5, 0.5]), ([v[2], v[0], v[1]], [0.5, 0.5, 0.5, 0.5])];
+    let at_origin = v.iter().all(|x| x.abs() <= 0.02);
+    if !near(&o, &v) && !at_origin && cycles.iter().any(|(p, _)| near(&o, p)) {
+        return Some(AXES_TURNED);
     }
-    if near(o, [v[1], v[2], v[0]]) || near(o, [v[2], v[0], v[1]]) {
-        Some("that is Valve's position with its axes in another order: the attachment came through a Y-up/Z-up swap on export (a compile of Valve's own attachments keeps Valve's numbers)")
-    } else {
-        None
-    }
+    // the same place, the rotation turned: compared up to sign, since q and -q are one rotation
+    let (Some(qo), Some(qv)) = (first_rotation(ours), first_rotation(valve)) else { return None };
+    let same_q = |a: [f64; 4], b: [f64; 4]| near(&a, &b) || near(&a, &b.map(|x| -x));
+    let turned = cycles.iter().any(|(p, c)| (near(&o, p) || near(&o, &v)) && same_q(qo, qmul(*c, qv)));
+    (turned && !same_q(qo, qv)).then_some(AXES_TURNED)
+}
+
+/// An attachment signature as a person reads it: only the influences it has, so `on root_motion at 0,46,0;0,0,0;0,0,0
+/// rot ...;0,0,0,1;0,0,0,1` (three slots, one used) reads `on root_motion at 0,46,0 rot ...`.
+pub fn show_attachment(sig: &str) -> String {
+    let Some((head, rest)) = sig.split_once(" at ") else { return sig.to_string() };
+    let Some((at, rot)) = rest.split_once(" rot ") else { return sig.to_string() };
+    let used = head.trim_start_matches("on ").split('+').filter(|s| !s.is_empty()).count().max(1);
+    let take = |s: &str| s.split(';').take(used).collect::<Vec<_>>().join(";");
+    format!("{head} at {} rot {}", take(at), take(rot))
 }
 
 /// Contract breaches of `ours` against Valve's model (M062). Added bones are allowed (cloth chains, model-only
@@ -504,9 +539,14 @@ pub fn contract_breaches(ours: &Contract, valve: &Contract) -> Vec<String> {
                 out.push(format!("{kind} '{n}' missing"));
             } else if let Some(bad) = have.iter().find(|h| !want.contains(h)) {
                 let theirs = want.iter().find(|w| !have.contains(w)).unwrap_or(sig);
-                let turned = if kind == "attachment" { axes_turned(bad, theirs) } else { None };
-                out.push(format!("{kind} '{n}' changed: {bad} (Valve's {theirs}){}", turned.map(|t| format!("; {t}")).unwrap_or_default()));
+                if kind == "attachment" {
+                    let turned = axes_turned(bad, theirs);
+                    out.push(format!("{kind} '{n}' changed: {} (Valve's {}){}", show_attachment(bad), show_attachment(theirs), turned.map(|t| format!("; {t}")).unwrap_or_default()));
+                } else {
+                    out.push(format!("{kind} '{n}' changed: {bad} (Valve's {theirs})"));
+                }
             } else if let Some(lost) = want.iter().find(|w| !have.contains(w)) {
+                let lost = if kind == "attachment" { show_attachment(lost) } else { lost.clone() };
                 out.push(format!("{kind} '{n}' missing: Valve's model has another of that name, {lost}"));
             }
         }

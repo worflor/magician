@@ -160,6 +160,22 @@ fn m031_orphan_new_file() {
 }
 
 #[test]
+fn m031_says_when_a_voice_line_is_one_valve_records_for_other_heroes() {
+    // Real shape (a voice mod): lines named as Valve names them, for pings this hero has no line for
+    let g = base("6868", &[("sounds/vo/astro/ping/astro_ping_see_yamato.vsnd_c", 1), ("sounds/vo/fencer/ping/fencer_ping_affermative_01.vsnd_c", 2)]);
+    let f = run(vec![
+        file("sounds/vo/fencer/ping/fencer_ping_see_yamato.vsnd_c", res(&[])),
+        file("sounds/vo/fencer/ping/fencer_ping_affermative_02.vsnd_c", res(&[])),
+    ], Some(&g), None);
+    let mut m031: Vec<&str> = f.iter().filter(|x| x.code == "M031").map(|x| x.message.as_str()).collect();
+    m031.sort();
+    assert_eq!(m031, vec![
+        "neither replaces a game file nor is referenced by the mod",
+        "neither replaces a game file nor is referenced by the mod: a line Valve records for other heroes (sounds/vo/astro/ping/astro_ping_see_yamato.vsnd), not for fencer, so no sound event plays it",
+    ]);
+}
+
+#[test]
 fn m040_original_changed_since_build() {
     let then = base("6800", &[(MODEL, 1), (MAT, 99), (TEX, 3)]);
     let now = game();
@@ -632,13 +648,20 @@ fn m062_says_when_an_attachment_is_valve_s_with_its_axes_turned() {
     let valve = c("10.43,10.89,90.36");
     let turned = deep::contract_breaches(&c("10.89,90.36,10.43"), &valve);
     assert_eq!(turned.len(), 1);
-    assert!(turned[0].starts_with("attachment 'zipline' changed: ") && turned[0].ends_with("; that is Valve's position with its axes in another order: the attachment came through a Y-up/Z-up swap on export (a compile of Valve's own attachments keeps Valve's numbers)"), "{turned:?}");
+    assert_eq!(turned[0], format!("attachment 'zipline' changed: on root_motion at 10.89,90.36,10.43 rot 0.00,0.00,0.00,1.00 (Valve's on root_motion at 10.43,10.89,90.36 rot 0.00,0.00,0.00,1.00); {}", deep::AXES_TURNED), "the unused influence slots are left out");
     // moved, not turned: the finding alone
     let moved = deep::contract_breaches(&c("10.43,10.89,80.00"), &valve);
     assert!(moved.len() == 1 && moved[0].ends_with(")"), "{moved:?}");
-    // an attachment at the origin has no axes to turn
-    let origin = c("0.00,0.00,0.00");
-    assert!(deep::contract_breaches(&deep::Contract { attachments: vec![("zipline".into(), "on root_motion at 0.00,0.00,0.00;0.00,0.00,0.00 rot 0.50,0.50,0.50,0.50".into())], ..Default::default() }, &origin)[0].ends_with(")"));
+    // At the origin it is the rotation that shows it: Valve's turned by the same 120 degrees about (1, 1, 1), which
+    // the exporter put on every attachment (real numbers: Valve's identity as -0.5,-0.5,-0.5,0.5, and Valve's
+    // 0,0.71,0,0.71 as 0,0,-0.71,0.71).
+    let r = |at: &str, rot: &str| deep::Contract { attachments: vec![("a".into(), format!("on root_motion at {at};0.00,0.00,0.00 rot {rot};0.00,0.00,0.00,1.00"))], ..Default::default() };
+    let o = "0.00,0.00,0.00";
+    assert!(deep::contract_breaches(&r(o, "-0.50,-0.50,-0.50,0.50"), &r(o, "0.00,0.00,0.00,1.00"))[0].ends_with(deep::AXES_TURNED));
+    assert!(deep::contract_breaches(&r(o, "0.00,0.00,-0.71,0.71"), &r(o, "0.00,0.71,0.00,0.71"))[0].ends_with(deep::AXES_TURNED));
+    assert!(deep::contract_breaches(&r("-33.12,82.80,-82.80", "-0.50,-0.50,-0.50,0.50"), &r("-82.80,-33.12,82.80", "0.00,0.00,0.00,1.00"))[0].ends_with(deep::AXES_TURNED));
+    // another rotation at the origin is a change, not a turn
+    assert!(deep::contract_breaches(&r(o, "0.71,0.00,0.00,0.71"), &r(o, "0.00,0.00,0.00,1.00"))[0].ends_with(")"));
 }
 
 #[test]
