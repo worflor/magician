@@ -261,7 +261,9 @@ Compile-clean is not proof. A mod is done when it has been seen working in the g
 - `qa/` and `harness/` check and render models offline in Blender: x-ray, lookdev, motion and hole detection, contact sheets.
 - [`cinema/`](cinema/README.md) is an optional, dev-only film kit for trailers and stills: a scene file becomes an animatic, then a frame-exact render from a SourceTV take of the retail game. Nothing else depends on it, and it is never installed during QA or play.
 
-A mod's scenarios, QA configs and scene patches live with the mod; this repository carries worked examples on a stock hero (Haze). [Maid Lash](https://woflo.dev/deadlock-skins/maid-lash/), a released Lash skin, is built, graded, proven and shipped with this loop.
+A mod's scenarios, QA configs and scene patches live with the mod; this repository carries worked examples on a stock hero (Haze).
+
+Three full hero skins are made with this toolchain. One is public: [Maid Lash](https://woflo.dev/deadlock-skins/maid-lash/), built, graded, proven on every game build since its release and published through this loop. Two more are in production.
 
 ### A proof belongs to bytes
 
