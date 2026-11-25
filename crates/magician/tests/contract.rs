@@ -977,7 +977,10 @@ fn update_check_exits_5_for_an_available_update_and_nothing_else_does() {
         dir.to_string_lossy().into_owned()
     };
     let check = |src: &str| magician(&d, &["update", "--check", "--source", src]).status.code();
-    assert_eq!(check(&release("current", &me)), Some(0));
+    // a build that could not read its own commit (git missing, or a worktree whose git folder this system can't
+    // open) can't be told from the release, which counts as an update (update::compare)
+    let unknown = me.lines().any(|l| l.trim() == "commit = unknown");
+    assert_eq!(check(&release("current", &me)), Some(if unknown { 5 } else { 0 }));
     assert_eq!(check(&release("newer", &me.replace(&format!("version = {}", env!("CARGO_PKG_VERSION")), "version = 99.0.0"))), Some(5));
     assert_eq!(check(&release("older", &me.replace(&format!("version = {}", env!("CARGO_PKG_VERSION")), "version = 0.0.1"))), Some(0), "a build newer than the latest release is ahead, not behind");
     assert_eq!(check(&d.join("no-release").to_string_lossy()), Some(3), "could not check");
