@@ -80,30 +80,46 @@ When something is BROKEN, uninstall that mod while you fix it (next section) so 
 
 ## Re-proving in game, quickly
 
-One launch for every mod. Take the game lock under your pipeline's name, plan the whole session, and give it back as soon as the captures are taken ([ingame/README.md](../ingame/README.md), "One user of the game at a time"):
+One command plays every mod that needs it and writes one report:
 
 ```
-$env:MAGICIAN_GAME_HOLDER = "patchday"
-powershell -ExecutionPolicy Bypass -File ingame\launch.ps1 -Extra "+map new_player_basics"
-python -I ingame\console.py --script ingame\scenarios\enter_haze.txt
+python -I ingame\reprove.py --plan       # what would run, and what cannot; launches nothing
+python -I ingame\reprove.py              # the mods `patchday` says to re-prove (or --mod <folder> for each one you name)
 ```
 
-Then per mod (`python -I ingame\mod_session.py qa --mod <mod folder> --out <dir> [a b c]`, or `ingame\qa_run.ps1 -Mod <mod folder> [-Scenarios a,b,c]`, launches into the sandbox as the mod's hero and runs its pass into a folder with contact sheets and a warnings index. For a mod on another hero, run that hero's `enter_<hero>.txt` first; the neutral example is `enter_haze.txt`).
+It runs the patch-day check itself first (`patchday --capture --json`, so a build seen for the first time gets its baseline, and nothing is launched while something is BROKEN). Then, one mod after another, holding the game seat only while it plays:
 
-Patch day changes animation clips and graphs first, so motion comes first. About 5 minutes of game time per mod. Each mod's pass is the `[ingame] pass` list in its `mod.toml`, run with `python -I ingame\mod_session.py qa --mod <mod folder> --out <dir>`; the scenarios live with the mod they are for ([ingame/README.md](../ingame/README.md); `enter_haze.txt`, `angles.txt` and `motion.txt` here are the neutral examples). Maid Lash's, minimum, in order:
+1. a vanilla pass, when this build has no vanilla log for the mod's hero and map yet: the mod's paks out, the same scenarios, the log saved as `vanilla_<build>_<hero>_<map>.log`, the paks put back exactly (`install --status` is compared with before; a pass that cannot put them back stops the whole run);
+2. the mod's pass: the `[ingame] pass` list of its `mod.toml`, into `<reference>\work\passes\<slug>\<build>-<date>-<time>\` with contact sheets, crash dumps and `index.md`;
+3. the pass's console warnings against the vanilla log (`logdiff.py`).
 
-| Skin | Pass | What you are looking for |
+The report (`reprove-<build>-<date>-<time>.md`, and `.json`, schema `magician.reprove/1`, in the passes folder) gives each mod a state:
+
+| State | Means | Exit code |
 |---|---|---|
-| Maid Lash (`maid-lash`) | `lash_angles,lash_turntable,lash_motion,lash_abilities` | Skirt and cloth follow the new clips with no snap, no T-pose or error model, ability poses still read; no holes from the new angles |
+| `ready` | every scenario ran and the mod adds no warning over vanilla on this build | 0 when every mod is |
+| `look` | it ran, and it adds warnings or they could not be compared; the report lists them | 4 |
+| `failed` | a scenario failed (a frozen hero is code 8), the game crashed, the session could not run, or the mod has no `[ingame] pass` | 1 |
 
-Full pass (when drift touched geometry, a rig or hero data): the mod's `[ingame] pass` plus every scenario it keeps. The hero-page scene (`lash.vpk`) is a map archive: re-prove it by hovering the hero in the menu; the first hover can draw nothing for about 8 s (give it one warm-up hover).
+None of the three proves a mod. The pictures are not judged (below), so someone looks at the contact sheets: a person, or an agent that can read images. Patch day changes animation clips and graphs first, so look at motion first: cloth following the new clips with no snap, no T-pose or error model, ability poses that still read. Compile-clean is not proof, and neither is `ready`.
 
-Then:
+Then record it:
 
-- `mod_session.py qa` writes `index.md` with the console warnings that touch the mod's files (each once, with a count, and whether vanilla prints it too) and the warnings the mod adds over vanilla (`logdiff.py`). A vanilla baseline belongs to a build and a scene (the hero and the map). The new build has none on patch day, so the diff falls back to the newest older build's for the same scene and says so on its first line; what Valve's update added or dropped then reads as the mod's. Take the new one first: `python -I ingame\mod_session.py qa --vanilla --restore --mod <mod folder> --out <dir>` takes the mod's paks out, runs the same pass, saves the log as `vanilla_<build>_<scene>.log` and puts the paks back exactly (it compares `install --status` before and after).
-- Look at the contact sheets. Compile-clean is not proof.
-- `ingame\stop_game.ps1` (clears the lock; it quits through the console first, then kills; check `gamelock.py status` before saying the seat is free).
-- `M prove model-replacements\maid-lash\mod.toml` and the same for every other mod you re-proved, then commit each `mod.toml`. `prove` writes the build into `[proven] builds = [...]` on its one line and keeps the comment; run it only after the frames were looked at. Maid Lash records 6864 (`proven on 1 of 1 builds`); a new mod starts at `proven on 0 of N` until its first `prove`. The next `patchday` reports a proven mod current, and its grade loses `stale(...)`.
+```
+python -I ingame\reprove.py accept <pass folder>
+```
+
+`accept` refuses a vanilla pass, a pass with a failed scenario, a pass filmed on another build, and a pass whose paks are not the ones installed now. Otherwise it runs `magician prove` for the pass's mod and leaves an `ACCEPTED` note in the folder. Commit each `mod.toml` afterwards.
+
+About 5 minutes of game time for a pass of four scenarios; a mod's first pass on a build costs two (the vanilla one). The pieces can be run by hand: `python -I ingame\mod_session.py qa --mod <mod folder> --out <dir> [--vanilla --restore]`, `python -I ingame\logdiff.py --build N --scene <hero>_<map> --mod <console log>`. A scenario is looked up in the mod's own folders first, then in `ingame\scenarios` (the stock-hero examples `enter_haze.txt`, `angles.txt`, `motion.txt`).
+
+What a pass does not cover: the hero-page scene is a map archive, re-proved by hovering the hero in the menu (the first hover can draw nothing for about 8 s; give it one warm-up hover). When drift touched geometry, a rig or hero data, run every scenario the mod keeps, not only its pass list.
+
+### Why stills are not compared
+
+Comparing a pass's stills with the last accepted pass's was built and measured on build 6866 (2026-11-24) and taken out again. Each 1920x1080 still was cut into a 32 by 18 grid and a cell counted as changed when it differed by more than 12 grey levels. Two passes of the same pak, minutes apart, differed in 3 to 13% of the cells of the same still. The skin against vanilla Lash, the largest change a pass can show, differed in 3 to 17%. Comparing each cell's average colour instead narrowed the first and not enough: cells over 30 levels apart were 0 to 2.1% between identical passes and 1.9 to 8.5% between skin and vanilla.
+
+The scenarios fix the camera and the hero's place; they do not fix the moment. The idle sway moves every high-contrast edge of the hero by a few pixels, and the neon signs, the sky and the embers never hold still. No threshold separates that from a real change, and a comparison that passes a broken material would be worse than none. It would take scenarios that freeze the hero at a known frame of a known clip to make stills comparable; until then the look is a person's or an agent's.
 
 ## Rolling back
 

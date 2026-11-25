@@ -111,7 +111,8 @@ def write_png(path, w, h, bgra):
 
 def read_png_rgb(path):
     """Minimal reader for the PNGs this tool writes (8-bit RGB, filter 0 rows)."""
-    data = open(path, "rb").read()
+    with open(path, "rb") as f:
+        data = f.read()
     pos, idat, w, h = 8, b"", 0, 0
     while pos < len(data):
         n = struct.unpack(">I", data[pos:pos + 4])[0]
