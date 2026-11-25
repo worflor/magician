@@ -55,8 +55,12 @@ try {
         $dirty = git status --porcelain --untracked-files=no
         if ($dirty) { throw "the tree has local changes; commit them (or pass -AllowDirty for a local trial):`n$dirty" }
     }
-    cargo build --release -p magician
-    if ($LASTEXITCODE -ne 0) { throw "cargo build --release failed" }
+    # cargo reports progress on stderr, which Windows PowerShell 5.1 would turn into an error under "Stop"
+    $ErrorActionPreference = "Continue"
+    cargo build --release -p magician 2>&1 | ForEach-Object { Write-Host "$_" }
+    $built = $LASTEXITCODE
+    $ErrorActionPreference = "Stop"
+    if ($built -ne 0) { throw "cargo build --release failed" }
     $target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root "target" }
     $exe = Join-Path (Join-Path $target "release") $exeName
     if (-not (Test-Path $exe)) { throw "no $exe after the build" }
