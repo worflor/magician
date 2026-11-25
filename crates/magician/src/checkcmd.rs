@@ -41,7 +41,13 @@ pub fn cmd_check(args: &[String]) -> R {
     let build = game_build(&game.path)?;
     let paks = ctx.paks(Some(&game.path));
     if paks.is_empty() {
-        return Err(Stop::Usage(format!("{} names no pak: list it under [mod] as paks = [...], put it beside its mod.toml, or install it", ctx.label())));
+        // A mod started with `magician new` has sources and no pak yet: say that, and how to make the first one.
+        let has_addon = ctx.dir.join("addon").is_dir() || grade::manifest::string(&ctx.text, "mod", "addon").is_some();
+        return Err(Stop::Usage(if has_addon {
+            format!("{} has no pak yet, so there is nothing to check: build the first one from its addon with `magician release --out pak10_dir.vpk` in {} (it lands beside the mod.toml, where check finds it)", ctx.label(), ctx.dir.display())
+        } else {
+            format!("{} names no pak: list it under [mod] as paks = [...], put it beside its mod.toml, or install it", ctx.label())
+        }));
     }
     errln!("magician: {}: {} ({})", ctx.label(), ctx.toml.display(), ctx.found);
     for p in &paks {

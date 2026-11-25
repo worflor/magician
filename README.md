@@ -33,6 +33,15 @@ magician                           # the game it found, the mod of this folder, 
 magician doctor                    # every part of the setup, one line each, with the fix for any gap
 ```
 
+To start a skin from nothing, `magician new <hero>` writes a mod folder for that hero from the installed game's own data: a `mod.toml` whose `[target]` is the hero's real model and skeleton, an `addon\` laid out at the game's paths with `.gitignore` files that keep Valve-derived work (a model document made from Valve's, meshes on Valve's skeleton, renders on Valve's body, mixes over Valve's audio) out of git, a `package\` that `tools/bundle.py` takes once there is a pak, two in-game scenarios for the hero, and a README with the next commands. It copies no Valve file and never writes into a folder that exists:
+
+```
+magician new lash --author you     # .\lash-skin\: mod.toml, addon\, package\, source\ingame\scenarios\, README.md
+cd lash-skin
+magician                           # "no pak yet", and the command that builds the first one
+magician release --out pak10_dir.vpk
+```
+
 A mod is a folder with a `mod.toml` in it. If you have a pak and nothing else, `init` writes one, taking the hero from the files the pak replaces; from then on every command run in that folder (or below it) knows the mod, its paks, its hero and its allowances, and says on stderr what it used:
 
 ```

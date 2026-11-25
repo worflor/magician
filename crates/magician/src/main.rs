@@ -54,6 +54,7 @@ mod lock;
 mod markcmd;
 mod meshcmd;
 mod modctx;
+mod newcmd;
 mod out;
 mod patchcmd;
 mod patchday;
@@ -69,6 +70,13 @@ Magician is a headless toolchain for creating, validating, and maintaining Deadl
 Start here:
   magician doctor [--mod mod.toml] [--json]     this machine's setup, one line each with its fix: the game and its build,
                                                 the baseline, the viewer, the CSDK, the policy, the mod of this folder
+  magician new <hero> [--slug NAME] [--dir DIR] [--name NAME] [--author NAME]
+                                                start a skin from nothing: a mod folder (DIR/<slug>, default
+                                                <hero>-skin) with a mod.toml whose [target] is the hero's real model and
+                                                skeleton, an addon folder at the game's paths with .gitignore files that
+                                                keep Valve-derived files out of git, a package for tools/bundle.py, two
+                                                in-game scenarios and a README with the next commands; never writes into
+                                                a folder that exists, never copies a Valve file
   magician init [<pak> | <addon dir>] [--out DIR] [--hero HERO] [--slug SLUG] [--name NAME] [--force]
                                                 write a mod.toml for a pak (or the paks here) or an addon's sources: the
                                                 hero from the files it replaces, slug and name from the folder
@@ -306,6 +314,7 @@ fn dispatch(args: &[String]) -> R {
         Some("sign") => markcmd::cmd_sign(&args[1..]).map_err(Stop::from),
         Some("paths") => cmd_paths(&args[1..]),
         Some("init") => initcmd::cmd_init(&args[1..]),
+        Some("new") => newcmd::cmd_new(&args[1..]),
         Some("doctor") => doctor::cmd_doctor(&args[1..]),
         Some("check") => checkcmd::cmd_check(&args[1..]),
         Some("verify") => markcmd::cmd_verify(&args[1..]).map_err(Stop::from),
@@ -327,16 +336,24 @@ fn orientation() -> String {
         Err(_) => o += "  game  not found: `magician doctor` says how to point Magician at it\n",
     }
     let ctx = modctx::ModCtx::discover();
+    let game = paths::game(None).ok().map(|g| g.path);
+    let no_pak = ctx.as_ref().is_some_and(|m| m.paks(game.as_deref()).is_empty());
     match &ctx {
+        Some(m) if no_pak => o += &format!("  mod   {}, {} ({}); no pak yet\n", m.label(), m.toml.display(), m.found),
         Some(m) => o += &format!("  mod   {}, {} ({})\n", m.label(), m.toml.display(), m.found),
         None => o += "  mod   none here (no mod.toml in this folder or above it)\n",
     }
     o += "\nNext:\n";
     o += "  magician doctor              is this machine ready? one line per part, each with its fix\n";
-    if ctx.is_some() {
+    if no_pak {
+        o += "  magician release --out pak10_dir.vpk\n                               build its first pak from its addon (needs the CSDK; README.md says how to link it)\n";
+        o += "  magician check               then this mod on the installed build: lint, grade, drift, scenes; one verdict\n";
+        o += "  magician install             then put its pak in the game (lints first; never under a running game)\n";
+    } else if ctx.is_some() {
         o += "  magician check               this mod on the installed build: lint, grade, drift, scenes; one verdict\n";
         o += "  magician install             put its pak in the game (lints first; never under a running game)\n";
     } else {
+        o += "  magician new <hero>          start a skin from nothing: a mod folder for that hero\n";
         o += "  magician init <pak>          describe a mod in a mod.toml, then run magician from its folder\n";
         o += "  magician check <mod folder>  a mod on the installed build: lint, grade, drift, scenes; one verdict\n";
     }
@@ -414,7 +431,7 @@ fn flag(args: &[String], name: &str) -> Option<String> {
 /// Every command `main` dispatches, for "did you mean" on a typo.
 const COMMANDS: &[&str] = &[
     "baseline", "ls", "refs", "dump", "kv", "index", "textures", "mesh", "cloth", "lint", "cache", "pack", "rules", "scan", "footprint", "grade", "rubric",
-    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "doctor", "check", "help",
+    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "help",
 ];
 
 /// Options that take no value. Every other `--option` takes the argument after it, so `positional` skips that one.

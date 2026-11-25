@@ -698,6 +698,62 @@ fn fake_install_with_heroes(root: &Path, build: &str) -> PathBuf {
 }
 
 #[test]
+fn new_scaffolds_a_mod_from_the_games_own_data_and_never_over_a_folder() {
+    let d = scratch("new");
+    let game = fake_install_with_heroes(&d, "6868");
+    // the hero's compiled model names its skeleton, as Valve's do
+    let heroes = resource::synth_with(&[], &[(*b"DATA", resource::kv3::encode(&resource::kv3::parse_text(HEROES_VDATA).unwrap()))]);
+    let model = resource::synth_with(&[], &[(*b"DATA", resource::kv3::encode(&resource::kv3::parse_text("{ m_vecNmSkeletonRefs = [ \"models/heroes/x/x.vnmskel\" ] }").unwrap()))]);
+    vpk::write(game.join("citadel").join("pak01_dir.vpk"), &[(CLIP.to_string(), b"valve clip".to_vec()), ("models/heroes/x/x.vmdl_c".to_string(), model), ("scripts/heroes.vdata_c".to_string(), heroes)]).unwrap();
+    let mods = d.join("mods");
+    std::fs::create_dir_all(&mods).unwrap();
+    let ms = mods.to_string_lossy().into_owned();
+    let o = magician_in(&d, &d, &["new", "x", "--dir", &ms, "--author", "someone"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let m = mods.join("x-skin");
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(out.contains("skeleton models/heroes/x/x.vnmskel (from the compiled model)") && out.contains("magician release --out pak10_dir.vpk"), "{out}");
+    let toml = std::fs::read_to_string(m.join("mod.toml")).unwrap();
+    assert!(toml.contains("model    = \"models/heroes/x/x.vmdl\"") && toml.contains("skeleton = \"models/heroes/x/x.vnmskel\"") && toml.contains("hero    = \"hero_x\""), "{toml}");
+    for f in ["README.md", ".gitignore", "addon/.gitignore", "addon/magician.allow", "addon/models/heroes/x/.gitignore", "addon/particles/abilities/.gitignore", "addon/sounds/.gitignore", "addon/panorama/images/.gitignore", "package/bundle.json", "package/README.template.md", "package/CHANGELOG.md", "source/ingame/scenarios/enter_x.txt", "source/ingame/scenarios/x_angles.txt"] {
+        assert!(m.join(f).is_file(), "no {f}");
+    }
+    // nothing of Valve's: every file it wrote is text it made
+    let mut all = Vec::new();
+    fn walk(p: &Path, out: &mut Vec<PathBuf>) {
+        for e in std::fs::read_dir(p).unwrap().flatten() {
+            if e.path().is_dir() { walk(&e.path(), out) } else { out.push(e.path()) }
+        }
+    }
+    walk(&m, &mut all);
+    assert!(all.iter().all(|p| std::str::from_utf8(&std::fs::read(p).unwrap()).is_ok() && !p.to_string_lossy().ends_with("_c")), "{all:?}");
+    // never over a folder that is there, and never inside a mod
+    let o = magician_in(&d, &d, &["new", "x", "--dir", &ms]);
+    assert_eq!(o.status.code(), Some(3), "{}", text(&o));
+    assert_eq!(magician_in(&d, &m, &["new", "x", "--slug", "other"]).status.code(), Some(3), "not inside a mod");
+    assert_eq!(magician_in(&d, &d, &["new", "nobody", "--dir", &ms]).status.code(), Some(2), "a hero the game does not have");
+    // `magician` and `check` in it say plainly there is no pak yet
+    let o = magician_in(&d, &m, &[]);
+    assert!(text(&o).contains("no pak yet") && text(&o).contains("magician release --out pak10_dir.vpk"), "{}", text(&o));
+    let o = magician_in(&d, &m, &["check", "--light"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("x-skin has no pak yet, so there is nothing to check"), "{}", text(&o));
+    // once there is a pak, check reads it, and tools/bundle.py accepts the package as written
+    vpk::write(m.join("pak10_dir.vpk"), &[("models/heroes/x/materials/x_body.vmat_c".to_string(), resource::synth(&[]))]).unwrap();
+    let o = magician_in(&d, &m, &["check", "--light"]);
+    assert!(matches!(o.status.code(), Some(0 | 1 | 4)) && String::from_utf8_lossy(&o.stdout).starts_with("x-skin: "), "{}", text(&o));
+    let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("tools").join("bundle.py");
+    match Command::new("python").arg("-I").arg(&bundle).arg(m.join("package").join("bundle.json")).args(["--no-valve-check", "--magician", env!("CARGO_BIN_EXE_magician")]).env("DEADLOCK_GAME", &game).output() {
+        Ok(o) => {
+            assert_eq!(o.status.code(), Some(0), "bundle.py: {}", text(&o));
+            assert!(m.join("dist").join("x-skin").join("mod-interchange.json").is_file());
+        }
+        Err(e) => eprintln!("skipped the bundle check: no python ({e})"),
+    }
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
 fn a_mod_folder_needs_nothing_after_the_verb() {
     let d = scratch("modfolder");
     let game = fake_install_with_heroes(&d, "6864");
