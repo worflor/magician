@@ -604,6 +604,14 @@ def publish(b, n, nexus, page_flag):
     body.update(n["new_file"])
     doc = nexus.api("POST", "/mod-files", f"step 6 of 7, create file {n['name']!r} on mod {mod_id}", body)
     new_id = (doc.get("data") or {}).get("id")
+    # Nexus answers with an id that /mod-files/{id} does not know (seen 2026-11-25: it is the first version's id, where
+    # the schema says the file's). The page's own file list has the id later calls take, so that is the one to record.
+    try:
+        listed = [f for f in nexus.files(mod_id) if isinstance(f, dict) and one_line(str(f.get("name", ""))).lower() == n["name"].lower()]
+    except Failed:
+        listed = []
+    if len(listed) == 1 and is_id(listed[0].get("id")):
+        new_id = listed[0]["id"]
     if not is_id(new_id):
         raise Failed(f"step 6 of 7: the file was created, but the answer has no file id: {json.dumps(doc)[:300]}; find it in the page's Files tab (Advanced)")
     say(f"step 6 of 7: file {new_id} created on mod {mod_id} with version {version}")
