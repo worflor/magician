@@ -107,6 +107,14 @@ def read_manifest(patch):
     return m
 
 
+def copy_text(src, dst, eol):
+    """A text file copied with every line ending made `eol`: a checkout's line ends depend on the system and its git
+    settings, and a release must not."""
+    data = open(src, "rb").read().replace(b"\r\n", b"\n")
+    with open(dst, "wb") as f:
+        f.write(data.replace(b"\n", eol.encode()))
+
+
 def listing(exe, vpk):
     out = subprocess.run([exe, "ls", vpk], capture_output=True, text=True, check=True).stdout
     return {l.split("\t")[0]: l.split("\t")[1] for l in out.splitlines() if "\t" in l}
@@ -329,15 +337,17 @@ def main():
                     full = os.path.join(dp, f)
                     sums.append(f"{sha256(full)}  {os.path.relpath(full, out).replace(os.sep, '/')}")
             print("  scene", sc["hero"], "->", os.path.relpath(dst, out), f"(owner {man['mod']})")
-        # The installer is a self-contained PowerShell script (tools/scene_install.ps1): no Magician needed.
-        shutil.copyfile(SCENE_PS1, os.path.join(out, "install-scene.ps1"))
+        # The installer is a self-contained PowerShell script (tools/scene_install.ps1): no Magician needed. Both
+        # installers are written with fixed line ends (CRLF for Windows, LF for Linux, as their wrappers are), so the
+        # bundle is the same bytes whichever system's checkout it was made from.
+        copy_text(SCENE_PS1, os.path.join(out, "install-scene.ps1"), "\r\n")
         sums.append(f"{sha256(os.path.join(out, 'install-scene.ps1'))}  install-scene.ps1")
         for name, verb, extra in (("install-scene.cmd", "Builds and installs", ""), ("uninstall-scene.cmd", "Removes", "-Uninstall ")):
             with open(os.path.join(out, name), "w", newline="") as f:
                 f.write(CMD.replace("__VERB__", verb).replace("__ARGS__", extra).replace(chr(13) + chr(10), chr(10)).replace(chr(10), chr(13) + chr(10)))
             sums.append(f"{sha256(os.path.join(out, name))}  {name}")
         # The same installer in Python 3 (stdlib only) for Linux and the Steam Deck, with LF-only shell wrappers.
-        shutil.copyfile(SCENE_PY, os.path.join(out, "install-scene.py"))
+        copy_text(SCENE_PY, os.path.join(out, "install-scene.py"), "\n")
         sums.append(f"{sha256(os.path.join(out, 'install-scene.py'))}  install-scene.py")
         for name, verb, extra in (("install-scene.sh", "Builds and installs", ""), ("uninstall-scene.sh", "Removes", "--uninstall ")):
             with open(os.path.join(out, name), "w", newline="\n") as f:

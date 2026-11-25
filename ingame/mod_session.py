@@ -281,6 +281,10 @@ def up(o):
     why = gameos.process_problem() or gameos.display_problem()
     if why:   # before the seat is taken or anything is installed: a session that can't type or look is no session
         raise Stop(2, f"can't drive the game on this machine: {why}")
+    try:
+        gameos.steam_command()
+    except gameos.Unsupported as e:
+        raise Stop(2, f"can't launch the game on this machine: {e}")
     if not gamelock.acquire(holder, f"session {mod['slug']}", float(o.get("wait", 1800)), launching=True, say=say):
         raise Stop(3, "the game seat is someone else's (see above)")
     st["held"] = True

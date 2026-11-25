@@ -91,6 +91,18 @@ class Bundle(unittest.TestCase):
             self.assertEqual(self.text(self.out, "mod-interchange.json"), good, why)
         self.assertFalse(os.path.exists(os.path.join(self.d, "escape.vpk")))
 
+    def test_the_scene_installers_keep_their_line_ends_whatever_the_checkout_has(self):
+        # a Windows checkout can hand the bundler CRLF files and a Linux one LF: the bundle must be the same bytes
+        import bundle
+        for given in (b"a\r\nb\r\n", b"a\nb\n", b"a\r\nb\n"):
+            src, dst = os.path.join(self.d, "in.txt"), os.path.join(self.d, "out.txt")
+            with open(src, "wb") as f:
+                f.write(given)
+            bundle.copy_text(src, dst, "\n")
+            self.assertEqual(open(dst, "rb").read(), b"a\nb\n", given)
+            bundle.copy_text(src, dst, "\r\n")
+            self.assertEqual(open(dst, "rb").read(), b"a\r\nb\r\n", given)
+
     def test_a_flag_without_its_value_is_an_error(self):
         r = self.run_bundle(self.spec(), "--out")
         self.assertNotEqual(r.returncode, 0)

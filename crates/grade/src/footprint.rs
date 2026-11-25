@@ -198,7 +198,17 @@ impl Sources {
                 _ => false,
             };
             let _ = std::fs::remove_dir_all(&dir);
-            st.map_err(|e| format!("running {}: {e}", self.vrf_cli.display()))?;
+            st.map_err(|e| {
+                // A bare name that no PATH folder holds can come back as "permission denied" (an unreadable folder
+                // on PATH, as Windows' own folders are under WSL): say it is missing, which is what it is.
+                let bare = self.vrf_cli.components().count() <= 1;
+                let found = bare && std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(&self.vrf_cli).is_file() || d.join(format!("{}.exe", self.vrf_cli.display())).is_file()));
+                if bare && !found {
+                    format!("no {} on PATH: install Source 2 Viewer's CLI and set MAGICIAN_VRF (or `vrf =` in the config file) to it", self.vrf_cli.display())
+                } else {
+                    format!("running {}: {e}", self.vrf_cli.display())
+                }
+            })?;
             if !moved {
                 return Err(format!("could not decompile {compiled_path}"));
             }
