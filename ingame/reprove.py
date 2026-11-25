@@ -236,6 +236,8 @@ def run(o):
 
 def main(argv):
     try:
+        if argv[:1] and argv[0] in ("--help", "-h", "help"):
+            raise S.Stop(0, __doc__)
         if argv[:1] == ["accept"]:
             if len(argv) != 2:
                 raise S.Stop(2, "accept <pass dir>")

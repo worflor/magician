@@ -637,6 +637,8 @@ VERBS = ("up", "run", "film", "down", "sheets", "all", "qa", "where")
 
 
 def parse(argv):
+    if argv and argv[0] in ("--help", "-h", "help"):
+        raise Stop(0, __doc__)
     if not argv or argv[0] not in VERBS:
         raise Stop(2, __doc__)
     o, rest = {}, []

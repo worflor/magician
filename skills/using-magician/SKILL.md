@@ -32,7 +32,7 @@ The installed build number is `ClientVersion` in `<game>\citadel\steam.inf`; eve
 
 1. **Read the usage, don't guess.** `magician <command> --help` prints that command's usage and runs nothing; an option no command knows is refused (exit 2). Never probe a command by trying flags on it.
 2. **Only `magician install`, `uninstall` and `scene install` write into the game folder.** Never copy, edit or delete anything under the Deadlock install yourself, `gameinfo.gi` included. Never pass `--force` or `--ignore-game` unless the user asked for it on that specific install (install also refuses when it can't tell whether the game runs: that is a person's call too). Writes to the reference folder (`patchday --capture`, `baseline`, `index`, caches, and the baseline the first `lint` or `check` on a new build captures, which stderr announces) are fine; list them in your report. `magician init` writes a `mod.toml` into a mod's folder: only when the task is to set a mod up.
-3. **One user of the game at a time.** Before installing, uninstalling or touching the game, run `python -I ingame\gamelock.py status` (exit 0 free, 3 held). If someone holds it, wait or report; never take it from them. If `deadlock.exe` is running and the seat isn't yours, install refuses: ask the person to close the game, don't override. Name yourself with `MAGICIAN_GAME_HOLDER` (or `--holder`) so others can see who you are. Drive the game through `ingame\mod_session.py` (up, run, film, down): it binds the game it launches to your seat, and nothing in the harness will type into or stop a game that is not bound to you. A refused step is a stop: never fall back to killing `deadlock.exe` or forcing the lock.
+3. **One user of the game at a time.** Before installing, uninstalling or touching the game, run `python -I ingame\gamelock.py status` (exit 0 free, 3 held). If someone holds it, wait or report; never take it from them. If `deadlock.exe` is running and the seat isn't yours, install refuses: ask the person to close the game, don't override. Name yourself with `MAGICIAN_GAME_HOLDER` (or `--holder`) so others can see who you are. Drive the game through `magician session` (`ingame\mod_session.py`: up, run, film, down) or `ingame\reprove.py`: it binds the game it launches to your seat, and nothing in the harness will type into or stop a game that is not bound to you. A refused step is a stop: never fall back to killing `deadlock.exe` or forcing the lock.
 4. **Don't launch the game unless the task asks for in-game proof**, the machine has an interactive desktop, and the seat is free. Launching, filming and giving the seat back is in [references/loops.md](references/loops.md#in-game-proof).
 5. **Never weaken a check to make a mod pass.** No editing rules, no blanket allowances. A finding is accepted only per site, in the addon's `magician.allow`, with a written reason, and only when the user agrees.
 6. **Never run `magician prove`** unless the frames for that build were actually looked at (by the user, or by you if you can see images and did). A green lint is not proof. A proof belongs to the bytes installed when it is recorded (`proofs.tsv` beside the `mod.toml`: every file's crc and sha256, and the pass folder given with `--evidence <pass dir>`), so prove with the same paks installed that the pass ran on, and never after a reinstall or rebuild. A rebuilt pak is unproven whatever `[proven] builds` lists; a build listed there with no proof for these bytes reads "claimed for other bytes or never recorded" and counts for nothing. Never edit `proofs.tsv` or `[proven] builds` by hand.
@@ -70,7 +70,15 @@ magician grade <pak>... --mod <mod.toml> --json   # the grade record: label, dep
 magician patchday --capture              # writes the new build's baseline and rig sidecar if missing, then checks every installed mod
 magician drift <pak> --from <old build>  # the full list for any mod flagged
 ```
-Per mod it prints `ok`, `RE-PROVE` (loads, but something under it changed since its last proven build: re-film it) or `BROKEN`, then a `verdict`; it exits 0 clear, 4 re-prove, 1 broken. A mod proven on the installed build is `ok (proven on N)`. `--capture` writes only to the reference folder, never the game. Every failure message and its fix: [../../docs/PATCH-DAY.md](../../docs/PATCH-DAY.md).
+Per mod it prints `ok`, `RE-PROVE` (loads, but something under it changed since its last proven build: re-film it) or `BROKEN`, then a `verdict`; it exits 0 clear, 4 re-prove, 1 broken. A mod proven on the installed build is `ok (proven on N)`. It also says, per era, whether the update changed the engine (`engine too: n file(s)`) or `data only`, and for each mod whether any name in its hero's data moved; neither changes the verdict, both tell you how hard to look. `--capture` writes only to the reference folder, never the game. Every failure message and its fix: [../../docs/PATCH-DAY.md](../../docs/PATCH-DAY.md).
+
+When the verdict is re-prove and the task includes in-game proof (rules 3 and 4 first):
+```
+python -I ingame\reprove.py --plan       # what would run for each mod, and what cannot; launches nothing
+python -I ingame\reprove.py              # every mod to re-prove: a vanilla pass when the build has no baseline, the mod's pass, one report
+python -I ingame\reprove.py accept <pass folder>   # only after the contact sheets were looked at (rule 6)
+```
+It holds the seat only while it plays and gives each mod `ready`, `look` or `failed` (exit 0, 4, 1) in a report under `<reference>\work\passes\`. None of the three is proof: it judges warnings, not pictures. Read the sheets (or say that you could not), then `accept`, which refuses a pass that is not whole, not on the installed build, or not of the installed paks, and then records the proof with the pass as evidence.
 
 **Build, release, install** (only when asked to ship or test in game; check the seat first, rule 3):
 ```
@@ -82,7 +90,11 @@ Reuse the owner `install --status` already shows for that mod (`maid_lash`, whic
 
 **Hero-page scenes:** `magician scene make | check | compose | install`. `check` is read-only and tells you whether the player's stock map still matches a patch after an update.
 
-**Release bundles:** `python -I tools\bundle.py <bundle.json> --out <scratch dir>`; it refuses a path in two paks or any file byte-identical to Valve's.
+**Release bundles:** `magician bundle <bundle.json> --out <scratch dir>`; it refuses a path in two paks or any file byte-identical to Valve's. `magician source <source.json>` writes a static Deadlock Mod Manager source and its pages from bundles; it states only the builds a proof holds the zip's own paks for.
+
+**Starting a mod:** `magician new <hero> [--slug NAME] [--dir DIR] [--author NAME]` scaffolds a mod folder from the installed game's own data (a `mod.toml` with the hero's real model and skeleton, the addon folders with the ignore files that keep Valve-derived files out of git, a package folder, two starter scenarios). It copies no Valve file and never writes into a folder that exists. Only when the task is to begin a mod.
+
+**The Python tools through one door:** `magician session ...`, `magician bundle ...` and `magician source ...` run `ingame\mod_session.py`, `tools\bundle.py` and `tools\source.py` with the same arguments and exit code. `doctor` says whether the toolkit folder and Python were found.
 
 **Inspecting:** `doctor`, `paths`, `install --status`, `ls`, `refs`, `dump`, `kv`, `textures`, `mesh`, `cloth`, `rules`, `rubric`, `policy` only read. `grade`, `footprint` and `index` need the Source 2 Viewer CLI; if it isn't installed they exit 2, so report that instead of the grade.
 
