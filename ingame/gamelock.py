@@ -290,6 +290,9 @@ def may_drive(lock, holder, pid, alive=None):
 
 
 def main(a):
+    if a[:1] and a[0] in ("--help", "-h", "help"):
+        print(__doc__)
+        return 0
     if not a or a[0] not in ("acquire", "release", "status", "bind", "may-drive"):
         sys.exit(__doc__)
 

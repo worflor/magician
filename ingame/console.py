@@ -579,6 +579,9 @@ def _run_script(lines, key, out_dir, probe):
 
 if __name__ == "__main__":
     a = sys.argv[1:]
+    if a[:1] and a[0] in ("--help", "-h", "help"):
+        print(__doc__)
+        sys.exit(0)
     key = None   # console_key(): MAGICIAN_CONSOLE_KEY, else the player's own bind, else grave
     if "--key" in a:
         i = a.index("--key"); key = a[i + 1]; del a[i:i + 2]

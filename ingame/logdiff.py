@@ -96,6 +96,9 @@ def save_vanilla(log, build, scene, bases=None):
 
 
 def main(a):
+    if a[:1] and a[0] in ("--help", "-h", "help"):
+        print(__doc__)
+        return 0
     def opt(n, d=None):
         return a[a.index(n) + 1] if n in a else d
 

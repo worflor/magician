@@ -197,6 +197,9 @@ def sheet(in_dir, out, cols, scale):
 
 if __name__ == "__main__":
     a = sys.argv[1:]
+    if a[:1] and a[0] in ("--help", "-h", "help"):
+        print(__doc__)
+        sys.exit(0)
 
     def opt(name, default):
         return int(a[a.index(name) + 1]) if name in a else default

@@ -134,6 +134,9 @@ def report(path):
 
 if __name__ == "__main__":
     a = sys.argv[1:]
+    if a[:1] and a[0] in ("--help", "-h", "help"):
+        print(__doc__)
+        sys.exit(0)
     if not a or a[0] == "--latest":
         dumps = glob.glob(os.path.join(GAME, "bin", "win64", "*.mdmp")) + glob.glob(os.path.join(GAME, "citadel", "*.mdmp"))
         if not dumps:

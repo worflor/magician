@@ -138,7 +138,8 @@ Everything after the verb belongs to the tool (`magician bundle --help` is the b
 | Lint, mesh and cloth reports, `pack` (it lints what it packs), drift, `patchday`, `install`, `scene`, `new` | Deadlock installed |
 | `footprint`, `grade`, `index` | Deadlock and the [Source 2 Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat) CLI (21.1; flags change between versions, so pin it). The decompiled files are cached per build in the reference folder |
 | `build`, `release`, `sign` | Valve's CSDK 13, the community-distributed build that carries `resourcecompiler.exe` (setup notes in [docs/reference/engine.md](docs/reference/engine.md#the-compiler-csdk-13)) |
-| `session`, `reprove`, `bundle`, `source`, the MCP server | Python 3.11 or newer, standard library only; `bundle` and `source` use Pillow for preview images |
+| `session`, `reprove` | Python 3.11 or newer, standard library only |
+| `bundle`, `source`, the MCP server | Python 3.8 or newer, standard library only; `bundle` and `source` use Pillow for preview images |
 | Offline visual QA (`qa/`, `harness/`) | Blender 5.2 and the Source 2 Viewer CLI; some scripts use Pillow, numpy and scipy |
 | The film kit (`cinema/`) | ffmpeg, a Python venv with Boon, and the CSDK; see its README |
 
