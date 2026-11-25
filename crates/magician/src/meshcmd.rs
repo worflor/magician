@@ -35,7 +35,6 @@ pub fn cmd_mesh(args: &[String], game_dir: &Path, reference: &Path, policy: &gra
         out
     };
     let vp = pos.first().ok_or(USAGE)?;
-    let path = pos.get(1).ok_or(USAGE)?.to_ascii_lowercase();
     let flag = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).cloned();
     let withs: Vec<String> = args.windows(2).filter(|w| w[0] == "--with").map(|w| w[1].clone()).collect();
     let against = flag("--against").unwrap_or_else(|| "valve".into());
@@ -43,8 +42,9 @@ pub fn cmd_mesh(args: &[String], game_dir: &Path, reference: &Path, policy: &gra
     for w in &withs {
         paks.push(vpk::Vpk::open(w).map_err(|e| format!("{w}: {e}"))?);
     }
+    let path = crate::pak_path(&|x| paks.iter().any(|v| v.find(x).is_some()), pos.get(1).ok_or(USAGE)?).to_ascii_lowercase();
     let game = GameFiles::open(game_dir, None);
-    let data = read_from(&paks, &path).ok_or_else(|| format!("{path} not in {vp}"))?;
+    let data = read_from(&paks, &path).ok_or_else(|| crate::not_in(&path, Path::new(vp.as_str())))?;
     let ours_read = |p: &str| read_from(&paks, p).or_else(|| lint::Game::read(&game, p));
     let valve_read = |p: &str| lint::Game::read(&game, p);
     let om = |p: &str| ours_read(&lint::deep::compiled(p)).and_then(|d| lint::mesh::mat_info(&d));

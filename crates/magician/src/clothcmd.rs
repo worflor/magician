@@ -135,11 +135,11 @@ pub fn cmd_cloth(args: &[String], game_dir: &Path) -> Result<ExitCode, String> {
         }
     }
     let vp = pos.first().ok_or(USAGE)?;
-    let path = pos.get(1).ok_or(USAGE)?.to_ascii_lowercase();
     let flag = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).cloned();
     let against = flag("--against").unwrap_or_else(|| "valve".into());
     let pak = vpk::Vpk::open(vp).map_err(|e| format!("{vp}: {e}"))?;
-    let entry = pak.find(&path).ok_or_else(|| format!("{path} not in {vp}"))?;
+    let path = crate::pak_path(&|x| pak.find(x).is_some(), pos.get(1).ok_or(USAGE)?).to_ascii_lowercase();
+    let entry = pak.find(&path).ok_or_else(|| crate::not_in(&path, Path::new(vp.as_str())))?;
     let data = pak.read(entry).map_err(|e| e.to_string())?;
     let ours = cloth::read(&data)?;
     outln!("{path}  ({vp})");
