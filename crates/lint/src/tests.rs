@@ -49,7 +49,7 @@ const PROVEN: &[&str] = &[
     "M100", "M101", "M102", "M103", "M104", "M105", "M106", "M107", "M108", "M109", "M110", "M111", "M112", "M113",
     "M114", "M115", "M116", "M117", "M118", "M119", "M120", "M121", "M122", "M123", "M124", "M125", "M126", "M127",
     "M128", "M129", "M130", "M131", "M132", "M133", "M134", "M135", "M136", "M137", "M138", "M139", "M140",
-    "M141", "M142", "M143", "M144", "M145", "M146", "M147", "M148",
+    "M141", "M142", "M143", "M144", "M145", "M146", "M147", "M148", "M149",
 ];
 
 #[path = "mesh_fixtures.rs"]
@@ -276,6 +276,38 @@ fn m071_engine_default_byproduct() {
     assert_eq!(codes(&run(files, Some(&g), None)), BTreeSet::from(["M071"]));
 }
 
+#[test]
+fn m071_is_an_error_only_when_the_default_draws_another_picture() {
+    // Seen on three published mods: their materials/default/ copies decode to Valve's own pixels, or sit at paths Valve
+    // does not ship. Neither changes anything in the game; a copy with other pixels changes every fallback.
+    let p = "materials/default/default_mask_tga_344101f8.vtex_c";
+    let mut g = game();
+    with(&mut g, &[p]);
+    let white = colour_tex(&[[255, 255, 255, 255]]);
+    let fake = Fake { files: [(p.to_string(), white.clone())].into(), ..Default::default() };
+    let same = run_game(vec![file(p, white.clone())], &g, &fake);
+    let m = same.iter().find(|x| x.code == "M071").unwrap_or_else(|| panic!("{same:?}"));
+    assert_eq!(m.severity, Severity::Warn);
+    assert!(m.message.contains("same pixels") && m.message.contains("nothing in the game changes"), "{}", m.message);
+    let other = run_game(vec![file(p, colour_tex(&[[0, 0, 0, 255]]))], &g, &fake);
+    let m = other.iter().find(|x| x.code == "M071").unwrap_or_else(|| panic!("{other:?}"));
+    assert_eq!(m.severity, Severity::Error);
+    assert!(m.message.contains("pixels differ"), "{}", m.message);
+    let elsewhere = "materials/default/default_mask_png_5af4843d.vtex_c";
+    let not_valves = run_game(vec![file(elsewhere, white)], &game(), &fake);
+    let m = not_valves.iter().find(|x| x.code == "M071").unwrap_or_else(|| panic!("{not_valves:?}"));
+    assert_eq!(m.severity, Severity::Warn);
+    assert!(m.message.contains("Valve does not ship"), "{}", m.message);
+}
+
+#[test]
+fn m001_is_not_said_of_a_file_the_game_never_reads() {
+    // A published mod's empty README.txt: M012 says it is noise; its case costs nothing, since nothing looks it up.
+    let g = game();
+    let f = run(vec![file("README.txt", Vec::new())], Some(&g), None);
+    assert_eq!(codes(&f), BTreeSet::from(["M012"]), "{f:?}");
+}
+
 // ------------------------------------------------------------------ rules that read inside the files
 
 use resource::kv3::{parse_text, Value};
@@ -368,6 +400,13 @@ fn m033_dev_leftover_in_a_release() {
     ] {
         assert!(!run(vec![file(p, res(&[]))], Some(&g), None).iter().any(|x| x.code == "M033"), "{p}");
     }
+    // an exporter's name on the material the model draws with is the art on screen, not a leftover; the same material
+    // that nothing draws with is still one
+    let model = "models/props/example/thing.vmdl_c";
+    let mat = "materials/example/exporter_dummy_mat.vmat_c";
+    let drawn = run(vec![file(model, res(&[mat.trim_end_matches("_c")])), file(mat, res(&[]))], Some(&g), None);
+    assert!(!drawn.iter().any(|x| x.code == "M033"), "{drawn:?}");
+    assert!(run(vec![file(mat, res(&[]))], Some(&g), None).iter().any(|x| x.code == "M033"));
     // Valve's own paths are Valve's names: replacing one is not a leftover
     let mut g2 = game();
     with(&mut g2, &["particles/generic/test_beam.vpcf_c"]);
@@ -548,6 +587,45 @@ fn m063_sound_file_shortened() {
     assert_eq!(codes(&f), BTreeSet::from(["M063"]), "{f:?}");
     let same = run_game(vec![file(snd, res_kv(&[], &[(b"CTRL", ctrl(2.49, 0.52))]))], &g, &fake);
     assert!(same.is_empty(), "same length, within 1.5 dB: {same:?}");
+}
+
+#[test]
+fn m063_a_base_valve_inherits_from_differs_only_by_what_lies_between() {
+    // Seen on a published mod's old sound-event file: casts on "Base.Ability" where Valve's are on "Base.Ability.Cast",
+    // which is Base.Ability plus one flag that sets no level and no reach; melee on "Base.Movement.Melee" where Valve's
+    // is on a default that is Base.Movement.Melee at -2 dB. The first changes nothing heard, the second plays louder.
+    let base = "soundevents/base/example_base_events.vsndevts_c";
+    let mut g = game();
+    with(&mut g, &[EVTS, base]);
+    let mut fake = Fake::default();
+    fake.files.insert(base.into(), res_kv(&[], &[(b"DATA", kv(r#"{ Base.Ability = { type = "x" falloff_far = 2000.0 }
+        Base.Ability.Cast = { base = "Base.Ability" volume_enemy_targeting_boost_disable_update = 1.0 }
+        Base.Melee = { type = "x" } Hero.Melee = { base = "Base.Melee" volume = -2.0 }
+        Base.Other = { falloff_far = 100.0 } }"#))]));
+    fake.files.insert(EVTS.into(), res_kv(&[], &[(b"DATA", kv(r#"{ Lash.Cast = { base = "Base.Ability.Cast" } Lash.Swing = { base = "Hero.Melee" } }"#))]));
+    let ours = |text: &str| run_game(vec![file(EVTS, res_kv(&[], &[(b"DATA", kv(text))]))], &g, &fake);
+    let f = ours(r#"{ Lash.Cast = { base = "Base.Ability" } Lash.Swing = { base = "Base.Melee" } }"#);
+    assert!(!f.iter().any(|x| x.code == "M063"), "an ancestor whose difference is no level or reach: {f:?}");
+    let m = f.iter().find(|x| x.code == "M064").unwrap_or_else(|| panic!("{f:?}"));
+    assert!(m.message.contains("Lash.Swing") && m.message.contains("2.0 dB louder"), "{}", m.message);
+    // a base on another branch is still read as Valve's stack replaced
+    let f = ours(r#"{ Lash.Cast = { base = "Base.Other" } Lash.Swing = { base = "Hero.Melee" } }"#);
+    assert!(f.iter().any(|x| x.code == "M063" && x.message.contains("the base stack sets falloff")), "{f:?}");
+}
+
+#[test]
+fn m063_a_voice_line_is_not_judged_by_its_length() {
+    // Valve's own voices fail the duration test against each other on 46% of shared lines (`magician corpus`, 6868).
+    let line = "sounds/vo/lash/emote/lash_effort_dash_02.vsnd_c";
+    let ctrl = |dur: f64| kv(&format!("{{ m_vSound = {{ m_flDuration = {dur} }} }}"));
+    let mut g = game();
+    with(&mut g, &[line]);
+    let mut fake = Fake::default();
+    fake.files.insert(line.into(), res_kv(&[], &[(b"CTRL", ctrl(0.8))]));
+    for d in [0.3, 5.0] {
+        let f = run_game(vec![file(line, res_kv(&[], &[(b"CTRL", ctrl(d))]))], &g, &fake);
+        assert!(!f.iter().any(|x| x.code == "M063" || x.code == "M064"), "{d} s: {f:?}");
+    }
 }
 
 #[test]
@@ -1099,4 +1177,19 @@ fn m148_default_slot_literal() {
     let f = run_game(vec![file(MAT, ours_mat.clone()), file(&format!("{OURS}_c"), colour_tex(&[[0; 4]]))], &g, &blind);
     assert!(f.iter().any(|x| x.code == "M144" && x.message.contains("(M148)")), "{f:#?}");
     assert!(!codes(&f).contains("M148"));
+}
+
+#[test]
+fn m149_a_texture_slot_valves_material_has_and_ours_dropped() {
+    // Seen in game (6868): a published mod's bow material had lost g_tAltColor_Reveal; the game logged "Texture
+    // g_tAltColor_Reveal doesn't exist in ...archer_bow.vmat!" and "returning error texture" 50 times in one pass.
+    let color = ("g_tColor", "models/heroes_wip/lash/materials/lash_body_color_png_f6ecf355.vtex");
+    let valve_mat = slot_mat(&[color, ("g_tAltColor_Reveal", "models/heroes_wip/lash/materials/lash_body_reveal_png_1.vtex")]);
+    let fake = Fake { files: HashMap::from([(MAT.to_string(), valve_mat.clone())]), ..Default::default() };
+    let g = game();
+    let f = run_game(vec![file(MAT, slot_mat(&[color]))], &g, &fake);
+    let m = f.iter().find(|x| x.code == "M149").unwrap_or_else(|| panic!("{f:#?}"));
+    assert!(m.message.contains("g_tAltColor_Reveal") && m.message.contains("error texture"), "{}", m.message);
+    assert_eq!(m.severity, Severity::Warn);
+    assert!(!codes(&run_game(vec![file(MAT, valve_mat)], &g, &fake)).contains("M149"), "Valve's own slots, all there");
 }

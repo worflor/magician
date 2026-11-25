@@ -266,9 +266,57 @@ fn is_reach_key(k: &str) -> bool {
     ["distance", "falloff", "radius", "range"].iter().any(|w| k.contains(w))
 }
 
+/// The texture slots a compiled material sets (`m_textureParams[].m_name`, `g_tColor` and the like), sorted.
+pub fn texture_params(v: &Value) -> Vec<String> {
+    let mut out: Vec<String> = v.get("m_textureParams").map(Value::as_array).unwrap_or(&[]).iter().filter_map(|t| t.get("m_name").and_then(Value::as_str).map(String::from)).collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// The events an event inherits from, itself included: `base` is one event's name or a list of `{ event_name }`.
+pub fn base_closure(name: &str, events: &dyn Fn(&str) -> Option<Value>) -> std::collections::BTreeSet<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut todo = vec![name.to_string()];
+    while let Some(n) = todo.pop() {
+        if seen.len() > 64 || !seen.insert(n.clone()) {
+            continue;
+        }
+        let Some(def) = events(&n) else { continue };
+        match def.get("base") {
+            Some(Value::Str(s)) => todo.push(s.clone()),
+            Some(Value::Array(a)) => todo.extend(a.iter().filter_map(|x| x.get("event_name").and_then(Value::as_str).map(String::from))),
+            _ => {}
+        }
+    }
+    seen
+}
+
+/// When our base is one Valve's base inherits from, the difference is exactly the fields the events in between set:
+/// (event, key, value) for each, from the game's own base events. None when ours is not one of its ancestors (another
+/// branch, or a base the game does not define).
+pub fn base_difference(ours: &str, valve: &str, events: &dyn Fn(&str) -> Option<Value>) -> Option<Vec<(String, String, Value)>> {
+    let theirs = base_closure(valve, events);
+    if ours.is_empty() || !theirs.contains(ours) {
+        return None;
+    }
+    let mine = base_closure(ours, events);
+    let mut out = Vec::new();
+    for e in theirs.difference(&mine) {
+        let def = events(e)?;
+        for (k, v) in def.members() {
+            if k != "base" && k != "type" {
+                out.push((e.clone(), k.clone(), v.clone()));
+            }
+        }
+    }
+    Some(out)
+}
+
 /// Compare a replaced sound-event file with Valve's. Returns (reduced cues, louder cues): the first at the fair-play
-/// limits in `fp` (M063), the second at the mix limits in `mesh::rules` (M064).
-pub fn sound_events(ours: &Value, valve: &Value, fp: &crate::policy::FairPlay) -> (Vec<String>, Vec<String>) {
+/// limits in `fp` (M063), the second at the mix limits in `mesh::rules` (M064). `events` gives an event's definition
+/// from the game's sound-event files, to read what a changed base really changes.
+pub fn sound_events(ours: &Value, valve: &Value, fp: &crate::policy::FairPlay, events: &dyn Fn(&str) -> Option<Value>) -> (Vec<String>, Vec<String>) {
     use crate::mesh::rules::SOUND_LOUDER_SLACK_DB;
     let (mut less, mut more) = (Vec::new(), Vec::new());
     for (name, ve) in valve.members() {
@@ -287,7 +335,23 @@ pub fn sound_events(ours: &Value, valve: &Value, fp: &crate::policy::FairPlay) -
         let ob = oe.get("base").and_then(Value::as_str);
         let vb = ve.get("base").and_then(Value::as_str);
         if ob != vb {
-            less.push(format!("{name}: base {:?}, Valve's {:?} (the base stack sets falloff and perspective)", ob.unwrap_or(""), vb.unwrap_or("")));
+            let (o, v) = (ob.unwrap_or(""), vb.unwrap_or(""));
+            match base_difference(o, v, events) {
+                // ours is an ancestor of Valve's base: only the fields in between differ, and only level and reach are heard
+                Some(fields) => {
+                    for (e, k, val) in fields {
+                        let lk = k.to_ascii_lowercase();
+                        let level = lk == "volume" || lk.starts_with("volume_offset");
+                        match val.as_f64() {
+                            Some(db) if level && db < 0.0 => more.push(format!("{name}: base {o:?}, Valve's {v:?}, whose {e} sets {k} {db}: ours plays {:.1} dB louder", -db)),
+                            Some(db) if level && db > 0.0 => less.push(format!("{name}: base {o:?}, Valve's {v:?}, whose {e} sets {k} +{db}: ours plays {db:.1} dB quieter")),
+                            _ if is_reach_key(&k) => less.push(format!("{name}: base {o:?}, Valve's {v:?}, whose {e} sets {k}: how far it carries differs")),
+                            _ => {}
+                        }
+                    }
+                }
+                None => less.push(format!("{name}: base {o:?}, Valve's {v:?} (the base stack sets falloff and perspective)")),
+            }
         }
         let keys: Vec<&str> = ve.members().iter().chain(oe.members()).map(|(k, _)| k.as_str()).collect();
         let mut seen = std::collections::BTreeSet::new();
@@ -334,13 +398,15 @@ pub fn vsnd_measure(ctrl: &Value) -> (Option<f64>, Option<f64>) {
 }
 
 /// Compare a replaced sound file with Valve's: shorter or quieter hides the cue (M063, at the limits in `fp`); longer
-/// or louder is a mix problem (M064). Envelope peaks are compared in dB.
-pub fn vsnd_compare(ours: &Value, valve: &Value, fp: &crate::policy::FairPlay) -> (Vec<String>, Vec<String>) {
+/// or louder is a mix problem (M064). Envelope peaks are compared in dB. A voice line (`voice`) is not judged by its
+/// length: Valve's own voices fail the duration test against each other on 46% of the lines two heroes share
+/// (`magician corpus`, build 6868), so a line's length is the voice, not a cue.
+pub fn vsnd_compare(ours: &Value, valve: &Value, fp: &crate::policy::FairPlay, voice: bool) -> (Vec<String>, Vec<String>) {
     use crate::mesh::rules::{SOUND_LONGER_RATIO, SOUND_PEAK_LOUDER_DB};
     let (mut less, mut more) = (Vec::new(), Vec::new());
     let (od, op) = vsnd_measure(ours);
     let (vd, vp) = vsnd_measure(valve);
-    if let (Some(a), Some(b)) = (od, vd) {
+    if let (Some(a), Some(b), false) = (od, vd, voice) {
         if b > 0.0 && a < b * fp.sound_duration_ratio {
             less.push(format!("{a:.2} s long, Valve's {b:.2} s"));
         } else if b > 0.0 && a > b * SOUND_LONGER_RATIO {

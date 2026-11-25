@@ -421,7 +421,7 @@ fn m106_cut_body_void() {
     b.tris.retain(|t| t[0] < 20);
     let f = run_ours(&hero(vec![b], Some(vec![body()])));
     assert!(has(&f, "M106", "cut-body opening"), "{f:#?}");
-    assert_eq!(rule("M106").severity, Severity::Error);
+    assert_eq!(rule("M106").severity, Severity::Warn, "seen, not a model that fails to work");
 }
 
 /// Valve's body cut at z 40 (the top and everything above it gone: a ring of open edges, like the

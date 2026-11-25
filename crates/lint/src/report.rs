@@ -84,14 +84,14 @@ mod tests {
     #[test]
     fn round_trip_keeps_depth_and_severity() {
         let all = vec![
-            f("M106", Some("models/heroes_wip/lash/lash.vmdl_c"), "cut-body opening\twith a tab"),
+            f("M137", Some("models/heroes_wip/lash/lash.vmdl_c"), "absolute white\twith a tab"),
             f("M050", None, "'x.vpk' should be pakNN_dir.vpk"),
         ];
         let (d, back) = read(&write(&all, Depth::Deep, "6864", "pak10_dir.vpk")).unwrap();
         assert_eq!(d, Depth::Deep);
         assert_eq!(back.len(), 2);
         assert_eq!(back[0].severity, Severity::Error);
-        assert_eq!(back[0].message, "cut-body opening with a tab");
+        assert_eq!(back[0].message, "absolute white with a tab");
         assert_eq!(back[1].path, None);
     }
 

@@ -73,7 +73,8 @@ pub struct Release {
 impl Release {
     /// The running build.
     pub fn this_build() -> Release {
-        let rules: String = lint::RULES.iter().map(|r| format!("{} {} {}\n", r.code, r.name, jsonout::severity(r.severity))).collect();
+        let mut rules: String = lint::RULES.iter().map(|r| format!("{} {} {}\n", r.code, r.name, jsonout::severity(r.severity))).collect();
+        rules.push_str(&format!("judgement {}\n", lint::JUDGEMENT));
         Release {
             version: env!("CARGO_PKG_VERSION").into(),
             commit: env!("MAGICIAN_GIT").into(),

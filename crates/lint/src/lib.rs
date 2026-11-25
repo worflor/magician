@@ -10,6 +10,7 @@ pub mod allow;
 pub mod baseline;
 pub mod cache;
 pub mod cloth;
+pub mod corpus;
 pub mod deep;
 pub mod distfield;
 pub mod matconst;
@@ -47,10 +48,16 @@ pub struct Rule {
     pub in_game: &'static str,
 }
 
+/// The revision of how the rules judge, beyond their codes, names and severities: raised whenever a rule's test or a
+/// finding's own severity changes (a narrower test, a finding the files show to have no consequence). The update
+/// check's lint fingerprint carries it, so a user is told to re-run lint. 2: the first published mods by others,
+/// witnessed in game (CHANGELOG, "judgement changed").
+pub const JUDGEMENT: u32 = 2;
+
 /// The rule catalogue: one home for codes, names and in-game consequences.
 pub const RULES: &[Rule] = &[
     Rule { code: "M001", name: "path-case", severity: Severity::Error,
-        in_game: "Source 2 looks paths up in lowercase. A path with capitals is never found, so the original asset shows instead." },
+        in_game: "Source 2 looks paths up in lowercase. A path with capitals is never found, so the original asset shows instead. Not said of a file the game never reads (M012): its case costs nothing." },
     Rule { code: "M002", name: "path-shape", severity: Severity::Error,
         in_game: "Backslashes, leading slashes or '..' in a VPK path never match an engine lookup; the file is dead weight." },
     Rule { code: "M010", name: "uncompiled-source", severity: Severity::Error,
@@ -68,13 +75,13 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M070", name: "ships-protected-file", severity: Severity::Error,
         in_game: "Skeletons (.vnmskel), anim graphs (.vnmgraph) and game data (.vdata) replace the hero's real files. It works until the next patch, then the hero breaks. A model replacement keeps Valve's skeleton and graph." },
     Rule { code: "M071", name: "replaces-engine-default", severity: Severity::Error,
-        in_game: "resourcecompiler emits its own copies of the engine's default textures (materials/default/*) next to your materials, and they differ from Valve's. Shipped, they replace the fallback texture for every material in the game that uses one." },
+        in_game: "resourcecompiler emits its own copies of the engine's default textures (materials/default/*) next to your materials, and they differ from Valve's. Shipped with other pixels than Valve's, they replace the fallback texture for every material in the game that uses one (an error). A copy that decodes to Valve's own pixels, or sits at a path Valve does not ship, changes nothing in the game and is a warning (seen on three published mods, 6868)." },
     Rule { code: "M061", name: "dropped-dependency", severity: Severity::Warn,
         in_game: "The game's original of this file referenced a resource your replacement no longer does (a particle, sound tag, material or anim graph). That effect or sound silently stops playing." },
     Rule { code: "M032", name: "stale-leftover", severity: Severity::Error,
         in_game: "A file the mod references has no source left in the addon: a compiled leftover of something deleted. It ships the old content (one release shipped five deleted effects this way, one a shock ring at 1.3x Valve's brightness) and no rebuild can ever change it." },
     Rule { code: "M033", name: "dev-leftover", severity: Severity::Warn,
-        in_game: "A particle, material or file whose path marks it as debug content (probe, debug, test, tmp, scratch...) ships in the release. It is a test aid, not art: a probe child spawned on every cast (one release shipped one), a placeholder swatch, an effect nobody meant to show. If it is also a dangling reference, M030/M032 already report that as an error." },
+        in_game: "A particle, material or file whose path marks it as debug content (probe, debug, test, tmp, scratch...) ships in the release. It is a test aid, not art: a probe child spawned on every cast (one release shipped one), a placeholder swatch, an effect nobody meant to show. If it is also a dangling reference, M030/M032 already report that as an error. A material or texture the mod draws with is not reported: it is the art on screen, whatever the exporter named it." },
     Rule { code: "M031", name: "orphan-new-file", severity: Severity::Warn,
         in_game: "The file doesn't replace anything in the game, and nothing in the mod references it, so it never loads." },
     Rule { code: "M040", name: "drift-original-changed", severity: Severity::Warn,
@@ -92,7 +99,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M062", name: "model-contract", severity: Severity::Error,
         in_game: "A replaced model lost or moved a bone, attachment or hitbox of Valve's, or added a hitbox. Effects and weapons attach to the wrong place (or the origin), animation breaks, and changed hitboxes change what bullets hit: a fair-play break." },
     Rule { code: "M063", name: "sound-cue-reduced", severity: Severity::Error,
-        in_game: "A replaced sound event or file plays quieter, shorter, over less distance, to fewer players, or not at all compared with Valve's. Enemies rely on those cues: hiding them is a fair-play break." },
+        in_game: "A replaced sound event or file plays quieter, shorter, over less distance, to fewer players, or not at all compared with Valve's. Enemies rely on those cues: hiding them is a fair-play break. A changed base is read through the game's own base events: one Valve's base inherits from differs only by what lies between, and only a level or a reach there is a finding (louder is M064). A voice line (sounds/vo/) is not judged by its length: Valve's own voices fail that test against each other on 46% of shared lines (`magician corpus`)." },
     Rule { code: "M064", name: "sound-louder", severity: Severity::Warn,
         in_game: "A replaced sound plays louder, longer or carries further than Valve's. Not an advantage, but it pushes the hero over the game's mix and masks other players' cues." },
     Rule { code: "M072", name: "light-cookie-texture", severity: Severity::Error,
@@ -121,8 +128,8 @@ pub const RULES: &[Rule] = &[
         in_game: "Shading normals point against their faces: visible triangles shade dark or flat, as if lit from behind." },
     Rule { code: "M105", name: "degenerate-triangles", severity: Severity::Warn,
         in_game: "Zero-area and sliver triangles far above Valve's rate: slivers shade and skin badly, zero-area ones flicker as dots." },
-    Rule { code: "M106", name: "cut-body-void", severity: Severity::Error,
-        in_game: "Body faces were cut away under a garment and nothing backs the cut: wherever the garment lifts or the camera finds a gap, you see through the hero (the bodice-back voids)." },
+    Rule { code: "M106", name: "cut-body-void", severity: Severity::Warn,
+        in_game: "Body faces were cut away under a garment and nothing backs the cut: wherever the garment lifts or the camera finds a gap, you see through the hero (the bodice-back voids). A warning: it is seen, not a model that fails to work, and on a published mod (6868) nine openings behind the face and at the neck were not visible from the gameplay camera at any pitch or close behind the head." },
     Rule { code: "M107", name: "backface-shading", severity: Severity::Warn,
         in_game: "Back faces of a two-sided material are what you see from outside: their normals face away, so they shade flat." },
     Rule { code: "M108", name: "z-fighting", severity: Severity::Warn,
@@ -207,6 +214,8 @@ pub const RULES: &[Rule] = &[
         in_game: "A new texture on the model whose mip chain stops early: at 8 m its smallest stored mip still puts over 2 texels on each screen pixel (from the texture's size, its mip count and the UV density on the mesh), so the sampler skips texels and the surface shimmers as the hero or the camera moves." },
     Rule { code: "M148", name: "default-slot-literal", severity: Severity::Warn,
         in_game: "A replaced material whose texture slot Valve leaves to an engine default (materials/default/...) now holds a one-colour texture more than half the range away from that default's value: the whole surface reads the new value instead. A Source 2 Viewer decompile prints such defaults as literal colours, often the wrong one, and the recompile bakes it in silently (a glass mask of 0 for Valve's 1 drew a summon solid with the hero invisible inside it). Valve's own file is never blamed; a slot the mod fills with a real texture is its own design." },
+    Rule { code: "M149", name: "material-texture-dropped", severity: Severity::Warn,
+        in_game: "A replaced material lacks a texture slot Valve's material at the same path sets (a decompile and recompile drops one it did not understand): the game's code still samples it, logs 'Texture g_tAltColor_Reveal doesn't exist in ...vmat!' and 'returning error texture', and draws the error texture wherever that slot is used. Seen in game on a published mod's bow (50 error textures in one pass, none in vanilla), which no other rule reported." },
     Rule { code: "M060", name: "model-document-replaced", severity: Severity::Info,
         in_game: "Replacing a .vmdl_c replaces the WHOLE model document: hitboxes, attachments, cloth, LODs and anim events come from your file. Run the contract check against the original." },
 ];
@@ -370,7 +379,9 @@ pub fn lint(input: &Input) -> Vec<Finding> {
         let ext = ext_of(p).to_ascii_lowercase();
         let file = p.rsplit('/').next().unwrap_or(p).to_ascii_lowercase();
 
-        if p.chars().any(|c| c.is_ascii_uppercase()) {
+        // a file the game never reads (M012) is not looked up either, so its case costs nothing
+        let noise = NOISE_NAMES.contains(&file.as_str()) || NOISE_EXTS.contains(&ext.as_str()) || (ext == "txt" && !is_raw_text_the_engine_reads(p));
+        if p.chars().any(|c| c.is_ascii_uppercase()) && !noise {
             out.push(finding("M001", Some(p), format!("rename to '{}'", p.to_ascii_lowercase())));
         }
         if p.contains('\\') || p.starts_with('/') || p.split('/').any(|s| s == ".." || s == ".") {
@@ -381,7 +392,18 @@ pub fn lint(input: &Input) -> Vec<Finding> {
         }
 
         if p.starts_with("materials/default/") {
-            out.push(finding("M071", Some(p), "compiler byproduct: exclude materials/default/ from the package".into()));
+            out.push(match input.game.and_then(|g| g.read(p)) {
+                Some(valve) if same_picture(&f.data, &valve) => Finding {
+                    severity: Severity::Warn,
+                    ..finding("M071", Some(p), "compiler byproduct with Valve's own picture (every mip decodes to the same pixels): it replaces the engine's default with the same thing, so nothing in the game changes; exclude materials/default/ from the package".into())
+                },
+                Some(_) => finding("M071", Some(p), "compiler byproduct whose pixels differ from Valve's default at this path: every material in the game that falls back to it draws the mod's picture; exclude materials/default/ from the package".into()),
+                None if input.game.is_some() => Finding {
+                    severity: Severity::Warn,
+                    ..finding("M071", Some(p), "compiler byproduct at a path Valve does not ship: it replaces no default of the game's, only the mod's own materials read it; exclude materials/default/ from the package".into())
+                },
+                None => finding("M071", Some(p), "compiler byproduct: exclude materials/default/ from the package (no game to compare its picture with)".into()),
+            });
             continue;
         }
         if BUILD_ARTIFACT_EXTS.contains(&ext.as_str()) {
@@ -407,7 +429,7 @@ pub fn lint(input: &Input) -> Vec<Finding> {
             out.push(finding("M011", Some(p), format!(".{ext} must be compiled into a resource")));
             continue;
         }
-        if NOISE_NAMES.contains(&file.as_str()) || NOISE_EXTS.contains(&ext.as_str()) || (ext == "txt" && !is_raw_text_the_engine_reads(p)) {
+        if noise {
             out.push(finding("M012", Some(p), "remove from the VPK".into()));
             continue;
         }
@@ -501,6 +523,20 @@ pub fn lint(input: &Input) -> Vec<Finding> {
     out
 }
 
+/// Whether two compiled textures draw the same picture: the same size and mip count, and every mip decodes to the same
+/// pixels. The compiler's default copies differ from Valve's in their header (2,232 bytes against 2,184), so bytes
+/// are not the question; what the sampler reads is.
+fn same_picture(a: &[u8], b: &[u8]) -> bool {
+    let (Some(ta), Some(tb)) = (resource::texture::info(a), resource::texture::info(b)) else { return false };
+    if (ta.width, ta.height, ta.depth, ta.mips) != (tb.width, tb.height, tb.depth, tb.mips) {
+        return false;
+    }
+    (0..ta.mips.max(1) as u32).all(|m| match (resource::pixels::decode(a, m), resource::pixels::decode(b, m)) {
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    })
+}
+
 /// Words that mark a path as debug content when they are a whole token of it. Whole tokens only: `testing`,
 /// `contest`, `attempt` and `heroes_wip` (a Valve folder) must not match.
 const DEBUG_MARKERS: &[&str] = &["probe", "probes", "debug", "dbg", "test", "tests", "tmp", "temp", "scratch", "dummy", "placeholder"];
@@ -550,6 +586,11 @@ fn dev_leftovers(input: &Input, referrers: &HashMap<String, String>, out: &mut V
             continue;
         }
         let Some(marker) = debug_marker(p) else { continue };
+        // a material or texture something in the mod draws with is the art on screen, whatever the exporter named it
+        // (`exporter_dummy_mat`); a referenced particle is still a probe spawned on every cast
+        if (p.ends_with(".vmat_c") || p.ends_with(".vtex_c")) && referrers.contains_key(p) {
+            continue;
+        }
         let by = referrers.get(p).map_or("nothing in the mod references it".to_string(), |r| format!("referenced by {r}"));
         out.push(finding("M033", Some(p), format!("'{marker}' in the path marks debug content ({by}): leave it out of the release, or rename it if it is real art")));
     }
@@ -618,6 +659,8 @@ fn deep_rules(input: &Input, out: &mut Vec<Finding>) {
     };
     let valve_kv = |p: &str| -> Option<Value> { game_read(p).and_then(|d| data_of(&d)) };
     let mut cookie_seen: HashSet<String> = HashSet::new();
+    // every event the game's sound-event files define, read once and only when a replaced event changed its base
+    let game_events: std::cell::OnceCell<HashMap<String, Value>> = std::cell::OnceCell::new();
 
     // The model rules (contract and the mesh family) are the expensive part: each model's verdict is
     // computed (or read from the findings cache) up front, the models side by side, and the file loop below
@@ -699,7 +742,23 @@ fn deep_rules(input: &Input, out: &mut Vec<Finding>) {
                     }
                     continue;
                 };
-                let (less, more) = deep::sound_events(&kv, &vk, fp);
+                let events = |n: &str| -> Option<Value> {
+                    let all = game_events.get_or_init(|| {
+                        let mut m: HashMap<String, Value> = HashMap::new();
+                        let mut files: Vec<&String> = input.base.map(|b| b.files.keys().filter(|k| k.starts_with("soundevents/") && k.ends_with(".vsndevts_c")).collect()).unwrap_or_default();
+                        files.sort();
+                        for path in files {
+                            if let Some(Value::Object(evs)) = valve_kv(path) {
+                                for (k, v) in evs {
+                                    m.entry(k).or_insert(v);
+                                }
+                            }
+                        }
+                        m
+                    });
+                    all.get(n).cloned()
+                };
+                let (less, more) = deep::sound_events(&kv, &vk, fp, &events);
                 less.into_iter().for_each(|m| out.push(finding("M063", Some(p), m)));
                 more.into_iter().for_each(|m| out.push(finding("M064", Some(p), m)));
             }
@@ -712,13 +771,20 @@ fn deep_rules(input: &Input, out: &mut Vec<Finding>) {
                     }
                     continue;
                 };
-                let (less, more) = deep::vsnd_compare(&kv, &vk, fp);
+                let (less, more) = deep::vsnd_compare(&kv, &vk, fp, p.starts_with("sounds/vo/"));
                 less.into_iter().for_each(|m| out.push(finding("M063", Some(p), m)));
                 more.into_iter().for_each(|m| out.push(finding("M064", Some(p), m)));
             }
             "vmat_c" => {
                 for m in pbrcombo::problems(&f.data) {
                     out.push(finding("M143", Some(p), m));
+                }
+                // M149: a texture slot Valve's material has and ours lacks: the game still asks for it
+                if let (Some(ours), Some(valve)) = (data_of(&f.data), replaces(p).then(|| valve_kv(p)).flatten()) {
+                    let mine = deep::texture_params(&ours);
+                    for t in deep::texture_params(&valve).into_iter().filter(|t| !mine.contains(t)) {
+                        out.push(finding("M149", Some(p), format!("texture '{t}' dropped: Valve's material has it, so the game asks for it and draws its error texture there")));
+                    }
                 }
                 // M148: an engine-default slot of Valve's material that ours turned into a different constant
                 if let Some(valve) = replaces(p).then(|| game_read(p)).flatten() {

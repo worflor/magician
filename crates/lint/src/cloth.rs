@@ -276,6 +276,64 @@ fn same_numbers(a: &Verdict, b: &Verdict) -> bool {
     pa.iter().zip(&pb).all(|(x, y)| x.iter().zip(y).all(|(p, q)| (p - q).abs() <= 1e-3 * q.abs().max(1e-3)))
 }
 
+/// How fast a hero falls, in units/s²: `sv_gravity` on build 6868, read from the console (ability dives fall faster).
+pub const HERO_FALL: f64 = 800.0;
+
+/// A simulated group judged in the air (`magician corpus`: a calibration, not a rule).
+#[derive(Debug, Clone)]
+pub struct Airborne {
+    pub label: String,
+    pub names: Vec<String>,
+    /// Median node's lift (below), and the worst node's.
+    pub lift: f64,
+    pub worst: f64,
+    pub gravity: f64,
+    pub goal: f64,
+}
+
+/// A node's airborne lift: while the hero falls at `HERO_FALL` the cloth is solved in a frame that falls with him, so a
+/// node of gravity g feels `HERO_FALL - g` upward. The pendulum stiffness of the solver model above turns to
+/// `(g - HERO_FALL) dt^2 / arc`, and the node keeps hanging only while `F` plus that stays above zero (the solver's
+/// recurrence at rest). Lift is `(HERO_FALL - g) dt^2 / (arc F)`: over 1 the goal spring cannot hold the node down and
+/// it swings up over its anchor for as long as the hero is airborne. A node heavier than the fall (g over 800) never
+/// rises; a node with no goal at all (F 0) rises whenever it is lighter.
+pub fn lift(f: f64, g: f64, arc: f64) -> f64 {
+    let up = (HERO_FALL - g) * DT * DT;
+    if up <= 0.0 {
+        return 0.0;
+    }
+    if !(arc > 0.0 && arc.is_finite()) {
+        return 0.0;
+    }
+    if f <= 0.0 {
+        return 999.0;
+    }
+    (up / (arc * f)).min(999.0)
+}
+
+/// Every simulated group's lift in the air (held nodes left out).
+pub fn airborne(c: &Cloth) -> Vec<Airborne> {
+    let mut out = Vec::new();
+    for g in &c.groups {
+        let free: Vec<&Node> = g.iter().map(|&i| &c.nodes[i]).filter(|n| n.f < 0.9 && n.arc.is_finite() && n.arc > 0.0).collect();
+        if free.is_empty() {
+            continue;
+        }
+        let lifts: Vec<f64> = free.iter().map(|n| lift(n.f, n.g, n.arc)).collect();
+        let mut names: Vec<String> = free.iter().map(|n| n.name.clone()).collect();
+        names.sort();
+        out.push(Airborne {
+            label: label(&names),
+            names,
+            lift: median(lifts.clone()),
+            worst: lifts.iter().cloned().fold(0.0, f64::max),
+            gravity: median(free.iter().map(|n| n.g).collect()),
+            goal: median(free.iter().map(|n| n.f).collect()),
+        });
+    }
+    out
+}
+
 /// Render-mesh area bound to a set of nodes, by group label: filled in by the caller from the decoded meshes.
 pub type BoundArea<'a> = &'a dyn Fn(&[String]) -> Option<f64>;
 

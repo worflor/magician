@@ -75,7 +75,7 @@ mod tests {
         // linted again without --deep, said nothing of them.
         assert!(!lint_facts(vec![], &[], Depth::Deep).broken());
         // The release's own run, written and read back the way `magician release` hands it to the grade.
-        let run: Vec<Finding> = ["M106", "M137"].iter().map(|c| finding(c, "on the release model")).collect();
+        let run: Vec<Finding> = ["M139", "M137"].iter().map(|c| finding(c, "on the release model")).collect();
         let file = report::write(&run, Depth::Deep, "6864", "pak10_dir.vpk");
         let (depth, back) = report::read(&file).unwrap();
         // Even accepted with a written reason, an error still counts.
