@@ -133,6 +133,9 @@ fn maid_lash_is_a_costume_of_look_effects_and_sound_with_its_m140_allowance_list
     let toml = need!(mod_toml("maid-lash"), "no model-replacements/maid-lash/mod.toml");
     let allow = need!(allow(&m, "maid_lash"), "no maid_lash magician.allow in the CSDK");
     let r = record(std::slice::from_ref(&pak), &toml, Some(&allow), None);
+    // This test is about the released pak. A rebuild installed while it is being worked on has no proof yet, so its
+    // label and gate carry `unproven`: not this test's subject.
+    need!((!r.contains("\"freshness\":{\"proven\":[]")).then_some(()), "the installed maid_lash pak has no proof on record (a rebuild under test)");
     assert!(r.contains("\"label\":\"Costume (look, effects, sound)\""), "{r}");
     assert!(r.contains("\"broken\":false") && !r.contains("\"letter\"") && !r.contains("\"caps\""), "{r}");
     assert!(r.contains("\"identity\":{\"kind\":\"same\""), "Valve's head, still Lash: {r}");
