@@ -47,7 +47,7 @@ Magician works against things it doesn't own: the game install, Valve's CSDK, th
 | Game lock | | `MAGICIAN_GAME_LOCK` | `game_lock` | `<reference>/work/ingame-game.lock` |
 | Policy | `--policy` | `MAGICIAN_POLICY` | `policy` | none: the built-in defaults |
 | Mods (`patchday`, `reprove`) | `--mod`, each | `MAGICIAN_MODS` | `mods` | the nearest folder, from the working one upward, with `mod.toml` files one or two levels below it (`patchday::mod_tomls_under`) |
-| Toolkit folder | | `MAGICIAN_HOME` | `home` | the folder above the program that holds `ingame/mod_session.py` |
+| Toolkit folder | | `MAGICIAN_HOME` | `home` | the folder above the program that holds `ingame/mod_session.py`, else the checkout it was built from (`CARGO_MANIFEST_DIR` at build time), so a build into a `CARGO_TARGET_DIR` elsewhere finds it too |
 | Python | | `MAGICIAN_PYTHON` | `python` | `python` or `python3` on PATH (and `py -3` on Windows) |
 | Update source | `--source` | `MAGICIAN_UPDATE_SOURCE` | `update_source` | `<repository>/releases/latest/download`, the `repository` of the workspace `Cargo.toml` read at build time |
 

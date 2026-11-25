@@ -106,7 +106,7 @@ Magician finds Deadlock through Steam's own library list. Everything it derives 
 | The mods `patchday` checks | `--mod` (each one) | `MAGICIAN_MODS` | `mods` | the nearest folder, from the working one upward, with mods one or two levels below it |
 | Game lock | | `MAGICIAN_GAME_LOCK` | `game_lock` | `<reference>/work/ingame-game.lock` |
 | Policy (the judgement numbers, below) | `--policy` | `MAGICIAN_POLICY` | `policy` | the built-in defaults |
-| The toolkit folder | | `MAGICIAN_HOME` | `home` | the folder above the program that holds `ingame/mod_session.py` |
+| The toolkit folder | | `MAGICIAN_HOME` | `home` | the folder above the program that holds `ingame/mod_session.py`, else the checkout it was built from |
 | Python | | `MAGICIAN_PYTHON` | `python` | `python` or `python3` on PATH (or `py -3` on Windows) |
 | Update source (a release's files) | `--source` | `MAGICIAN_UPDATE_SOURCE` | `update_source` | the latest release of this build's repository |
 | Steam, for the in-game harness to launch the game | | `MAGICIAN_STEAM` | `steam` | Windows: the `SteamExe` Steam records; Linux: `steam` on PATH, else the Flatpak's |

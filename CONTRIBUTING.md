@@ -110,7 +110,7 @@ python cinema/test_scene.py      # the film kit's language and encode, offline (
 python cinema/test_session.py    # the film kit's seat hand-back, on a fake clock
 ```
 
-The Python tests that run the program find it at `target/release/`; a build elsewhere (`CARGO_TARGET_DIR`) is named with `MAGICIAN_BIN=<the program>`.
+The Python tests and tools that run the program find the release build where cargo put it (`CARGO_TARGET_DIR`, else `target/`); `MAGICIAN_BIN=<a program>` names another. The program finds its toolkit above itself, else in the checkout it was built from.
 
 Before a change lands, run what CI would:
 

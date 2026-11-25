@@ -19,7 +19,7 @@ Add this to the `.mcp.json` of the project (or to the `mcpServers` object of you
 
 From a terminal the same server is `python <magician>/mcp/server.py`; any MCP client that speaks stdio can run it. Nothing in the repository edits a settings file: registering it is yours to do.
 
-The server runs `target/release/magician` (`magician.exe` on Windows), or the one in `target/mcp-build/release/` when that one is newer; `MAGICIAN_BIN` in the entry's `"env"` pins another binary. Build it with `cargo build --release`. Each call's output goes to a log file under `mcp/logs` (`MAGICIAN_MCP_LOGS` moves them).
+The server runs `target/release/magician` (`magician.exe` on Windows), or the one in `target/mcp-build/release/` or in `$CARGO_TARGET_DIR/release/`, whichever is newest; `MAGICIAN_BIN` in the entry's `"env"` pins another binary. Build it with `cargo build --release`. Each call's output goes to a log file under `mcp/logs` (`MAGICIAN_MCP_LOGS` moves them).
 
 ## Tools
 
