@@ -130,9 +130,9 @@ either is not there):
                                                 has a blocker; --dry-run says what would go where and sends nothing;
                                                 `magician publish --help`
 
-Inside a mod's folder (one with a mod.toml, or below one) lint, grade, drift, release, install, uninstall, prove,
-footprint and scene check|install need nothing after the verb: the paks, hero, addon, allowances, last proven build
-and scene patches come from the mod.toml (its [mod] paks, else the paks beside it, else the ones installed for it),
+Inside a mod's folder (one with a mod.toml, or below one) check, ls, lint, grade, drift, release, install, uninstall,
+prove, footprint and scene check|install need nothing after the verb: the paks, hero, addon, allowances, last proven
+build and scene patches come from the mod.toml (its [mod] paks, else the paks beside it, else the ones installed for it),
 and what was used is said on stderr. Anything given explicitly wins. A hero is named any way: lash, Lash, hero_lash,
 \"Lady Geist\" or its model's path.
 
@@ -329,8 +329,9 @@ Exit codes: 0 clean, nothing to do; 1 broken, a contract or rule failed and some
 FAIL, drift or patchday BROKEN, a scene patch that no longer fits the game, an expression that fails its proof, a
 release whose lint failed, `grade --gate` with a blocker); 2 usage error (bad arguments, a missing file, a tool that is
 not there); 3 refused on purpose, nothing changed (lint errors at install, a game seat or build lock someone else
-holds, a slot another mod owns, an update that could not be fetched or verified); 4 re-prove: it loads, but must be
-proven in game on this build (check, drift, patchday); 5 an update is available (`update --check`, and nothing else).
+holds, a slot another mod owns, an update that could not be fetched or verified, a publish the release gate blocks);
+4 re-prove: it loads, but must be proven in game on this build (check, drift, patchday); 5 an update is available
+(`update --check`, and nothing else).
 The reason for 1, 2 and 3 follows `magician:` on stderr; with --json, a command that stops on one prints it as the one
 document on stdout too (schema magician.error/1). `--help` (or -h) after any command prints its usage and
 exits 0 without doing anything; `--version` prints the toolchain version.

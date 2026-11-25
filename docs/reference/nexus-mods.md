@@ -21,8 +21,9 @@ will do). From there the tool can:
 
 Making the page public is the Publish button on the site.
 
-The schema does not say whether every call is accepted on a page that is not published yet. If one is refused, the
-step that failed is named with Nexus's own words; publish the page on the site, then run again.
+A page that is still a draft takes every call here: a first file, a new version, the changelog and the page text
+all went onto an unpublished page (2026-11-25). The schema does not promise it; if a call is ever refused, the step
+that failed is named with Nexus's own words.
 
 **Generative AI.** Since 3 November 2026 every mod page on Nexus Mods must declare whether generative AI was used in
 it, with Nexus's labels (AI Generated Content; AI Assisted, with a note of the tools and where they were used; AI
@@ -59,7 +60,7 @@ An unknown key is a usage error, so a misspelt switch is caught.
 
 What goes up with the zip comes from the zip and the bundle: the bundle's `release` as the version string, the file
 description cut at a word to Nexus's 255 characters, and the section of the zip's `CHANGELOG.md` for that release,
-one entry per line. Nexus appends changelog text and never replaces it, so it is sent only when the page has none
+one entry per line, which is how Nexus stores and shows it. Nexus appends changelog text and never replaces it, so it is sent only when the page has none
 for that version yet.
 
 ## The key
