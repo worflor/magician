@@ -668,8 +668,27 @@ pub fn runs_from(game: &Path, exes: &[Option<PathBuf>]) -> bool {
 }
 
 /// The executables of the running games (`deadlock.exe`), each `None` when its path can't be read (another user's or
-/// an elevated process). Windows only; elsewhere the path is not read and every running game counts as unplaced.
+/// an elevated process, or a Wine drive that can't be placed). Windows asks the system; Linux reads `/proc`, where the
+/// game under Proton names its program by a Wine path (`wine_to_unix`). Elsewhere every running game is unplaced.
 pub fn running_game_exes() -> Vec<Option<PathBuf>> {
+    if cfg!(target_os = "linux") {
+        let mut v = Vec::new();
+        for e in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
+            if !e.file_name().to_string_lossy().bytes().all(|b| b.is_ascii_digit()) {
+                continue;
+            }
+            let p = e.path();
+            let comm = std::fs::read_to_string(p.join("comm")).unwrap_or_default();
+            let cmdline = std::fs::read(p.join("cmdline")).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+            if !is_game_process(&comm, &cmdline) {
+                continue;
+            }
+            let environ = std::fs::read(p.join("environ")).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+            let prefix = environ.split('\0').find_map(|kv| kv.strip_prefix("WINEPREFIX=")).map(PathBuf::from);
+            v.push(game_program(&cmdline).and_then(|prog| wine_to_unix(prog, prefix.as_deref())));
+        }
+        return if v.is_empty() { vec![None] } else { v };
+    }
     if !cfg!(windows) {
         return vec![None];
     }
@@ -683,6 +702,31 @@ pub fn running_game_exes() -> Vec<Option<PathBuf>> {
         }
         _ => vec![None],
     }
+}
+
+/// The game's program in a `/proc/<pid>/cmdline`: the first argument, or a Wine loader's second.
+fn game_program(cmdline: &str) -> Option<&str> {
+    let mut args = cmdline.split('\0').filter(|a| !a.is_empty());
+    let first = args.next()?;
+    let base = first.rsplit(['/', '\\']).next().unwrap_or("");
+    if base.starts_with("wine") || base.contains("preloader") { args.next() } else { Some(first) }
+}
+
+/// A Wine path as the Linux path it names: `Z:\home\u\...` is `/home/u/...` (Wine's Z: is the root), another drive is
+/// its link in the prefix's `dosdevices`, and a path that is already a Linux one is itself. `None` when it can't be
+/// placed.
+pub fn wine_to_unix(p: &str, prefix: Option<&Path>) -> Option<PathBuf> {
+    if p.starts_with('/') {
+        return Some(PathBuf::from(p));
+    }
+    let b = p.as_bytes();
+    if b.len() < 3 || !b[0].is_ascii_alphabetic() || b[1] != b':' || !matches!(b[2], b'\\' | b'/') {
+        return None;
+    }
+    let rest: Vec<&str> = p[3..].split(['\\', '/']).filter(|s| !s.is_empty()).collect();
+    let drive = b[0].to_ascii_lowercase() as char;
+    let root = if drive == 'z' { PathBuf::from("/") } else { std::fs::canonicalize(prefix?.join("dosdevices").join(format!("{drive}:"))).ok()? };
+    Some(rest.iter().fold(root, |acc, s| acc.join(s)))
 }
 
 /// A process is the game when its name, or its program in its command line, is `deadlock.exe` (Windows, or Proton) or
@@ -736,6 +780,31 @@ mod tests {
         assert!(!is_game_process("bash", "bash\0-c\0echo\0deadlock.exe"));
         assert!(!is_game_process("steam", "/usr/bin/steam\0"));
         assert!(!is_game_process("", ""));
+    }
+
+    #[test]
+    fn a_game_under_proton_is_placed_by_its_wine_path() {
+        let cmd = "/home/u/.steam/proton/files/bin/wine64-preload\0Z:\\home\\u\\Steam\\steamapps\\common\\Deadlock\\game\\bin\\win64\\deadlock.exe\0-novid\0";
+        let prog = game_program(cmd).unwrap();
+        assert_eq!(wine_to_unix(prog, None), Some(Path::new("/").join("home").join("u").join("Steam").join("steamapps").join("common").join("Deadlock").join("game").join("bin").join("win64").join("deadlock.exe")));
+        assert_eq!(game_program("/usr/bin/deadlock.exe\0-x\0"), Some("/usr/bin/deadlock.exe"));
+        assert_eq!(wine_to_unix("/opt/Deadlock/game/bin/win64/deadlock.exe", None), Some(PathBuf::from("/opt/Deadlock/game/bin/win64/deadlock.exe")));
+        assert_eq!(wine_to_unix("D:\\Games\\deadlock.exe", None), None, "another drive needs the prefix");
+        assert_eq!(wine_to_unix("deadlock.exe", None), None);
+        // a drive in the prefix is its dosdevices link
+        let d = std::env::temp_dir().join(format!("magician-wine-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("pfx").join("dosdevices")).unwrap();
+        std::fs::create_dir_all(d.join("lib")).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(d.join("lib"), d.join("pfx").join("dosdevices").join("d:")).unwrap();
+            let lib = std::fs::canonicalize(d.join("lib")).unwrap();
+            assert_eq!(wine_to_unix("D:\\steamapps\\x.exe", Some(&d.join("pfx"))), Some(lib.join("steamapps").join("x.exe")));
+            // and that is what the seat check compares with the game folder an install changes
+            assert!(runs_from(&lib.join("steamapps"), &[Some(lib.join("steamapps").join("x.exe"))]));
+        }
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

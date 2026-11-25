@@ -92,8 +92,8 @@ Start here:
                                                 broken, 4 re-prove (not proven on this build), 0 clean
 
 The toolkit's Python, through the same door (everything after the verb is the tool's own, --help included, with its
-stdio and exit code; the toolkit folder is MAGICIAN_HOME, `home =`, else the one above magician.exe holding
-ingame\\mod_session.py; Python is MAGICIAN_PYTHON, `python =`, else python, python3 or py -3 on PATH; exit 2 when
+stdio and exit code; the toolkit folder is MAGICIAN_HOME, `home =`, else the one above this binary holding
+ingame/mod_session.py; Python is MAGICIAN_PYTHON, `python =`, else python, python3 (or py -3 on Windows); exit 2 when
 either is not there):
   magician session qa --mod <folder> --out <dir> [scenario]...
                                                 ingame/mod_session.py: a mod's in-game session (up, run, film, down,
@@ -138,7 +138,8 @@ Every command:
                                                 FeModel (PHYS): per chain static/free counts, goal and vertex attraction,
                                                 gravity, collision and stray radii, rods, shapes and their layers, beside
                                                 Valve's model at the same path
-  magician cache [stats|clear]                  the findings cache (%LOCALAPPDATA%\\magician\\cache); any command takes --no-cache
+  magician cache [stats|clear]                  the findings cache (MAGICIAN_CACHE, else the platform's cache folder;
+                                                `magician paths` shows it); any command takes --no-cache
   magician lint <mod.vpk> [--baseline FILE] [--built-against FILE] [--allow FILE]... [--deep] [--timings] [--findings-out FILE] [--json-out FILE]
                 [--sources DIR]... [--json]     addon content trees: referenced files with no source left are M032
                                                 check a mod against a game build (exit 1 on errors); --findings-out
@@ -279,8 +280,9 @@ document on stdout too (schema magician.error/1). `--help` (or -h) after any com
 exits 0 without doing anything; `--version` prints the toolchain version.
 
 Locations: the game is --game, DEADLOCK_GAME, `game =` in the config file, else found through Steam; the reference
-folder (baselines, indexes, work\\) is --reference, MAGICIAN_REFERENCE, `reference =`, else
-%LOCALAPPDATA%\\magician\\reference; the CSDK is --csdk, MAGICIAN_CSDK or `csdk =`; the Source 2 Viewer CLI is --vrf,
+folder (baselines, indexes, work/) is --reference, MAGICIAN_REFERENCE, `reference =`, else magician/reference in
+the platform's data folder (%LOCALAPPDATA% on Windows, ~/.local/share on Linux); the CSDK is --csdk, MAGICIAN_CSDK
+or `csdk =` (its compiler is a Windows program: build and release compile on Windows); the Source 2 Viewer CLI is --vrf,
 MAGICIAN_VRF, `vrf =`, else Source2Viewer-CLI on PATH; the update source is --source, MAGICIAN_UPDATE_SOURCE,
 `update_source =`, else the latest release of this build's repository. `magician paths` prints what each resolved to
 and where the config file is.";
@@ -457,13 +459,10 @@ use cli::Stop;
 
 type R = Result<ExitCode, Stop>;
 
-/// Where derived results are kept between runs: `MAGICIAN_CACHE` if set, else `%LOCALAPPDATA%\magician\cache`.
-/// `--no-cache` or `MAGICIAN_NO_CACHE=1` turns it off for the run (results are identical either way).
+/// Where derived results are kept between runs (`paths::cache`). `--no-cache` or `MAGICIAN_NO_CACHE=1` turns it off for
+/// the run (results are identical either way).
 fn cache_dir() -> Option<PathBuf> {
-    if let Some(d) = std::env::var_os("MAGICIAN_CACHE").filter(|d| !d.is_empty()) {
-        return Some(PathBuf::from(d));
-    }
-    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("magician").join("cache"))
+    paths::cache().map(|f| f.path)
 }
 
 fn configure_cache(off: bool) {
@@ -1747,6 +1746,13 @@ fn compile_addon(addon: &str, args: &[String], compile: bool, explicit_bin: Opti
         });
     if up_to_date {
         say!("compiled {addon}: up to date, no source changed since the last compile (resourcecompiler not started; --force-compile runs it)");
+    }
+    if compile && !up_to_date && !cfg!(windows) {
+        // Valve's compiler is a Windows program (README.md, Platforms): say so here rather than fail to start it.
+        return Err(Stop::Usage(format!(
+            "{addon}: its sources changed since the last compile, and resourcecompiler.exe runs on Windows only: compile \
+             on Windows, or package what is already compiled with --no-compile"
+        )));
     }
     if compile && !up_to_date {
         // A UTF-8 BOM makes resourcecompiler reject a text source. Refuse rather than strip: the sources belong to

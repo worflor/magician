@@ -36,6 +36,11 @@ fn c(name: &'static str, state: State, detail: impl Into<String>, fix: Option<St
     Check { name, state, detail: detail.into(), fix }
 }
 
+/// An example path for a fix, written as this system writes paths.
+fn native(windows: &str) -> String {
+    if cfg!(windows) { windows.to_string() } else { windows.replace('\\', "/") }
+}
+
 /// Whether a program named without a folder is on PATH.
 fn on_path(name: &Path) -> Option<PathBuf> {
     let exts: Vec<String> = if cfg!(windows) { vec![String::new(), ".exe".into(), ".cmd".into(), ".bat".into()] } else { vec![String::new()] };
@@ -80,7 +85,7 @@ pub fn checks(args: &[String]) -> Vec<Check> {
             }
         }
         Err(e) => {
-            out.push(c("game", State::Fail, e.clone(), Some(format!("pass --game <...\\Deadlock\\game>, set DEADLOCK_GAME, or {}", config_line("game", "<...>\\steamapps\\common\\Deadlock\\game")))));
+            out.push(c("game", State::Fail, e.clone(), Some(format!("pass --game <.../Deadlock/game>, set DEADLOCK_GAME, or {}", config_line("game", &native("<...>\\steamapps\\common\\Deadlock\\game"))))));
             None
         }
     };
@@ -141,20 +146,23 @@ pub fn checks(args: &[String]) -> Vec<Check> {
     let vrf_at = if vrf.path.components().count() > 1 { Some(vrf.path.clone()).filter(|p| p.is_file()) } else { on_path(&vrf.path) };
     match vrf_at {
         Some(p) => out.push(c("viewer", State::Ok, format!("Source 2 Viewer CLI {} ({})", p.display(), vrf.source), None)),
-        None => out.push(c("viewer", State::Skip, format!("no Source 2 Viewer CLI at {} ({}): grade, footprint and index need it", vrf.path.display(), vrf.source), Some(format!("install Source 2 Viewer 21.1's CLI, then {}", config_line("vrf", "<...>\\Source2Viewer-CLI.exe"))))),
+        None => out.push(c("viewer", State::Skip, format!("no Source 2 Viewer CLI at {} ({}): grade, footprint and index need it", vrf.path.display(), vrf.source), Some(format!("install Source 2 Viewer 21.1's CLI, then {}", config_line("vrf", if cfg!(windows) { "<...>\\Source2Viewer-CLI.exe" } else { "<...>/Source2Viewer-CLI" }))))),
     }
     match paths::csdk(flag(args, "--csdk")) {
         Ok(f) => {
             // the compiler is in one of the CSDK's bin folders (win64, win64_nm; build.rs picks per addon)
             let bin = f.path.join("game").join("bin");
             let has_rc = std::fs::read_dir(&bin).into_iter().flatten().flatten().any(|e| e.path().join("resourcecompiler.exe").is_file());
-            if has_rc {
+            if !has_rc {
+                out.push(c("csdk", State::Fail, format!("{} ({}) has no resourcecompiler.exe in a folder under game/bin", f.path.display(), f.source), Some("point it at the CSDK 13 folder that holds content/ and game/".into())));
+            } else if cfg!(windows) {
                 out.push(c("csdk", State::Ok, format!("{} ({})", f.path.display(), f.source), None));
             } else {
-                out.push(c("csdk", State::Fail, format!("{} ({}) has no resourcecompiler.exe in a folder under game\\bin", f.path.display(), f.source), Some("point it at the CSDK 13 folder that holds content\\ and game\\".into())));
+                // Valve's compiler is a Windows program; packaging what it compiled, and sign, work here
+                out.push(c("csdk", State::Skip, format!("{} ({}): resourcecompiler.exe runs on Windows only, so build and release package what is already compiled (--no-compile); sign works", f.path.display(), f.source), Some("compile on Windows".into())));
             }
         }
-        Err(_) => out.push(c("csdk", State::Skip, "no CSDK: only build, release and sign need it", Some(config_line("csdk", "<...>\\Reduced_CSDK_13")))),
+        Err(_) => out.push(c("csdk", State::Skip, "no CSDK: only build, release and sign need it", Some(config_line("csdk", &native("<...>\\Reduced_CSDK_13"))))),
     }
     match load_policy(args) {
         Ok(p) => out.push(c("policy", State::Ok, format!("{} ({})", p.file.as_deref().unwrap_or("built-in"), if p.overrides().is_empty() { "the defaults".to_string() } else { format!("{} key(s) moved", p.overrides().len()) }), None)),

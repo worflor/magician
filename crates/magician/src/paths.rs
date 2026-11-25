@@ -17,6 +17,11 @@
 //!
 //! It lives at `MAGICIAN_CONFIG`, else `%APPDATA%\magician\config.txt` (Windows) or
 //! `$XDG_CONFIG_HOME/magician/config.txt` (`~/.config/magician/config.txt`).
+//!
+//! The defaults follow each platform's own convention, and this file is the only place that knows them: config in
+//! `%APPDATA%` or `$XDG_CONFIG_HOME`, the reference folder in `%LOCALAPPDATA%` or `$XDG_DATA_HOME`, the findings
+//! cache in `%LOCALAPPDATA%` or `$XDG_CACHE_HOME`, Steam in the registry and Program Files or in the native, Flatpak
+//! and Snap homes.
 
 use std::path::{Path, PathBuf};
 
@@ -148,11 +153,11 @@ pub fn game(flag: Option<String>) -> Result<Found, String> {
     if let Some(f) = explicit(flag, "--game", "DEADLOCK_GAME", "game") {
         return game_folder(&f.path)
             .map(|path| Found { path, source: f.source.clone() })
-            .ok_or_else(|| format!("{} {}: no citadel\\steam.inf there (point it at Deadlock's `game` folder)", f.source, f.path.display()));
+            .ok_or_else(|| format!("{} {}: no citadel/steam.inf there (point it at Deadlock's `game` folder)", f.source, f.path.display()));
     }
     steam_game()
         .map(|path| Found { path, source: "steam".into() })
-        .ok_or_else(|| "could not find Deadlock through Steam; pass --game <...\\Deadlock\\game>, set DEADLOCK_GAME, or add `game = ...` to the config file (magician paths shows where)".into())
+        .ok_or_else(|| "could not find Deadlock through Steam; pass --game <.../Deadlock/game>, set DEADLOCK_GAME, or add `game = ...` to the config file (magician paths shows where)".into())
 }
 
 // ----------------------------------------------------------------------------------------------- everything else
@@ -172,11 +177,26 @@ pub fn reference() -> Found {
     Found { path: base.unwrap_or_default().join("magician").join("reference"), source: "default".into() }
 }
 
+/// The findings cache: `MAGICIAN_CACHE`, else `%LOCALAPPDATA%\magician\cache` (Windows) or
+/// `$XDG_CACHE_HOME/magician` (`~/.cache/magician`). `None` when neither the variable nor a home is there: the cache
+/// is then off, which changes no result.
+pub fn cache() -> Option<Found> {
+    if let Some(v) = env("MAGICIAN_CACHE") {
+        return Some(Found { path: PathBuf::from(v), source: "MAGICIAN_CACHE".into() });
+    }
+    let path = if cfg!(windows) {
+        env("LOCALAPPDATA").map(|d| PathBuf::from(d).join("magician").join("cache"))
+    } else {
+        env("XDG_CACHE_HOME").map(PathBuf::from).or_else(|| env("HOME").map(|h| PathBuf::from(h).join(".cache"))).map(|d| d.join("magician"))
+    };
+    path.map(|path| Found { path, source: "default".into() })
+}
+
 /// Valve's CSDK (the folder holding `content\` and `game\`): `--csdk`, `MAGICIAN_CSDK`, the config's `csdk`. Only
 /// `build`, `release` and `sign` need it, so there is no default to guess.
 pub fn csdk(flag: Option<String>) -> Result<Found, String> {
     explicit(flag, "--csdk", "MAGICIAN_CSDK", "csdk").ok_or_else(|| {
-        "this needs Valve's CSDK (the folder with content\\ and game\\bin\\); pass --csdk DIR, set MAGICIAN_CSDK, or add `csdk = ...` to the config file".into()
+        "this needs Valve's CSDK (the folder with content/ and game/bin/); pass --csdk DIR, set MAGICIAN_CSDK, or add `csdk = ...` to the config file".into()
     })
 }
 
@@ -198,14 +218,14 @@ pub fn mods() -> Option<Found> {
 pub fn toolkit() -> Result<Found, String> {
     let marker = |d: &Path| d.join("ingame").join("mod_session.py").is_file();
     if let Some(f) = explicit(None, "", "MAGICIAN_HOME", "home") {
-        return if marker(&f.path) { Ok(f) } else { Err(format!("{} ({}) holds no ingame\\mod_session.py: point MAGICIAN_HOME (or `home =` in the config file) at the magician folder", f.path.display(), f.source)) };
+        return if marker(&f.path) { Ok(f) } else { Err(format!("{} ({}) holds no ingame/mod_session.py: point MAGICIAN_HOME (or `home =` in the config file) at the magician folder", f.path.display(), f.source)) };
     }
     let exe = std::env::current_exe().map_err(|e| format!("this executable's own path can't be read ({e}); set MAGICIAN_HOME to the magician folder"))?;
     exe.ancestors()
         .skip(1)
         .find(|d| marker(d))
-        .map(|d| Found { path: d.to_path_buf(), source: "the folder above magician.exe that holds ingame\\mod_session.py".into() })
-        .ok_or_else(|| format!("no folder above {} holds ingame\\mod_session.py, so the toolkit's Python tools are not here: set MAGICIAN_HOME (or `home =` in the config file) to the magician folder (the checkout with ingame\\ and tools\\)", exe.display()))
+        .map(|d| Found { path: d.to_path_buf(), source: "the folder above this magician that holds ingame/mod_session.py".into() })
+        .ok_or_else(|| format!("no folder above {} holds ingame/mod_session.py, so the toolkit's Python tools are not here: set MAGICIAN_HOME (or `home =` in the config file) to the magician folder (the checkout with ingame/ and tools/)", exe.display()))
 }
 
 /// The Python 3 that runs the toolkit's tools: `MAGICIAN_PYTHON`, the config's `python`, else the first of `python`,
@@ -226,7 +246,7 @@ pub fn python() -> Result<(Found, Vec<String>), String> {
     if let Some(f) = explicit(None, "", "MAGICIAN_PYTHON", "python") {
         return match answers(&f.path, &[]) {
             Some(_) => Ok((f, Vec::new())),
-            None => Err(format!("{} ({}) does not run as Python 3: point MAGICIAN_PYTHON (or `python =` in the config file) at python.exe", f.path.display(), f.source)),
+            None => Err(format!("{} ({}) does not run as Python 3: point MAGICIAN_PYTHON (or `python =` in the config file) at a Python 3 program", f.path.display(), f.source)),
         };
     }
     let mut tries: Vec<(&str, Vec<&str>)> = vec![("python", vec![]), ("python3", vec![])];
@@ -238,7 +258,8 @@ pub fn python() -> Result<(Found, Vec<String>), String> {
             return Ok((Found { path: PathBuf::from(prog), source: "PATH".into() }, pre.iter().map(|s| s.to_string()).collect()));
         }
     }
-    Err("no Python 3 on PATH (python, python3, py -3): install Python 3.8 or newer, or set MAGICIAN_PYTHON (or `python =` in the config file) to python.exe".into())
+    let looked = if cfg!(windows) { "python, python3, py -3" } else { "python, python3" };
+    Err(format!("no Python 3 on PATH ({looked}): install Python 3.8 or newer, or set MAGICIAN_PYTHON (or `python =` in the config file) to a Python 3 program"))
 }
 
 /// The policy file (every judgement number a lint and a grade use): `--policy`, `MAGICIAN_POLICY`, the config's
@@ -263,7 +284,7 @@ pub fn update_source(flag: Option<String>) -> Found {
 /// variable) would mean every addon at once, and `C:\x` or `..` somewhere outside the CSDK.
 pub fn addon_name(a: &str) -> Result<(), String> {
     if a.is_empty() || a == "." || a == ".." || a.contains(['/', '\\', ':']) || a.trim() != a {
-        return Err(format!("addon {a:?}: an addon is one folder name in the CSDK's content\\citadel_addons"));
+        return Err(format!("addon {a:?}: an addon is one folder name in the CSDK's content/citadel_addons"));
     }
     Ok(())
 }

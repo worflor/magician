@@ -112,9 +112,33 @@ pub fn holder_alive(pid: u32, started: u64) -> bool {
     }
 }
 
+/// The same question through `/proc`: the process is there and not a zombie, and (when `started` is known) it was
+/// created no later than the lock was taken. Its creation time is the boot time (`btime` in `/proc/stat`) plus field
+/// 22 of `/proc/<pid>/stat`, in clock ticks of 1/100 s (USER_HZ, which Linux fixes at 100 for user space on the
+/// machines the game runs on). Where there is no `/proc`, a process can't be judged dead, so it counts as alive.
 #[cfg(not(windows))]
-pub fn holder_alive(pid: u32, _started: u64) -> bool {
-    Path::new(&format!("/proc/{pid}")).exists()
+pub fn holder_alive(pid: u32, started: u64) -> bool {
+    let dir = format!("/proc/{pid}");
+    if !Path::new("/proc/self").exists() {
+        return true;
+    }
+    let Ok(stat) = std::fs::read_to_string(format!("{dir}/stat")) else { return false };
+    match proc_created(&stat, &std::fs::read_to_string("/proc/stat").unwrap_or_default()) {
+        Some((state, _)) if state == 'Z' || state == 'X' => false,
+        Some((_, Some(created))) if started > 0 => created <= started.saturating_add(2),
+        _ => true,
+    }
+}
+
+/// The state letter of a `/proc/<pid>/stat` line, and its creation time (unix seconds) when `/proc/stat` gives the boot.
+#[cfg(not(windows))]
+fn proc_created(stat: &str, proc_stat: &str) -> Option<(char, Option<u64>)> {
+    // the name in brackets may hold spaces and brackets of its own; the fields after the last `)` do not
+    let fields: Vec<&str> = stat.rsplit_once(')')?.1.split_whitespace().collect();
+    let state = fields.first()?.chars().next()?;
+    let btime = proc_stat.lines().find_map(|l| l.strip_prefix("btime ")).and_then(|v| v.trim().parse::<u64>().ok());
+    let ticks = fields.get(19).and_then(|v| v.parse::<u64>().ok());
+    Some((state, btime.zip(ticks).map(|(b, t)| b + t / 100)))
 }
 
 #[derive(Clone, Debug)]
@@ -310,8 +334,16 @@ mod tests {
     #[test]
     fn this_process_is_alive_and_a_pid_started_later_than_the_lock_is_not_the_holder() {
         assert!(holder_alive(std::process::id(), now_secs()));
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         assert!(!holder_alive(std::process::id(), 1_000_000), "a process created after the lock was taken is a reused pid");
+        // a /proc stat line: the name may hold a space and a bracket; a zombie is not alive
+        #[cfg(not(windows))]
+        {
+            let line = |state: &str| format!("4242 (build (x) y) {state} 1 4242 4242 0 -1 4194560 100 0 0 0 1 2 0 0 20 0 1 0 123456 1000 10\n");
+            assert_eq!(proc_created(&line("S"), "cpu 1 2 3\nbtime 1700000000\n"), Some(('S', Some(1_700_000_000 + 1234))));
+            assert_eq!(proc_created(&line("Z"), ""), Some(('Z', None)));
+            assert_eq!(proc_created("garbage", ""), None);
+        }
         // a lock file whose start time is the largest number it can hold: a live holder, not an overflow
         assert!(holder_alive(std::process::id(), u64::MAX));
         let h = Holder::parse("pid 1\nstarted 18446744073709551615\nholder x\n").unwrap();
