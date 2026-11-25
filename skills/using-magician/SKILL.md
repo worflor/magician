@@ -13,7 +13,7 @@ Magician treats a Deadlock mod as a program and each game build as a compiler ta
 
 ## Orient first
 
-One program does everything: `magician` (`target/release/magician` in a checkout, `magician.exe` on Windows; if it is missing or older than the source, `cargo build --release`, no network needed). The parts written in Python run through it too (`magician session`, `reprove`, `bundle`, `source`), so you never need to know which is which. Commands here read the same on Windows and Linux: paths use `/`, and `python` is the Python 3 on PATH (`python3` on most Linux systems).
+One program does everything: `magician` (`target/release/magician` in a checkout, `magician.exe` on Windows; if it is missing or older than the source, `cargo build --release`, no network needed). The parts written in Python run through it too (`magician session`, `reprove`, `bundle`, `source`, `publish`), so you never need to know which is which. Commands here read the same on Windows and Linux: paths use `/`, and `python` is the Python 3 on PATH (`python3` on most Linux systems).
 
 ```
 magician                  # the game it found, the mod of this folder, and what to run next
@@ -49,7 +49,7 @@ The installed build number is `ClientVersion` in `<game>/citadel/steam.inf`; eve
 | 0 | Clean: nothing to do | Report it as clean |
 | 1 | Broken: a contract or rule failed (lint errors, mesh FAIL, drift or patchday BROKEN, a scene patch that no longer fits, a failed release lint, `grade --gate` with a blocker, a re-prove pass that failed) | This is a result, not a crash. Report the findings; don't retry |
 | 2 | Usage error: bad arguments, an option without its value or given twice, a missing file, a tool that is not there, a policy that does not read | Read the line after `magician:` on stderr (with `--json`, the `magician.error/1` document on stdout says the same) and fix your call |
-| 3 | Refused on purpose: lint errors at install, a game seat or build lock someone else holds, a slot another mod owns, an uninstall of a file whose bytes are not the ones Magician installed, a proof of nothing installed | A decision, not a bug: report it, don't route around it |
+| 3 | Refused on purpose: lint errors at install, a game seat or build lock someone else holds, a slot another mod owns, an uninstall of a file whose bytes are not the ones Magician installed, a proof of nothing installed, a publish the release gate blocks | A decision, not a bug: report it, don't route around it |
 | 4 | Re-prove: it loads, but must be proven in game on this build (`check`, `drift`, `patchday`); from `reprove`, at least one mod's pass needs a look | Report which mods need an in-game pass, or which passes to read |
 | 5 | An update is available (`update --check` only) | Report it. Apply it only on the operator's standing instruction (below) |
 

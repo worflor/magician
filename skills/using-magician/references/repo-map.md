@@ -7,7 +7,9 @@ For reading code and rules when a finding needs explaining, or when you are aske
 | `crates/magician/src/main.rs` | The CLI: dispatch, the usage text (`USAGE`), lint, grade, drift, build, release, install, policy commands |
 | `crates/magician/src/cli.rs` | `--help`, `--version`, option checking and the exit codes |
 | `crates/magician/src/paths.rs` | How the game, reference folder, CSDK, viewer, mods folder, toolkit, game lock and policy file are found |
-| `crates/magician/src/frontdoor.rs`, `newcmd.rs` | The verbs that run the Python tools (`session`, `reprove`, `bundle`, `source`); `magician new` |
+| `crates/magician/src/frontdoor.rs`, `newcmd.rs` | The verbs that run the Python tools (`session`, `reprove`, `bundle`, `source`, `publish`); `magician new` |
+| `crates/magician/src/initcmd.rs`, `archive.rs`, `diffcmd.rs` | `magician init` (a `mod.toml` for paks, and the paks out of a download); `magician diff` |
+| `crates/magician/src/witness.rs`, `corpuscmd.rs`, `crates/lint/src/corpus.rs` | A mod's findings against the game's log; the rules run over Valve's own content |
 | `crates/magician/src/install.rs` | Install, uninstall, the ledger, slots, the `gameinfo.gi` backup, the seat check |
 | `crates/magician/src/patchday.rs`, `patchcmd.rs`, `proofs.rs` | Baselines as eras, rig sidecars, drift verdicts, `patchday`, `prove`, mod discovery; the proof ledger (`proofs.tsv`: which bytes were proven on which build) |
 | `crates/magician/src/scene.rs` | Scene patches; the patch format is documented at the top |

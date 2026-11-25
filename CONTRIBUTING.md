@@ -19,7 +19,7 @@ Each kind of knowledge has one home. Read it there, and put new knowledge there.
 
 - [docs/PDD.md](docs/PDD.md): what Magician is for (automation first), what it promises its caller, its taste, its non-goals and its name.
 - [docs/TDD.md](docs/TDD.md): the technical model (builds as targets, mods as programs), crates, locations, the files it owns, the pipeline, grading.
-- [docs/reference/engine.md](docs/reference/engine.md): facts about Deadlock, the CSDK compiler and Source 2 Viewer that the code relies on, and the scars behind them. One fact in one place.
+- [docs/reference/engine.md](docs/reference/engine.md): facts about Deadlock, the CSDK compiler and Source 2 Viewer that the code relies on, and the scars behind them. One fact in one place. Beside it, [mod-source.md](docs/reference/mod-source.md) and [nexus-mods.md](docs/reference/nexus-mods.md): what the two publishing tools write, and what Deadlock Mod Manager and Nexus Mods do with it.
 - [docs/STATUS.md](docs/STATUS.md): current state, loose ends and known gaps. [CHANGELOG.md](CHANGELOG.md): what shipped, newest first.
 - [docs/PATCH-DAY.md](docs/PATCH-DAY.md): the patch-day runbook and what each failure means.
 - [docs/SHOWCASE.md](docs/SHOWCASE.md): two real skins in Magician's own output. Its blocks are pasted from the tool, so run them again when a label, a verdict line or the skins change.
@@ -52,7 +52,8 @@ crates/mesh       compiled model meshes (meshoptimizer v0/v1), skeleton, hitboxe
                   cloth.rs (the FeModel in PHYS: the one decoder for `magician cloth` and the cloth lint)
 crates/geom       geometry kernel (exact predicates, BVH, raster, topology)
 crates/lint       rules (deep.rs reads inside files; mesh/ is the M1xx family; mesh/rules.rs holds every judgement constant),
-                  policy.rs (the fair-play limits a run is handed), allow.rs, baseline.rs, cache.rs
+                  policy.rs (the fair-play limits a run is handed), allow.rs, baseline.rs, cache.rs, corpus.rs (a rule's
+                  test run over Valve's own content)
 crates/grade      hero footprint, the rubric (rubric.rs is the only home for every grading number), identity, compliance,
                   the record and label, the policy reader, the mod.toml reader, SHA-256 and the JSON writer
 crates/expr       DynamicParams parser and interval proof
@@ -62,7 +63,9 @@ crates/fuzz       the fuzz harness, a dev-dependency only: seeded cases, byte an
 crates/magician   the CLI: main.rs, cli.rs (--help, --version, options, exit codes, the nearest real name for a typo),
                   paths.rs (where the game, reference folder, tools and policy are), modctx.rs (the mod of the working
                   folder, and filling a bare verb in from it), heroes.rs (the game's hero table), checkcmd.rs, doctor.rs,
-                  initcmd.rs, newcmd.rs (a skin's folder from nothing), frontdoor.rs (session, reprove, bundle,
+                  initcmd.rs and archive.rs (a mod.toml for paks, and the paks out of a download), diffcmd.rs (two paks,
+                  the same mod or not), witness.rs and corpuscmd.rs (findings against the game's log and against
+                  Valve's content), newcmd.rs (a skin's folder from nothing), frontdoor.rs (session, reprove, bundle,
                   source and publish: the Python tools through the CLI), update.rs (`update --check`, the release's `VERSION`,
                   the update source and the curl fetch) and updateapply.rs (applying one: the checksum, the swap and
                   its rollback, the git fast-forward and rebuild), out.rs (every write to stdout and stderr), style.rs,
@@ -169,7 +172,7 @@ A release is its asset per platform (`magician-windows-x64.zip`, `magician-linux
 2. **Every lint rule ships with a fixture that breaks it** and a test that the rule fires on that fixture for that reason. `every_rule_has_a_fixture` (crates/lint/src/tests.rs) fails the build if a rule has none. Mesh fixtures are built with `crates/mesh/src/synth.rs`, so every triangle is chosen.
 3. **Never weaken a rule to make a mod pass.** Per-site allowances go in the addon's `magician.allow` with a mandatory reason; allowed errors stay visible, stale allowances are reported. Grading follows: an allowed warning that is not fair play is not a defect; an allowed error still makes the mod `broken`. Fair-play findings are judged apart and never make it broken or change its description: an allowed M140 (hitbox overflow past 10 units that earns its place as a silhouette piece) holds within its limit and is listed with its measure; M129 (the egregious tier: over 18 units, or over 3.5% of the visible surface beyond 10) is never allowable and makes the grade NSFR. The thresholds live in one constants block, `crates/lint/src/mesh/rules.rs`, and the grading numbers in `crates/grade/src/rubric.rs`; a policy file moves them at run time, never the code. A new judgement number gets a constant there and a key in the policy.
 4. **Never write into the Deadlock install except through `install.rs`.** It backs up `gameinfo.gi` per build, is idempotent and keeps a ledger so it never touches files it didn't install.
-5. **Judge against Valve's own model at the same path.** Things Valve's file already does are Valve's design, not a finding. The test of it: Valve's own file, packed unchanged and linted deep, is silent, for every hero (a rule that speaks there is wrong, however good its physics: the limit of a new rule is measured on Valve's heroes before it is written down). Every bounded search says when it stops (M100), and every fair-play comparison that could not run says so (M144): unchecked is never clean.
+5. **Judge against Valve's own model at the same path.** Things Valve's file already does are Valve's design, not a finding. The test of it: Valve's own file, packed unchanged and linted deep, is silent, for every hero (a rule that speaks there is wrong, however good its physics: the limit of a new rule is measured on Valve's heroes before it is written down, and `magician corpus` keeps the measurement). A rule is an error only when the game will not load or play something; [docs/TDD.md](docs/TDD.md#how-a-rule-earns-its-words) says how that is held. Every bounded search says when it stops (M100), and every fair-play comparison that could not run says so (M144): unchecked is never clean.
 6. **Say what a rule can't see.** A claim about in-game behaviour that nobody has seen in the running game is marked UNVERIFIED where it is made.
 7. **Keep the player side standalone.** `tools/scene_install.ps1` and `scene_install.py` ship inside release bundles and run on players' machines: Windows PowerShell 5.1 or Python 3 stdlib, no Magician, no config file, byte-identical output to `magician scene install`.
 

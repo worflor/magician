@@ -11,7 +11,7 @@ Named for The Magnificent Sinclair, Deadlock's own magician, and a sibling to [M
   <a href="docs/SHOWCASE.md"><img src="docs/showcase/loops-viscous.jpg" alt="Lööps Viscous, a Viscous skin, in game" height="270"></a>
 </p>
 
-Two of the three full hero skins made with it: [Maid Lash](https://woflo.dev/deadlock-skins/maid-lash/), public and proven on every game build since its release, and Lööps Viscous, still in production. [What Magician says about each](docs/SHOWCASE.md), in its own output.
+Two of the three full hero skins made with it: [Maid Lash](https://woflo.dev/deadlock-skins/maid-lash/), public, with an in-game proof on every game build since its release, and Lööps Viscous, still in production. [What Magician says about each](docs/SHOWCASE.md), in its own output.
 
 ## Getting started
 
@@ -60,15 +60,18 @@ magician install                   # lints first, backs up gameinfo.gi, never un
 ```
 
 ```
-my-lash-skin: RE-PROVE  Costume (look, some effects) · NSFR · unproven  (build 6865)
-  lint   warn   0 error(s), 365 warning(s), 0 allowed (deep; fair play fail)
-  grade  warn   Costume (look, some effects) · NSFR · unproven for Lash; release gate blocked: freshness: not proven on 6865 (no proven build on record for these bytes)
+my-lash-skin: RE-PROVE  Costume (look, effects, sound) · NSFR · unproven  (build 6868)
+  lint   warn   0 error(s), 100 warning(s), 0 allowed (deep; fair play NSFR)
+         warnings  M061 dropped-dependency x18, M112 coordinate-precision x18, M110 shell-intersection x13, ...
+         fair play M140 hitbox-envelope-taste x1
+         advisory  M081 particle-energy x3, M130 hitbox-envelope-wide x1 (fair play's advisories: reported, never a violation)
+  grade  warn   Costume (look, effects, sound) · NSFR · unproven for Lash; release gate blocked: freshness: not proven on 6868 (no proven build on record for these bytes)
   proof  warn   these bytes proven on none
   drift  warn   these bytes are proven on no build yet: nothing to compare from
-next: the in-game pass on build 6865 (`magician session qa --mod /home/you/mods/my-lash-skin --out <dir>`), look at the frames, then `magician prove --evidence <dir>`
+next: the in-game pass on build 6868 (`magician session qa --mod /home/you/mods/my-lash-skin --out <dir>`), look at the frames, then `magician prove --evidence <dir>`
 ```
 
-`check` exits 1 when something is broken, 4 when the mod loads but is not proven on the installed build, 0 when it is proven here and clean. The same bare verbs work for `lint`, `ls`, `grade`, `drift` (from the mod's last proven build), `release` (its addon), `uninstall`, `prove`, `footprint` and `scene check`; whatever you pass explicitly wins. `magician help` lists every command and option, `magician help <command>` shows one, and a mistyped command, option or hero is answered with what it most likely meant. A hero can be named the way you would say it: `lash`, `Lash`, `hero_lash`, `"Lady Geist"`, or its model's path.
+`check` exits 1 when something is broken, 4 when the mod loads but is not proven on the installed build, 0 when it is proven here and clean. Under the lint line the findings are counted by rule (the row is cut short here); `magician lint` prints each one. The same bare verbs work for `lint`, `ls`, `grade`, `drift` (from the mod's last proven build), `release` (its addon), `uninstall`, `prove`, `footprint` and `scene check`; whatever you pass explicitly wins. `magician help` lists every command and option, `magician help <command>` shows one, and a mistyped command, option or hero is answered with what it most likely meant. A hero can be named the way you would say it: `lash`, `Lash`, `hero_lash`, `"Lady Geist"`, or its model's path.
 
 A `mod.toml` is plain text, read line by line: flat tables of strings, numbers and lists, the shape `new` and `init` write. The keys a mod usually carries:
 
@@ -110,7 +113,7 @@ Everything after the verb belongs to the tool (`magician bundle --help` is the b
 
 - **Not a GUI.** No windows and no prompts. Commands read files and print text, and JSON where a machine consumes it.
 - **Not a Blender add-on.** Blender appears only as an offline renderer for visual QA (`qa/`, `harness/`).
-- **Not a mod loader or manager.** Deadlock has no runtime mod API: "loading" is a VPK in an addons folder plus one search-path line in `gameinfo.gi`, and [Deadlock Mod Manager](https://github.com/deadlock-mod-manager/deadlock-mod-manager) already does that well. Magician's install step exists so an automated pipeline can put a mod in the game and take it out again. For players it writes what the manager reads: a release bundle (`magician bundle`) and a static mod source they add to the manager once (`magician source`, [docs/reference/mod-source.md](docs/reference/mod-source.md)), and it can put a release's zip on a Nexus Mods page made by hand (`magician publish nexus`).
+- **Not a mod loader or manager.** Deadlock has no runtime mod API: "loading" is a VPK in an addons folder plus one search-path line in `gameinfo.gi`, and [Deadlock Mod Manager](https://github.com/deadlock-mod-manager/deadlock-mod-manager) already does that well. Magician's install step exists so an automated pipeline can put a mod in the game and take it out again. For players it writes what the manager reads: a release bundle (`magician bundle`) and a static mod source they add to the manager once (`magician source`, [docs/reference/mod-source.md](docs/reference/mod-source.md)).
 - **Not an auto-updater.** It won't rewrite your mod for a new build. It tells you exactly what the build changed underneath the mod and whether that breaks it. The fix is still yours, or your agent's.
 
 Most Deadlock modding tools are built for a person at a desk: a GUI, a Blender extension, or a thin layer over the game files. Magician is built for the machine that is still running when nobody is.
@@ -177,7 +180,7 @@ What it leaves to the host:
 
 ## Lint
 
-`magician lint <mod.vpk>` runs 80 rules (M001 to M149) against the installed build. Every rule says what happens in the game when it fires, not just that something is "wrong": `magician rules` prints the catalogue. Findings are judged against Valve's own file at the same path, so what Valve already does is Valve's design, not a finding, and a mod is blamed only for references it introduced. Fair play is a category: a silhouette smaller than Valve's, a hidden VFX cue or a dropped sound is a finding, and a fair-play comparison that could not run (a file, or Valve's original, that did not decode) is said, M144, never passed in silence. Fair play is lenient by default and enforced with one switch: until a policy sets `[fair_play] enforce = true`, its findings are warnings, so `lint` doesn't fail and `install` doesn't refuse on them alone; enforced, they are errors. Every other error (a broken reference, a protected file) is an error either way. `--deep` adds the mesh family (M100 to M148), which decodes every triangle of a replaced model and compares it with Valve's.
+`magician lint <mod.vpk>` runs 80 rules (M001 to M149) against the installed build. Every rule says what happens in the game when it fires, not just that something is "wrong", and an error means the game will not load or play something. `magician rules` prints the catalogue, and under each rule its record on this build: how often its test fires on Valve's own content, which works by definition (`magician corpus`), and what the game's own log confirmed or contradicted when a mod with that finding was played (`magician witness`). Findings are judged against Valve's own file at the same path, so what Valve already does is Valve's design, not a finding, and a mod is blamed only for references it introduced. Fair play is a category: a silhouette smaller than Valve's, a hidden VFX cue or a dropped sound is a finding, and a fair-play comparison that could not run (a file, or Valve's original, that did not decode) is said, M144, never passed in silence. Fair play is lenient by default and enforced with one switch: until a policy sets `[fair_play] enforce = true`, its findings are warnings, so `lint` doesn't fail and `install` doesn't refuse on them alone; enforced, they are errors. Every other error (a broken reference, a protected file) is an error either way. `--deep` adds the mesh family (M100 to M148), which decodes every triangle of a replaced model and compares it with Valve's.
 
 A finding can be accepted only per site, in the addon's `magician.allow`, with a written reason. Allowed findings stay in the report, and an allowance that no longer matches anything is reported as stale. `grade --mod mod.toml` finds the mod's own file without `--allow`: `addon/magician.allow` or `magician.allow` beside the `mod.toml`, then the CSDK addon named by its slug and its `[mod] owners`. The record lists the files it read, or says none was found, and `magician paths --mod mod.toml` shows where they are.
 
@@ -282,11 +285,11 @@ Everything Magician knows about a build it reads itself, with zero external crat
 | You want to | You need |
 |---|---|
 | Inspect a pak (`ls`, `diff`, `refs`, `dump`, `kv`, `textures`, `verify`), prove an expression (`expr`) | nothing else |
-| Lint, mesh and cloth reports, `pack` (it lints what it packs), drift, `patchday`, `install`, `scene`, `new` | Deadlock installed |
+| `init`, `check`, lint, mesh and cloth reports, `pack` (it lints what it packs), `witness`, `corpus`, drift, `patchday`, `install`, `scene`, `new` | Deadlock installed (`check` grades too when the viewer below is there) |
 | `footprint`, `grade`, `index` | Deadlock and the [Source 2 Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat) CLI (21.1; flags change between versions, so pin it). The decompiled files are cached per build in the reference folder |
 | `build`, `release`, `sign` | Valve's CSDK 13, the community-distributed build that carries `resourcecompiler.exe` (setup notes in [docs/reference/engine.md](docs/reference/engine.md#the-compiler-csdk-13)); on Linux, Wine to run it |
 | `session`, `reprove` | Python 3.11 or newer, standard library only, and the desktop the game is shown on. On Linux that is an X display (XWayland under a Wayland desktop) with libX11 and libXtst (`libx11-6`, `libxtst6` on Debian and Ubuntu); `python ingame/gameos.py` says what this machine has, and a harness tool that lacks a piece names it before it takes the game seat or launches anything |
-| `bundle`, `source`, the MCP server | Python 3.8 or newer, standard library only; `bundle` and `source` use Pillow for preview images |
+| `bundle`, `source`, `publish nexus`, the MCP server | Python 3.8 or newer, standard library only; `bundle` and `source` use Pillow for preview images, and `publish nexus` needs a Nexus Mods API key |
 | Offline visual QA (`qa/`, `harness/`) | Blender 5.2 and the Source 2 Viewer CLI; some scripts use Pillow, numpy and scipy |
 | The film kit (`cinema/`) | ffmpeg, a Python venv with Boon, and the CSDK; see its README |
 
@@ -386,9 +389,9 @@ The update source is the repository's latest release unless you name another: an
 | `magician release <addon> --hero HERO [--mod mod.toml]` | One VPK from every department, linted and graded, with a release report and the grade record |
 | `magician install <pak>` / `install --status` / `uninstall <pak> \| --mod NAME \| --all` | The only write into the game install: lint first, back up `gameinfo.gi`, ledger every file (under a lock, written atomically, following a pak a mod manager renamed by its crc), roll back from the ledger, never removing bytes it did not install |
 | `magician scene make \| check \| compose \| install` | Ship a hero-page scene as a patch of only our files and build it from the player's own game |
-| `magician bundle <bundle.json>` / `source <source.json>` | A player release bundle for Deadlock Mod Manager; a static mod source and its pages from bundles |
+| `magician bundle <bundle.json>` / `source <source.json>` / `publish nexus <bundle.json>` | A player release bundle for Deadlock Mod Manager; a static mod source and its pages from bundles; a bundle's zip onto a Nexus Mods page, past the release gate |
 | `magician sign <addon>` / `verify <vpk>` | Put an invisible authorship mark in a mod's colour textures, and detect it in a compiled pak. The key is the author's: `--key`, else `[mark] key` or `[mod] author` in the mod's `mod.toml` |
-| `magician update --check` / `update [--dry-run]` / `update --describe` | Whether a newer Magician exists (exit 5 if so), installing it on request, and this build's own `VERSION`; the only commands, besides `doctor --updates` and the upload `publish nexus` makes, that touch the network |
+| `magician update --check` / `update [--dry-run]` / `update --describe` | Whether a newer Magician exists (exit 5 if so), installing it on request, and this build's own `VERSION` ([Staying current](#staying-current)) |
 | `magician paths` | Where every outside location resolved to, and why |
 | `magician ls`, `diff`, `refs`, `scan`, `dump`, `kv`, `textures`, `index`, `expr`, `pack`, `cache` | Inspection (`diff`: whether two paks are the same mod, exit 1 when not), evidence queries, material expression proofs, raw packing, the findings cache |
 
@@ -403,8 +406,9 @@ ingame/   drive the retail game: sessions, patch-day passes, console, capture, l
 qa/       offline visual QA and detectors (Blender, glb)
 harness/  Blender render scripts: x-ray, lookdev, contact sheets
 cinema/   the optional film kit for trailers and stills
-tools/    the release script, release bundles, the mod-source writer, player scene installers, UI scene re-dressing, hero rips, the Source 2 Viewer MCP launcher
-docs/     design, status, the showcase, the patch-day runbook, engine and mod-source reference
+tools/    the release script, release bundles, the mod-source writer, the Nexus Mods upload, player scene installers,
+          UI scene re-dressing, hero rips, the Source 2 Viewer MCP launcher
+docs/     design, status, the showcase, the patch-day runbook, engine and publishing reference
 ```
 
 ## More
@@ -414,7 +418,7 @@ docs/     design, status, the showcase, the patch-day runbook, engine and mod-so
 - [docs/TDD.md](docs/TDD.md): how it is built.
 - [docs/PATCH-DAY.md](docs/PATCH-DAY.md): the patch-day runbook.
 - [docs/reference/engine.md](docs/reference/engine.md): the Deadlock, compiler and Source 2 Viewer facts Magician relies on.
-- [docs/reference/mod-source.md](docs/reference/mod-source.md): publishing through Deadlock Mod Manager from your own site.
+- [docs/reference/mod-source.md](docs/reference/mod-source.md): publishing through Deadlock Mod Manager from your own site. [docs/reference/nexus-mods.md](docs/reference/nexus-mods.md): publishing to Nexus Mods.
 - [docs/STATUS.md](docs/STATUS.md): current state and loose ends. [CHANGELOG.md](CHANGELOG.md): history.
 - [CONTRIBUTING.md](CONTRIBUTING.md): working inside the repository.
 
