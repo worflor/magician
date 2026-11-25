@@ -40,9 +40,11 @@ macro_rules! errln {
     };
 }
 
+mod archive;
 mod build;
 mod cli;
 mod checkcmd;
+mod diffcmd;
 mod clothcmd;
 mod doctor;
 mod frontdoor;
@@ -86,9 +88,13 @@ Start here:
                                                 keep Valve-derived files out of git, a package for tools/bundle.py, two
                                                 in-game scenarios and a README with the next commands; never writes into
                                                 a folder that exists, never copies a Valve file
-  magician init [<pak> | <addon dir>] [--out DIR] [--hero HERO] [--slug SLUG] [--name NAME] [--force]
-                                                write a mod.toml for a pak (or the paks here) or an addon's sources: the
-                                                hero from the files it replaces, slug and name from the folder
+  magician init [<pak>... | <archive>... | <addon dir>] [--out DIR] [--hero HERO] [--slug SLUG] [--name NAME] [--force]
+                                                write a mod.toml for paks (or the paks here) or an addon's sources: the
+                                                hero from the files it replaces, slug and name from the folder. Paks
+                                                from elsewhere, and the paks in a download (.zip; .7z and .rar through
+                                                bsdtar), are copied into the mod's folder (--out, else a new folder
+                                                named for the download), each copy proven the same bytes; a pak whose
+                                                every file another ships byte for byte is left out
   magician check [<folder> | <mod.toml> | --mod <mod.toml>] [--light] [--verbose] [--baseline FILE] [--json]
                                                 the mod's one verdict on the installed build: its paks linted and graded
                                                 together, drift since its last proven build, its scene patches; exit 1
@@ -126,6 +132,10 @@ Every command:
                                                 and engine.tsv (size and sha256 of every executable, library and shader
                                                 archive the build ships, and gameinfo.gi as shipped)
   magician ls <vpk> [prefix]                    list files: path, crc, size
+  magician diff <a.vpk> <b.vpk>                 whether two paks are the same mod: the same file, or each path only in
+                                                one, the same bytes, recompiled (only the compiler's record differs) or
+                                                different, with the blocks that differ; exit 0 when no file differs in
+                                                what it holds, 1 when one does
   magician refs <vpk> <path>                    what a compiled resource depends on, and whether each resolves
   magician dump <vpk> <path> [--block TAG]      a compiled file's KV3 (DATA by default) as text, or a texture header
   magician dump --text FILE                     re-print a KV3 text file (e.g. a decompile) in the same form, to diff
@@ -408,6 +418,7 @@ fn dispatch(args: &[String]) -> R {
     match args.first().map(String::as_str) {
         Some("baseline") => cmd_baseline(&args[1..]),
         Some("ls") => cmd_ls(&args[1..]),
+        Some("diff") => diffcmd::cmd_diff(&args[1..]),
         Some("refs") => cmd_refs(&args[1..]),
         Some("dump") => cmd_dump(&args[1..]),
         Some("kv") => cmd_kv(&args[1..]),
@@ -550,7 +561,7 @@ fn flag(args: &[String], name: &str) -> Option<String> {
 }
 /// Every command `main` dispatches, for "did you mean" on a typo.
 const COMMANDS: &[&str] = &[
-    "baseline", "ls", "refs", "dump", "kv", "index", "textures", "mesh", "cloth", "lint", "cache", "pack", "rules", "scan", "footprint", "grade", "rubric",
+    "baseline", "ls", "diff", "refs", "dump", "kv", "index", "textures", "mesh", "cloth", "lint", "cache", "pack", "rules", "scan", "footprint", "grade", "rubric",
     "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "update", "help", "session", "reprove", "bundle", "source",
 ];
 

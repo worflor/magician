@@ -874,6 +874,88 @@ fn session_bundle_and_source_hand_everything_to_the_toolkits_python() {
     let _ = std::fs::remove_dir_all(&d);
 }
 
+/// A zip of stored members, as a mod site serves one.
+fn stored_zip(members: &[(&str, &[u8])]) -> Vec<u8> {
+    let (mut body, mut dir) = (Vec::new(), Vec::new());
+    for (name, data) in members {
+        let at = body.len() as u32;
+        let fields = |h: &mut Vec<u8>| {
+            h.extend([20, 0, 0, 8, 0, 0, 0, 0, 0, 0]);
+            h.extend(vpk::crc32(data).to_le_bytes());
+            h.extend((data.len() as u32).to_le_bytes());
+            h.extend((data.len() as u32).to_le_bytes());
+            h.extend((name.len() as u16).to_le_bytes());
+            h.extend([0, 0]);
+        };
+        body.extend(0x0403_4b50u32.to_le_bytes());
+        fields(&mut body);
+        body.extend(name.as_bytes());
+        body.extend(*data);
+        dir.extend(0x0201_4b50u32.to_le_bytes());
+        dir.extend([20, 0]);
+        fields(&mut dir);
+        dir.extend([0; 10]);
+        dir.extend(at.to_le_bytes());
+        dir.extend(name.as_bytes());
+    }
+    let (at, len) = (body.len() as u32, dir.len() as u32);
+    body.extend(dir);
+    body.extend(0x0605_4b50u32.to_le_bytes());
+    body.extend([0; 4]);
+    body.extend((members.len() as u16).to_le_bytes());
+    body.extend((members.len() as u16).to_le_bytes());
+    body.extend(len.to_le_bytes());
+    body.extend(at.to_le_bytes());
+    body.extend([0, 0]);
+    body
+}
+
+#[test]
+fn init_takes_a_download_into_a_folder_of_its_own_and_diff_proves_a_copy() {
+    let d = scratch("initzip");
+    fake_install_with_heroes(&d, "6868");
+    let downloads = d.join("downloads");
+    std::fs::create_dir_all(&downloads).unwrap();
+    // the mod's whole pak, an older pak that is part of it, and a readme
+    let built = d.join("built");
+    std::fs::create_dir_all(&built).unwrap();
+    let whole = built.join("whole.vpk");
+    let part = built.join("part.vpk");
+    vpk::write(&whole, &[("models/heroes/x/materials/x_body.vmat_c".to_string(), resource::synth(&[])), ("models/heroes/x/x_fx.vpcf_c".to_string(), b"fx".to_vec())]).unwrap();
+    vpk::write(&part, &[("models/heroes/x/x_fx.vpcf_c".to_string(), b"fx".to_vec())]).unwrap();
+    let (wb, pb) = (std::fs::read(&whole).unwrap(), std::fs::read(&part).unwrap());
+    std::fs::write(downloads.join("Cool X Skin v2.zip"), stored_zip(&[("Cool X Skin/Cool X Skin.vpk", &wb), ("Cool X Skin/particles only.vpk", &pb), ("Cool X Skin/README.txt", b"thanks")])).unwrap();
+    // a folder with only a download in it says how to take the paks out
+    let o = magician_in(&d, &downloads, &["init"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("magician init \"Cool X Skin v2.zip\""), "{}", text(&o));
+    let o = magician_in(&d, &downloads, &["init", "Cool X Skin v2.zip"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let m = downloads.join("cool-x-skin-v2");
+    let toml = std::fs::read_to_string(m.join("mod.toml")).unwrap();
+    assert!(toml.contains("hero = \"hero_x\"") && toml.contains("paks = [\"Cool X Skin.vpk\"]"), "{toml}");
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(out.contains("left in it: Cool X Skin/README.txt"), "{out}");
+    assert!(out.contains("left out particles only.vpk: all 1 of its files are in Cool X Skin.vpk, byte for byte"), "{out}");
+    assert!(out.contains(&format!("sha256 {}", sha256_hex(&wb))), "{out}");
+    assert!(!m.join("particles only.vpk").exists() && !m.join("README.txt").exists(), "only the pak that adds something stays");
+    // the copy is the original, file for file and byte for byte; a changed file is named, exit 1
+    let o = magician_in(&d, &d, &["diff", &whole.to_string_lossy(), &m.join("Cool X Skin.vpk").to_string_lossy()]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(text(&o).starts_with("the same file: 2 files"), "{}", text(&o));
+    let o = magician_in(&d, &d, &["diff", &whole.to_string_lossy(), &part.to_string_lossy()]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(text(&o).contains("only in whole.vpk (1):\n  models/heroes/x/materials/x_body.vmat_c\n"), "{}", text(&o));
+    // the same download again: the folder has a mod.toml, so nothing is written
+    assert_eq!(magician_in(&d, &downloads, &["init", "Cool X Skin v2.zip"]).status.code(), Some(3));
+    // a pak from elsewhere with --out is copied in, the same bytes
+    let o = magician_in(&d, &d, &["init", &whole.to_string_lossy(), "--out", &d.join("mods").join("x").to_string_lossy()]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert_eq!(std::fs::read(d.join("mods").join("x").join("whole.vpk")).unwrap(), wb);
+    assert!(text(&o).contains("copied from"), "{}", text(&o));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
 #[test]
 fn a_mod_folder_needs_nothing_after_the_verb() {
     let d = scratch("modfolder");

@@ -92,39 +92,216 @@ fn rel_to(dir: &Path, pak: &Path) -> String {
     }
 }
 
-/// `magician init [<pak> | <addon dir>] [--out DIR] [--hero HERO] [--slug SLUG] [--name NAME] [--force]`.
+/// A pak's data chunk (`pak01_000.vpk` beside `pak01_dir.vpk`): part of that pak, never a pak of its own.
+fn is_chunk(p: &Path, all: &[PathBuf]) -> bool {
+    let n = p.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let Some(stem) = n.strip_suffix(".vpk") else { return false };
+    let Some((head, num)) = stem.rsplit_once('_') else { return false };
+    num.len() == 3 && num.chars().all(|c| c.is_ascii_digit()) && all.iter().any(|o| o.file_name().is_some_and(|m| m.to_string_lossy().to_ascii_lowercase() == format!("{head}_dir.vpk")))
+}
+
+/// Every `.vpk` in `dir` that is a pak (not a chunk of one), sorted.
+fn paks_in(dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let all: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("vpk")))
+        .collect();
+    let mut v: Vec<PathBuf> = all.iter().filter(|p| !is_chunk(p, &all)).cloned().collect();
+    v.sort();
+    Ok(v)
+}
+
+/// Put `from` into `dir` under its own name, and prove the copy is the same bytes. A file of that name already there
+/// is kept when it is the same bytes and refused when it is not: init never writes over something it did not make.
+fn place(from: &Path, dir: &Path, made: &mut Vec<PathBuf>) -> Result<PathBuf, Stop> {
+    let name = from.file_name().ok_or_else(|| format!("{}: not a file", from.display()))?;
+    let dest = dir.join(name);
+    let sha = |p: &Path| grade::sha256::file(p).map_err(|e| format!("{}: {e}", p.display()));
+    if std::path::absolute(&dest).ok() == std::path::absolute(from).ok() {
+        return Ok(dest);
+    }
+    if dest.exists() {
+        if sha(&dest)? == sha(from)? {
+            return Ok(dest);
+        }
+        return Err(Stop::Refused(format!("{} exists and is not the same file as {}; nothing written (move it away, or give init another --out)", dest.display(), from.display())));
+    }
+    std::fs::copy(from, &dest).map_err(|e| format!("{} -> {}: {e}", from.display(), dest.display()))?;
+    made.push(dest.clone());
+    if sha(&dest)? != sha(from)? {
+        return Err(format!("{}: the copy is not the same bytes as {} (a failing disk?)", dest.display(), from.display()).into());
+    }
+    Ok(dest)
+}
+
+/// One pak against another, by path, crc and size: how many of `b`'s files `a` ships too, and how many of those differ.
+pub(crate) struct Overlap {
+    pub shared: usize,
+    pub differ: usize,
+    pub of: usize,
+}
+
+pub(crate) fn overlap(a: &vpk::Vpk, b: &vpk::Vpk) -> Overlap {
+    let theirs: std::collections::HashMap<&str, (u32, u64)> = a.entries.iter().map(|e| (e.path.as_str(), (e.crc, e.size()))).collect();
+    let (mut shared, mut differ) = (0, 0);
+    for e in &b.entries {
+        if let Some(&(crc, len)) = theirs.get(e.path.as_str()) {
+            shared += 1;
+            if crc != e.crc || len != e.size() {
+                differ += 1;
+            }
+        }
+    }
+    Overlap { shared, differ, of: b.entries.len() }
+}
+
+/// What the paks of one mod are to each other: a pak whose every file another ships byte for byte adds nothing (an
+/// older part of the same mod, or the same pak twice), so it is left out; files two paks ship with different bytes
+/// are said, since only one of them loads. Returns the paks kept and a line for each thing found.
+pub(crate) fn sort_paks(paks: &[PathBuf]) -> Result<(Vec<PathBuf>, Vec<(PathBuf, String)>, Vec<String>), String> {
+    let opened: Vec<vpk::Vpk> = paks.iter().map(|p| open(p)).collect::<Result<_, _>>()?;
+    let name = |i: usize| paks[i].file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let mut gone: Vec<usize> = Vec::new();
+    let mut left_out = Vec::new();
+    for j in 0..paks.len() {
+        // the largest pak that holds every file of j, byte for byte (the first, when two are the same)
+        let holder = (0..paks.len()).filter(|&i| i != j && !gone.contains(&i)).find(|&i| {
+            let o = overlap(&opened[i], &opened[j]);
+            o.of > 0 && o.shared == o.of && o.differ == 0 && (opened[i].entries.len() > o.of || i < j)
+        });
+        if let Some(i) = holder {
+            gone.push(j);
+            left_out.push((paks[j].clone(), format!("all {} of its files are in {}, byte for byte, so it adds nothing", opened[j].entries.len(), name(i))));
+        }
+    }
+    let kept: Vec<usize> = (0..paks.len()).filter(|i| !gone.contains(i)).collect();
+    let mut notes = Vec::new();
+    for (x, &i) in kept.iter().enumerate() {
+        for &j in &kept[x + 1..] {
+            let o = overlap(&opened[i], &opened[j]);
+            if o.differ > 0 {
+                notes.push(format!(
+                    "{} and {} both ship {} file(s) with different bytes; in game the lower pak number's copy loads (`magician grade` says which wins)",
+                    name(i),
+                    name(j),
+                    o.differ
+                ));
+            }
+        }
+    }
+    Ok((kept.iter().map(|&i| paks[i].clone()).collect(), left_out, notes))
+}
+
+/// `magician init [<pak>... | <archive>... | <addon dir>] [--out DIR] [--hero HERO] [--slug SLUG] [--name NAME] [--force]`.
 pub fn cmd_init(args: &[String]) -> R {
     let pos = positional(args);
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    // What the mod is made of: a pak, an addon's source folder, or the paks in this folder.
-    let (paks, addon_dir): (Vec<PathBuf>, Option<PathBuf>) = match pos.first() {
-        Some(p) if Path::new(p.as_str()).is_dir() => (Vec::new(), Some(PathBuf::from(p.as_str()))),
-        Some(p) => (vec![PathBuf::from(p.as_str())], None),
-        None => {
-            let mut v: Vec<PathBuf> = std::fs::read_dir(&cwd)
-                .map_err(|e| e.to_string())?
-                .flatten()
-                .map(|e| e.path())
-                .filter(|p| p.is_file() && p.file_name().is_some_and(|n| install::is_pak_name(&n.to_string_lossy().to_ascii_lowercase())))
-                .collect();
-            v.sort();
-            if v.is_empty() {
-                return Err(Stop::Usage(format!(
-                    "no pak here to describe ({} has no pakNN_dir.vpk): `magician init <pak>` or `magician init <addon folder>`",
-                    cwd.display()
-                )));
-            }
-            (v, None)
-        }
+    let force = args.iter().any(|a| a == "--force");
+    // What the mod is made of: an addon's source folder, paks and downloads (archives), or the paks in this folder.
+    let addon_dir: Option<PathBuf> = match pos.as_slice() {
+        [p] if Path::new(p.as_str()).is_dir() => Some(PathBuf::from(p.as_str())),
+        _ => None,
     };
-    let out_dir = flag(args, "--out").map(PathBuf::from).unwrap_or_else(|| match (&addon_dir, paks.first()) {
-        (Some(a), _) => a.clone(),
-        (None, Some(p)) => p.parent().filter(|d| !d.as_os_str().is_empty()).map(Path::to_path_buf).unwrap_or_else(|| cwd.clone()),
+    let sources: Vec<PathBuf> = if addon_dir.is_some() {
+        Vec::new()
+    } else if pos.is_empty() {
+        let v = paks_in(&cwd)?;
+        if v.is_empty() {
+            let downloads: Vec<String> = std::fs::read_dir(&cwd).map_err(|e| e.to_string())?.flatten().map(|e| e.path()).filter(|p| archive::is_archive(p)).filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
+            return Err(Stop::Usage(if downloads.is_empty() {
+                format!("no pak here to describe ({} has no .vpk): `magician init <pak or archive>` or `magician init <addon folder>`", cwd.display())
+            } else {
+                format!("no pak here, but {} here: `magician init \"{}\"` takes the paks out of it into a folder of their own", downloads.join(", "), downloads[0])
+            }));
+        }
+        v
+    } else {
+        for p in &pos {
+            if !Path::new(p.as_str()).is_file() {
+                return Err(Stop::Usage(format!("{p}: no such file (init takes paks, archives, or one addon folder)")));
+            }
+        }
+        pos.iter().map(PathBuf::from).collect()
+    };
+    let archives: Vec<&PathBuf> = sources.iter().filter(|p| archive::is_archive(p)).collect();
+    // Where the mod's folder is: --out; else, for a download, a new folder beside it named for it; else the pak's own.
+    let copying = flag(args, "--out").is_some() || !archives.is_empty();
+    let out_dir = flag(args, "--out").map(PathBuf::from).unwrap_or_else(|| match (&addon_dir, archives.first(), sources.first()) {
+        (Some(a), _, _) => a.clone(),
+        (None, Some(a), _) => {
+            let stem = a.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let stem = stem.split('.').next().unwrap_or(&stem).to_string();
+            a.parent().filter(|d| !d.as_os_str().is_empty()).map(Path::to_path_buf).unwrap_or_else(|| cwd.clone()).join(slug_of(&stem))
+        }
+        (None, None, Some(p)) => p.parent().filter(|d| !d.as_os_str().is_empty()).map(Path::to_path_buf).unwrap_or_else(|| cwd.clone()),
         _ => cwd.clone(),
     });
     let out = out_dir.join(modctx::MANIFEST);
-    if out.exists() && !args.iter().any(|a| a == "--force") {
+    if out.exists() && !force {
         return Err(Stop::Refused(format!("{} already exists; nothing written (--force replaces it)", out.display())));
+    }
+    // Copy the paks in (each proven the same bytes), or take them out of the download; then sort out how they relate.
+    let mut made: Vec<PathBuf> = Vec::new();
+    let mut from_lines: Vec<String> = Vec::new();
+    let mut origin: std::collections::HashMap<PathBuf, String> = Default::default();
+    let mut paks: Vec<PathBuf> = Vec::new();
+    if copying {
+        std::fs::create_dir_all(&out_dir).map_err(|e| format!("{}: {e}", out_dir.display()))?;
+    }
+    for s in &sources {
+        let label = s.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        if archive::is_archive(s) {
+            let stage = out_dir.join(format!(".magician-init-{}", std::process::id()));
+            std::fs::create_dir_all(&stage).map_err(|e| format!("{}: {e}", stage.display()))?;
+            let r = archive::unpack_vpks(s, &stage).map_err(Stop::from).and_then(|u| {
+                let mut placed = Vec::new();
+                for v in &u.vpks {
+                    placed.push(place(v, &out_dir, &mut made)?);
+                }
+                Ok((u, placed))
+            });
+            let _ = std::fs::remove_dir_all(&stage);
+            let (u, placed) = r?;
+            from_lines.push(format!(
+                "{label}: {} pak file(s) taken out{}",
+                placed.len(),
+                if u.left.is_empty() { String::new() } else { format!("; left in it: {}", u.left.join(", ")) }
+            ));
+            let chunks = placed.clone();
+            for p in placed.into_iter().filter(|p| !is_chunk(p, &chunks)) {
+                origin.insert(p.clone(), format!("from {label}"));
+                paks.push(p);
+            }
+        } else if copying {
+            let v = open(s)?;
+            let mut chunks: Vec<u16> = v.entries.iter().filter(|e| !e.is_inline()).map(|e| e.archive_index).collect();
+            chunks.sort();
+            chunks.dedup();
+            let dest = place(s, &out_dir, &mut made)?;
+            for c in chunks {
+                place(&v.chunk_path(c), &out_dir, &mut made)?;
+            }
+            origin.insert(dest.clone(), format!("copied from {}, the same bytes", s.display()));
+            paks.push(dest);
+        } else {
+            paks.push(s.clone());
+        }
+    }
+    if addon_dir.is_none() && paks.is_empty() {
+        return Err(Stop::Usage(format!("no pak in {}: nothing to describe", sources.iter().map(|s| s.display().to_string()).collect::<Vec<_>>().join(", "))));
+    }
+    let (paks, left_out, pak_notes) = sort_paks(&paks)?;
+    let mut left_lines = Vec::new();
+    for (p, why) in &left_out {
+        let n = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        if made.contains(p) {
+            std::fs::remove_file(p).map_err(|e| format!("{}: {e}", p.display()))?;
+            left_lines.push(format!("{n}: {why} (its copy removed)"));
+        } else {
+            left_lines.push(format!("{n}: {why} (not listed in paks; the file is untouched)"));
+        }
     }
     // The files the mod ships, by their paths in the game.
     let mut files: Vec<String> = Vec::new();
@@ -167,7 +344,7 @@ pub fn cmd_init(args: &[String]) -> R {
                 draft.hero = Some(i.hero.key.clone());
             }
             Some(i) => hero_note = format!("not decided: {} (and {}): pass --hero", describe(&i), i.runner_up.map(|(k, _)| k).unwrap_or_default()),
-            None => hero_note = "not decided: no file is one of a hero's; pass --hero if the mod is for one".into(),
+            None => hero_note = format!("none: no file is one of a hero's, so {}; it is linted and checked, not graded (pass --hero only if it is for a hero)", checkcmd::what_it_is(&files)),
         },
         (None, None) => hero_note = "not decided: the game's hero table could not be read (is Deadlock found? `magician doctor`); pass --hero".into(),
     }
@@ -177,8 +354,20 @@ pub fn cmd_init(args: &[String]) -> R {
     say!("wrote {}", out.display());
     say!("  slug   {}{}", draft.slug, if flag(args, "--slug").is_some() { " (--slug)" } else { " (from the folder's name)" });
     say!("  hero   {hero_note}");
-    for p in &draft.paks {
-        say!("  pak    {p}");
+    for f in &from_lines {
+        say!("  from   {f}");
+    }
+    // Each pak with its fingerprint: the bytes `check` judges and a proof will hold, and the proof of a copy.
+    for (p, shown) in paks.iter().zip(&draft.paks) {
+        let sha = grade::sha256::file(p).map_err(|e| format!("{}: {e}", p.display()))?;
+        let files = open(p).map(|v| v.entries.len()).unwrap_or(0);
+        say!("  pak    {shown}  {files} files, sha256 {sha}{}", origin.get(p).map(|o| format!(" ({o})")).unwrap_or_default());
+    }
+    for l in &left_lines {
+        say!("  left out {l}");
+    }
+    for n in &pak_notes {
+        say!("  note   {n}");
     }
     if let Some(a) = &draft.addon {
         say!("  addon  {a} (the folder given)");
@@ -197,6 +386,46 @@ fn describe(i: &Inference) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paks_that_add_nothing_are_left_out_and_clashes_are_said() {
+        let d = std::env::temp_dir().join(format!("magician-initpaks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let f = |p: &str, b: &[u8]| (p.to_string(), b.to_vec());
+        let full = d.join("Skin Full.vpk");
+        let part = d.join("skin_particles.vpk");
+        let clash = d.join("pak02_dir.vpk");
+        vpk::write(&full, &[f("particles/a.vpcf_c", b"a"), f("particles/b.vpcf_c", b"b"), f("models/x.vmdl_c", b"x")]).unwrap();
+        vpk::write(&part, &[f("particles/a.vpcf_c", b"a"), f("particles/b.vpcf_c", b"b")]).unwrap();
+        vpk::write(&clash, &[f("models/x.vmdl_c", b"another x"), f("sounds/y.vsnd_c", b"y")]).unwrap();
+        let (kept, left, notes) = sort_paks(&[full.clone(), part.clone(), clash.clone()]).unwrap();
+        assert_eq!(kept, vec![full.clone(), clash.clone()]);
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].0, part);
+        assert!(left[0].1.starts_with("all 2 of its files are in Skin Full.vpk, byte for byte"), "{left:?}");
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].starts_with("Skin Full.vpk and pak02_dir.vpk both ship 1 file(s) with different bytes"), "{notes:?}");
+        // the same pak twice: the first is kept
+        let twin = d.join("copy.vpk");
+        std::fs::copy(&part, &twin).unwrap();
+        let (kept, left, _) = sort_paks(&[part.clone(), twin.clone()]).unwrap();
+        assert_eq!((kept, left.len()), (vec![part.clone()], 1));
+        // a chunk of a pak is part of it, not a pak
+        std::fs::write(d.join("pak02_000.vpk"), b"chunk").unwrap();
+        let found = paks_in(&d).unwrap();
+        assert!(!found.contains(&d.join("pak02_000.vpk")) && found.contains(&clash), "{found:?}");
+        // a copy proves itself, and never writes over a different file of that name
+        let into = d.join("mod");
+        std::fs::create_dir_all(&into).unwrap();
+        let mut made = Vec::new();
+        assert_eq!(place(&full, &into, &mut made).unwrap(), into.join("Skin Full.vpk"));
+        assert_eq!(place(&full, &into, &mut made).unwrap(), into.join("Skin Full.vpk"), "the same bytes again are fine");
+        assert_eq!(made, vec![into.join("Skin Full.vpk")]);
+        std::fs::write(into.join("copy.vpk"), b"someone else's").unwrap();
+        assert!(matches!(place(&twin, &into, &mut made), Err(Stop::Refused(_))));
+        std::fs::remove_dir_all(&d).unwrap();
+    }
 
     #[test]
     fn a_new_mod_toml_reads_back_as_it_was_drafted() {

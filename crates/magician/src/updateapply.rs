@@ -34,14 +34,14 @@ fn exe_name() -> String {
 
 // --------------------------------------------------------------------------------------------- running things
 
-struct Ran {
-    ok: bool,
-    out: String,
-    err: String,
+pub(crate) struct Ran {
+    pub ok: bool,
+    pub out: String,
+    pub err: String,
 }
 
 /// Run a command to its end, or kill it after `secs`. A grandchild that keeps a pipe open after the kill is left.
-fn run(cmd: &mut Command, secs: Option<u64>) -> Result<Ran, String> {
+pub(crate) fn run(cmd: &mut Command, secs: Option<u64>) -> Result<Ran, String> {
     cmd.stdin(Stdio::null());
     let Some(secs) = secs else {
         let o = cmd.output().map_err(|e| e.to_string())?;
