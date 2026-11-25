@@ -46,8 +46,10 @@ class Processes(unittest.TestCase):
     def test_a_process_named_like_the_game_is_found_stopped_and_waited_for(self):
         d = tempfile.mkdtemp(prefix="magician-gameos-")
         fake = os.path.join(d, "deadlock.exe")
-        shutil.copy(shutil.which("sleep"), fake)
-        p = subprocess.Popen([fake, "60"])
+        with open(fake, "w", newline="\n") as f:   # a script, not a copy of `sleep`: a multi-call coreutils refuses a new name
+            f.write("#!/bin/sh\nread _\n")
+        os.chmod(fake, 0o755)
+        p = subprocess.Popen([fake], stdin=subprocess.PIPE)
         try:
             for _ in range(50):
                 if p.pid in gameos.game_pids():
@@ -63,6 +65,7 @@ class Processes(unittest.TestCase):
         finally:
             if p.poll() is None:
                 p.kill()
+            p.stdin.close()
             shutil.rmtree(d, ignore_errors=True)
 
     @unittest.skipUnless(gameos.LINUX, "the /proc side")
