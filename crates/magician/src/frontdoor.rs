@@ -4,10 +4,10 @@
 //!
 //! | Verb | Runs |
 //! |---|---|
-//! | `session` | `ingame\mod_session.py`: a mod's in-game session (`up`, `run`, `film`, `down`, `all`, `qa`) |
-//! | `reprove` | `ingame\reprove.py`: patch day in game, every mod that needs a re-prove, one report; `accept` records one |
-//! | `bundle` | `tools\bundle.py`: a player release bundle from a `bundle.json` |
-//! | `source` | `tools\source.py`: a static Deadlock Mod Manager mod source from bundles |
+//! | `session` | `ingame/mod_session.py`: a mod's in-game session (`up`, `run`, `film`, `down`, `all`, `qa`) |
+//! | `reprove` | `ingame/reprove.py`: patch day in game, every mod that needs a re-prove, one report; `accept` records one |
+//! | `bundle` | `tools/bundle.py`: a player release bundle from a `bundle.json` |
+//! | `source` | `tools/source.py`: a static Deadlock Mod Manager mod source from bundles |
 //!
 //! The toolkit folder and Python come from `paths::toolkit` and `paths::python`; when either is not there the verb says
 //! what is missing and how to point at it, and exits 2. Everything after the verb is the tool's, `--help` included.
@@ -44,6 +44,14 @@ pub fn command_line(verb: &str, rest: &[String]) -> Result<(PathBuf, Vec<String>
 /// Run a verb: the tool's own stdio and exit code. A tool killed without one is exit 1.
 pub fn run(verb: &str, rest: &[String]) -> Result<ExitCode, Stop> {
     let (prog, args) = command_line(verb, rest)?;
-    let status = std::process::Command::new(&prog).args(&args).status().map_err(|e| Stop::Usage(format!("`magician {verb}`: {} did not start: {e}", prog.display())))?;
+    let mut cmd = std::process::Command::new(&prog);
+    cmd.args(&args);
+    // the tool's own `magician` calls (install, ls, footprint) go to this same binary, wherever it was built or put
+    if std::env::var_os("MAGICIAN_EXE").is_none() {
+        if let Ok(me) = std::env::current_exe() {
+            cmd.env("MAGICIAN_EXE", me);
+        }
+    }
+    let status = cmd.status().map_err(|e| Stop::Usage(format!("`magician {verb}`: {} did not start: {e}", prog.display())))?;
     Ok(ExitCode::from(status.code().map_or(1, |c| u8::try_from(c).unwrap_or(1))))
 }

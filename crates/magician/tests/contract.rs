@@ -27,6 +27,13 @@ fn magician(dir: &Path, args: &[&str]) -> Output {
         .unwrap()
 }
 
+/// The Python 3 on PATH, as the front door looks for it (`python`, then `python3`), or None.
+fn python() -> Option<&'static str> {
+    ["python", "python3"].into_iter().find(|p| {
+        Command::new(p).arg("--version").output().is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&[o.stdout, o.stderr].concat()).contains("Python 3"))
+    })
+}
+
 fn text(o: &Output) -> String {
     String::from_utf8_lossy(&o.stdout).into_owned() + &String::from_utf8_lossy(&o.stderr)
 }
@@ -743,7 +750,7 @@ fn new_scaffolds_a_mod_from_the_games_own_data_and_never_over_a_folder() {
     let o = magician_in(&d, &m, &["check", "--light"]);
     assert!(matches!(o.status.code(), Some(0 | 1 | 4)) && String::from_utf8_lossy(&o.stdout).starts_with("x-skin: "), "{}", text(&o));
     let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("tools").join("bundle.py");
-    match Command::new("python").arg("-I").arg(&bundle).arg(m.join("package").join("bundle.json")).args(["--no-valve-check", "--magician", env!("CARGO_BIN_EXE_magician")]).env("DEADLOCK_GAME", &game).output() {
+    match Command::new(python().unwrap_or("python")).arg("-I").arg(&bundle).arg(m.join("package").join("bundle.json")).args(["--no-valve-check", "--magician", env!("CARGO_BIN_EXE_magician")]).env("DEADLOCK_GAME", &game).output() {
         Ok(o) => {
             assert_eq!(o.status.code(), Some(0), "bundle.py: {}", text(&o));
             assert!(m.join("dist").join("x-skin").join("mod-interchange.json").is_file());
@@ -768,16 +775,27 @@ fn session_bundle_and_source_hand_everything_to_the_toolkits_python() {
     // the toolkit and Python not there: exit 2, saying what is missing and how to point at it
     let o = run(&["bundle", "x.json"], &[("MAGICIAN_HOME", &d)]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
-    assert!(text(&o).contains("holds no ingame\\mod_session.py: point MAGICIAN_HOME"), "{}", text(&o));
+    assert!(text(&o).contains("holds no ingame/mod_session.py: point MAGICIAN_HOME"), "{}", text(&o));
     let o = run(&["session", "qa"], &[("MAGICIAN_HOME", &repo), ("MAGICIAN_PYTHON", &d.join("no-python.exe"))]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
     assert!(text(&o).contains("does not run as Python 3: point MAGICIAN_PYTHON"), "{}", text(&o));
-    if Command::new("python").arg("--version").output().is_err() {
+    if python().is_none() {
         eprintln!("skipped the pass-through runs: no python");
         let _ = std::fs::remove_dir_all(&d);
         return;
     }
-    // found from the executable's own checkout; the tool's --help is the tool's, with its exit code
+    // Found from the executable's own checkout when cargo built it inside one; a build elsewhere (CARGO_TARGET_DIR)
+    // finds nothing above itself, and says so, and MAGICIAN_HOME points it at the toolkit. The tool's --help is the
+    // tool's, with its exit code.
+    let exe = std::fs::canonicalize(env!("CARGO_BIN_EXE_magician")).unwrap();
+    let inside = exe.starts_with(std::fs::canonicalize(&repo).unwrap());
+    if !inside {
+        let o = run(&["bundle", "--help"], &[]);
+        assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+        assert!(text(&o).contains("holds ingame/mod_session.py") && text(&o).contains("set MAGICIAN_HOME"), "{}", text(&o));
+    }
+    let home: &[(&str, &Path)] = if inside { &[] } else { &[("MAGICIAN_HOME", &repo)] };
+    let run = |args: &[&str], envs: &[(&str, &Path)]| run(args, &[home, envs].concat());
     let o = run(&["bundle", "--help"], &[]);
     assert_eq!(o.status.code(), Some(0), "{}", text(&o));
     assert!(String::from_utf8_lossy(&o.stdout).starts_with("Assemble a release bundle"), "{}", text(&o));
