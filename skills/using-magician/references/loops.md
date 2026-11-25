@@ -52,7 +52,7 @@ A finding line reads `<severity>  <code> <name>  <path>`, with a hint indented u
 
 ```
 magician grade <pak>... --mod <mod.toml> [--allow <magician.allow>]... [--json] [--gate]   # without --allow it finds the mod's own magician.allow
-magician grade <pak> --hero <hero> [--light | --findings <file from lint --findings-out>]
+magician grade <pak> --hero <hero> [--light | --findings <file>]   # the file a lint --findings-out wrote
 ```
 
 Give every pak of the mod at once (a skin pak and its voice pak grade as one; alone, the skin pak lacks the voice). The label reads `<Kind> (<groups>)[ · broken][ · NSFR | · FP?][ · stale(N) | · unproven]`:
