@@ -10,7 +10,10 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, TOOLS)
 import scene_install  # noqa: E402  (its VPK writer makes the test paks)
 
-EXE = os.environ.get("MAGICIAN_BIN") or os.path.join(TOOLS, "..", "target", "release", "magician.exe" if os.name == "nt" else "magician")
+sys.path.insert(0, os.path.join(TOOLS, "..", "ingame"))
+import gamepaths  # noqa: E402  (MAGICIAN_BIN, else the release build where cargo put it)
+
+EXE = gamepaths.magician()
 
 
 class Bundle(unittest.TestCase):

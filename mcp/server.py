@@ -49,6 +49,8 @@ def find_binary():
     if env:
         return env
     cands = [os.path.join(REPO, "target", "release", EXE), os.path.join(REPO, "target", "mcp-build", "release", EXE)]
+    if os.environ.get("CARGO_TARGET_DIR"):   # a build outside the checkout, where cargo put it
+        cands.append(os.path.join(os.environ["CARGO_TARGET_DIR"], "release", EXE))
     cands = [c for c in cands if os.path.isfile(c)]
     if not cands:
         return os.path.join(REPO, "target", "release", EXE)

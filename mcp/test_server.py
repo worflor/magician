@@ -57,7 +57,9 @@ class Client:
 
 
 def binary():
-    return os.environ.get("MAGICIAN_BIN") or os.path.join(HERE, "..", "target", "release", "magician.exe" if os.name == "nt" else "magician")
+    sys.path.insert(0, HERE)
+    import server   # the binary the server itself would run: MAGICIAN_BIN, else the newest release build cargo made
+    return server.find_binary()
 
 
 def game_found():

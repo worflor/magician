@@ -196,11 +196,18 @@ def magician():
     drives the same binary that was called), else this toolkit's release build, else `magician` on PATH."""
     if _env("MAGICIAN_EXE") or _env("MAGICIAN_BIN"):   # MAGICIAN_BIN: the name the MCP server and the tests read
         return _env("MAGICIAN_EXE") or _env("MAGICIAN_BIN")
-    built = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "target", "release", EXE)
-    if os.path.isfile(built):
-        return built
+    for built in release_builds():
+        if os.path.isfile(built):
+            return built
     import shutil
-    return shutil.which("magician") or built
+    return shutil.which("magician") or release_builds()[0]
+
+
+def release_builds():
+    """Where cargo puts this checkout's release build: CARGO_TARGET_DIR when it is set, else the checkout's target/."""
+    here = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "target")
+    targets = [_env("CARGO_TARGET_DIR"), here] if _env("CARGO_TARGET_DIR") else [here]
+    return [os.path.join(t, "release", EXE) for t in targets]
 
 
 def main(argv):

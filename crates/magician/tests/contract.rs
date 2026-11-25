@@ -784,18 +784,11 @@ fn session_bundle_and_source_hand_everything_to_the_toolkits_python() {
         let _ = std::fs::remove_dir_all(&d);
         return;
     }
-    // Found from the executable's own checkout when cargo built it inside one; a build elsewhere (CARGO_TARGET_DIR)
-    // finds nothing above itself, and says so, and MAGICIAN_HOME points it at the toolkit. The tool's --help is the
-    // tool's, with its exit code.
-    let exe = std::fs::canonicalize(env!("CARGO_BIN_EXE_magician")).unwrap();
-    let inside = exe.starts_with(std::fs::canonicalize(&repo).unwrap());
-    if !inside {
-        let o = run(&["bundle", "--help"], &[]);
-        assert_eq!(o.status.code(), Some(2), "{}", text(&o));
-        assert!(text(&o).contains("holds ingame/mod_session.py") && text(&o).contains("set MAGICIAN_HOME"), "{}", text(&o));
-    }
-    let home: &[(&str, &Path)] = if inside { &[] } else { &[("MAGICIAN_HOME", &repo)] };
-    let run = |args: &[&str], envs: &[(&str, &Path)]| run(args, &[home, envs].concat());
+    // found with nothing set, wherever cargo put the binary: above it in the checkout, or (a CARGO_TARGET_DIR
+    // elsewhere) the checkout it was built from; the tool's --help is the tool's, with its exit code
+    let o = run(&["paths"], &[]);
+    let line = String::from_utf8_lossy(&o.stdout).lines().find(|l| l.starts_with("toolkit\t")).unwrap_or("").to_string();
+    assert!(line.contains("the folder above this magician") || line.contains("the checkout this magician was built from"), "{line}");
     let o = run(&["bundle", "--help"], &[]);
     assert_eq!(o.status.code(), Some(0), "{}", text(&o));
     assert!(String::from_utf8_lossy(&o.stdout).starts_with("Assemble a release bundle"), "{}", text(&o));

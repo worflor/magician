@@ -213,19 +213,23 @@ pub fn mods() -> Option<Found> {
 
 /// The toolkit folder, the one holding `ingame/mod_session.py` and `tools/` (the Python the front-door verbs run):
 /// `MAGICIAN_HOME`, the config's `home`, else the nearest folder above this executable that holds
-/// `ingame/mod_session.py` (a checkout's `target/release/magician` finds its own checkout). `Err` says what was
-/// looked for and how to point at it.
+/// `ingame/mod_session.py` (a release's folder, or a checkout's `target/release/magician`), else the checkout this
+/// binary was built from, when it is still there: a build into a `CARGO_TARGET_DIR` outside the checkout finds its
+/// toolkit the same as one inside it. `Err` says what was looked for and how to point at it.
 pub fn toolkit() -> Result<Found, String> {
     let marker = |d: &Path| d.join("ingame").join("mod_session.py").is_file();
     if let Some(f) = explicit(None, "", "MAGICIAN_HOME", "home") {
         return if marker(&f.path) { Ok(f) } else { Err(format!("{} ({}) holds no ingame/mod_session.py: point MAGICIAN_HOME (or `home =` in the config file) at the magician folder", f.path.display(), f.source)) };
     }
     let exe = std::env::current_exe().map_err(|e| format!("this executable's own path can't be read ({e}); set MAGICIAN_HOME to the magician folder"))?;
-    exe.ancestors()
-        .skip(1)
-        .find(|d| marker(d))
-        .map(|d| Found { path: d.to_path_buf(), source: "the folder above this magician that holds ingame/mod_session.py".into() })
-        .ok_or_else(|| format!("no folder above {} holds ingame/mod_session.py, so the toolkit's Python tools are not here: set MAGICIAN_HOME (or `home =` in the config file) to the magician folder (the checkout with ingame/ and tools/)", exe.display()))
+    if let Some(d) = exe.ancestors().skip(1).find(|d| marker(d)) {
+        return Ok(Found { path: d.to_path_buf(), source: "the folder above this magician that holds ingame/mod_session.py".into() });
+    }
+    // crates/magician, two folders below the checkout, as cargo saw it at build time
+    if let Some(built) = Path::new(env!("CARGO_MANIFEST_DIR")).parent().and_then(Path::parent).filter(|d| marker(d)) {
+        return Ok(Found { path: built.to_path_buf(), source: "the checkout this magician was built from".into() });
+    }
+    Err(format!("no folder above {} holds ingame/mod_session.py, and the checkout it was built from is gone, so the toolkit's Python tools are not here: set MAGICIAN_HOME (or `home =` in the config file) to the magician folder (the checkout with ingame/ and tools/)", exe.display()))
 }
 
 /// The Python 3 that runs the toolkit's tools: `MAGICIAN_PYTHON`, the config's `python`, else the first of `python`,

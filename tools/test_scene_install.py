@@ -12,7 +12,10 @@ sys.path.insert(0, TOOLS)
 import scene_install  # noqa: E402
 
 PS = shutil.which("powershell") if os.name == "nt" else None
-EXE = os.environ.get("MAGICIAN_BIN") or os.path.join(TOOLS,"..", "target", "release", "magician.exe" if os.name == "nt" else "magician")
+sys.path.insert(0, os.path.join(TOOLS, "..", "ingame"))
+import gamepaths  # noqa: E402  (MAGICIAN_BIN, else the release build where cargo put it)
+
+EXE = gamepaths.magician()
 SCENE = "maps/ui/hero_prefabs/lash"
 VALVE = {f"{SCENE}.vmap_c": b"valve map", f"{SCENE}/entities/default_ents.vents_c": b"valve lump", f"{SCENE}/cubemaps/c.vtex_c": b"valve cube"}
 OURS = {f"{SCENE}/entities/default_ents.vents_c": b"OUR lump", f"{SCENE}/models/ribbon.vmdl_c": b"our ribbon"}
