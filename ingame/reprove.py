@@ -22,7 +22,8 @@ Passes are kept under <reference>\\work\\passes\\<slug>\\<build>-<date>-<time>\\
 None of the three proves a mod: the pictures are not judged here (docs/PATCH-DAY.md, "Why stills are not compared").
 A person or an agent looks at the contact sheets; `look` says what to read first. Then `reprove.py accept <pass dir>`
 records it: it checks the pass is a whole one, filmed on the installed build with the paks that are installed now,
-runs `magician prove` on its mod, and leaves an ACCEPTED note in the pass folder.
+runs `magician prove <mod.toml> --evidence <pass dir>` (the proof is recorded against the installed paks' bytes, with
+the pass's index.md hashed as its evidence), and leaves an ACCEPTED note in the pass folder.
 
 --plan says what would run (which mods, whether a vanilla pass is needed, which scenarios, where to) and launches
 nothing. A mod with no `[ingame] pass` list in its mod.toml, or one naming a scenario that is not found, is reported
@@ -155,7 +156,7 @@ def accept(pdir):
     then = {(n, c, o) for n, c, o, _ in S.status_rows(st.get("installed_before", "")) if o in st.get("owners", [])}
     if now != then:
         raise S.Stop(1, "the mod's installed paks are not the ones this pass filmed: " + ", ".join(sorted(f"{n} {c}" for n, c, _ in now ^ then)))
-    rc, text = S.magician("prove", st["mod"])
+    rc, text = S.magician("prove", st["mod"], "--evidence", pdir)
     say(text.strip().splitlines()[-1] if text.strip() else f"prove rc {rc}")
     if rc != 0:
         raise S.Stop(1, "magician prove failed")

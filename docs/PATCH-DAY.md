@@ -113,7 +113,7 @@ Then record it:
 python -I ingame\reprove.py accept <pass folder>
 ```
 
-`accept` refuses a vanilla pass, a pass with a failed scenario, a pass filmed on another build, and a pass whose paks are not the ones installed now. Otherwise it runs `magician prove` for the pass's mod and leaves an `ACCEPTED` note in the folder. Commit each `mod.toml` afterwards.
+`accept` refuses a vanilla pass, a pass with a failed scenario, a pass filmed on another build, and a pass whose paks are not the ones installed now. Otherwise it runs `magician prove <mod.toml> --evidence <pass folder>` for the pass's mod, which records the proof against the bytes of the paks installed now, and leaves an `ACCEPTED` note in the folder. Commit the mod's `mod.toml` and `proofs.tsv` afterwards.
 
 About 5 minutes of game time for a pass of four scenarios; a mod's first pass on a build costs two (the vanilla one). The pieces can be run by hand: `python -I ingame\mod_session.py qa --mod <mod folder> --out <dir> [--vanilla --restore]`, `python -I ingame\logdiff.py --build N --scene <hero>_<map> --mod <console log>`. A scenario is looked up in the mod's own folders first, then in `ingame\scenarios` (the stock-hero examples `enter_haze.txt`, `angles.txt`, `motion.txt`).
 
