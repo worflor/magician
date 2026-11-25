@@ -13,7 +13,8 @@ when there is none, and when it finds something BROKEN nothing is launched. For 
   3. the pass's console warnings against that baseline (logdiff.py).
 
 Passes are kept under <reference>\\work\\passes\\<slug>\\<build>-<date>-<time>\\ (or under --out). The report
-(reprove-<build>-<date>-<time>.md and .json beside them) gives each mod one of three states:
+(reprove-<build>-<date>-<time>.md and .json beside them) gives each mod one of three states (--json also prints the .json document, alone, on stdout; everything else then
+goes to stderr):
 
     ready    every scenario ran and the mod adds no warning over vanilla on this build
     look     it ran, and it adds warnings or they could not be compared: the report says which
@@ -174,6 +175,25 @@ def accept(pdir):
 
 
 def run(o):
+    """The run. With --json, stdout carries the one document and nothing else: everything said on the way (ours, the
+    sessions', the tools they start) goes to stderr, at the file-descriptor level so a child process's lines go too."""
+    if not o.get("json"):
+        return _run(o)
+    sys.stdout.flush()
+    real = os.dup(1)
+    os.dup2(2, 1)
+    doc = {}
+    try:
+        rc = _run(o, doc)
+    finally:
+        sys.stdout.flush()
+        os.dup2(real, 1)
+        os.close(real)
+    print(json.dumps(doc.get("doc") or {"schema": "magician.reprove/1", "build": gamepaths.build(), "mods": []}, indent=1))
+    return rc
+
+
+def _run(o, keep=None):
     build = gamepaths.build()
     if not build:
         raise S.Stop(1, "the installed game's build could not be read")
@@ -236,8 +256,8 @@ def run(o):
     doc = {"schema": "magician.reprove/1", "build": build, "stamp": stamp, "mods": results}
     with open(base_name + ".json", "w", encoding="utf-8", newline="\n") as fh:
         json.dump(doc, fh, indent=1)
-    if o.get("json"):
-        print(json.dumps(doc, indent=1))
+    if keep is not None:
+        keep["doc"] = doc
     say(f"report: {base_name}.md")
     states = {r["state"] for r in results}
     return 1 if "failed" in states else 4 if "look" in states else 0

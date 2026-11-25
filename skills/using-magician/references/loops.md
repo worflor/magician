@@ -1,6 +1,6 @@
 # Magician loops in full
 
-Load the section you need. Commands assume the repository root and `magician` = `target\release\magician.exe`.
+Load the section you need. `magician` is `target\release\magician.exe` in a checkout. Run a mod's commands from its folder, and `patchday` and `reprove` from the folder that holds the mods (or from inside any one of them).
 
 ## Contents
 
@@ -19,11 +19,11 @@ Load the section you need. Commands assume the repository root and `magician` = 
 The prompt is one line, say *"validate the lash skins for the newest Deadlock release"*, and nobody will answer questions. Do this:
 
 1. `magician doctor --json`. A check whose `state` is `fail` (most often `game`): report its `detail` and `fix`, and stop. The `build` check names the installed build; "newest release" means the build Steam has installed (Magician never downloads one).
-2. Find the mods. "The lash skins" means every mod whose hero is Lash: the `model-replacements\*\mod.toml` above the working folder with `[mod] hero = "hero_lash"` (or `lash`, `Lash`: Magician reads a hero any way), and `magician install --status` for what is installed and under which owner. If nothing matches, say what you searched.
-3. `magician patchday --capture --json`. It writes the new build's baseline and rig sidecar into the reference folder if they are missing (never into the game), then checks every installed mod: `mods[].state`, `mods[].from` (the build each was compared from) and `verdict`. If it says there is no older baseline on record, drift could not be checked: say so.
+2. Find the mods. "The lash skins" means every mod whose hero is Lash: of the mods `patchday` checks (the `manifests` of its JSON; `magician paths` shows a `mods` folder when one is set), the ones whose `mod.toml` has `[mod] hero = "hero_lash"` (or `lash`, `Lash`: Magician reads a hero any way), and `magician install --status` for what is installed and under which owner. If nothing matches, say what you searched.
+3. `magician patchday --capture --json`. It writes the new build's baseline and its rig and engine sidecars into the reference folder if they are missing (never into the game), then checks every installed mod: `mods[].state`, `mods[].from` (the build each was compared from), `engine` (data only, or the files that changed) and `verdict`. If it says there is no older baseline on record, drift could not be checked: say so.
 4. For each mod in scope, `magician check <its folder> --json`: its paks (from its `mod.toml`: `[mod] paks`, else the paks beside it, else the ones the ledger holds for its owners, which is what the game loads) linted deep and graded together, its drift since its last proven build, its scene patches against the stock maps. Report `verdict` (`ok`, `re-prove`, `broken`), `label`, the `lint` step's counts and every `next` line. stderr names every file it used and where it found it. If a `next` line says the ledger holds files for owners the mod.toml does not claim (a voice pak, a scene), report it: the grade left them out, and only the author can say they belong (`[mod] owners`).
 5. For anything broken, `magician drift --json` from inside the mod's folder (it compares from the last proven build) or `magician lint <pak>` for the full findings. Do not uninstall unless the prompt or a standing instruction says to contain broken mods.
-6. Stop before anything that needs judgement or the game: no fixes, no installs, no `prove`, no launch.
+6. Stop before anything that needs judgement or the game: no fixes, no installs, no proofs, no launch. If the prompt does ask for in-game proof, that is [In-game proof](#in-game-proof), and its last step still needs the frames looked at.
 7. Report (format in SKILL.md): build, each mod's verdict and label, lint counts with rule codes, every write you made (a captured baseline), what remains (in-game re-prove for `re-prove` mods, a fix for broken ones).
 
 With a person pairing, do the same but ask before anything that writes outside the reference folder.
@@ -33,7 +33,7 @@ With a person pairing, do the same but ask before anything that writes outside t
 ```
 magician check <mod folder or mod.toml> [--light] [--json]   the one verdict: lint + grade + drift + scenes
 magician lint <pak>                          light
-magician lint <pak> --deep                   plus the mesh family (M100-M140)
+magician lint <pak> --deep                   plus the mesh family (M100-M148)
 magician lint <pak> --json                  one JSON document on stdout, same findings (--json-out FILE writes it beside the report)
 magician rules                               the catalogue: code, name, severity, in-game consequence
 ```
@@ -67,13 +67,13 @@ In the record (`--json`, schema `magician.grade/2`) the useful parts are `releas
 ## Patch day
 
 ```
-magician patchday --capture           the check; writes a missing baseline and rig sidecar
+magician patchday --capture           the check; writes a missing baseline and its sidecars
 magician patchday --from <build>      compare against a specific older build
-magician patchday --mod <mod.toml>    check named mods (otherwise model-replacements/*/mod.toml is searched)
+magician patchday --mod <mod.toml>    check named mods (otherwise the mods folder, or the mods found from the working folder)
 magician drift <pak>... --from <old> [--to <new>]
 ```
 
-Sections: `[1] baseline` (MISSING, ok, or STALE: same build number, different bytes, a hotfix), `[2] install state` (is `Game citadel/addons` still in `gameinfo.gi`; ledger rows against disk), `[3] drift` per mod from its last proven build, `[4] mods` (`[target]` paths and `proven on N of M builds`), then `verdict`: `clear` (exit 0), `loads, but re-prove in game: <mods>` (exit 4), or `BROKEN: n problem(s)` (exit 1). `--json` gives all of it as one document.
+Sections: `[1] baseline` (MISSING, ok, or STALE: same build number, different bytes, a hotfix), `[2] install state` (is `Game citadel/addons` still in `gameinfo.gi`; ledger rows against disk), `[3] drift` per mod from the last build a proof holds its bytes on, with an `engine` line (`data only`, or `engine too` and the files), `[4] mods` (`[target]` paths, `its installed bytes proven on N of M builds`, and whether any name in the hero's data moved), then `verdict`: `clear` (exit 0), `loads, but re-prove in game: <mods>` (exit 4), or `BROKEN: n problem(s)` (exit 1). `--json` gives all of it as one document.
 
 What to do with each, briefly (the full table is `docs/PATCH-DAY.md`, "What each failure means"):
 
@@ -142,25 +142,37 @@ After a game update, `check` exiting 1 (and `compose` or `install` refusing with
 ## Release bundles
 
 ```
-python -I tools\bundle.py <bundle.json> --out <dir> [--zip]
+magician bundle <bundle.json> --out <dir> [--zip]
+magician source <source.json> [--out <dir>]
 ```
 
-Builds a Deadlock Mod Manager bundle (`mod-interchange.json`, paks, previews, scene patches with standalone installers, `SHA256SUMS.txt`). It refuses a path shipped in two paks and any file byte-identical to Valve's. Write to a scratch `--out` unless told where releases go; never overwrite a published bundle.
+`bundle` builds a Deadlock Mod Manager bundle (`mod-interchange.json`, paks, previews, scene patches with standalone installers, `SHA256SUMS.txt`). It refuses a path shipped in two paks and any file byte-identical to Valve's. `source` writes a static mod source from bundles: the catalogue the manager reads, a page per mod, a release feed. It states only the builds a proof holds the zip's own paks on. Write to a scratch `--out` unless told where releases go; never overwrite a published bundle or site, and never push one: publishing is the user's step.
 
 ## In-game proof
 
-Only when the task asks for it, the machine has an interactive Windows desktop, and you can look at the frames (or a person will). The harness types into the game like a player; see `ingame/README.md`.
+Only when the task asks for it, the machine has an interactive Windows desktop, and you can look at the frames (or a person will). The harness types into the game like a player and captures its window; `ingame/README.md` has the details.
+
+After a game update, for every mod that needs it:
 
 ```
-$env:MAGICIAN_GAME_HOLDER = "<your name>"
-python -I ingame\gamelock.py status                                   0 free, 3 held: never take it from someone
-powershell -ExecutionPolicy Bypass -File ingame\launch.ps1 -Extra "+map new_player_basics"
-python -I ingame\mod_session.py qa --mod <mod folder> --out <dir> [scenario ...]     # or: ingame\qa_run.ps1 -Mod <mod folder> [-Scenarios a,b,c]
-powershell -ExecutionPolicy Bypass -File ingame\stop_game.ps1          gives the seat back
+magician reprove --plan                  what would run, and what cannot; launches nothing
+magician reprove                         the patch-day check, then each mod's passes, one after another
+magician reprove accept <pass folder>    record a pass that was looked at
 ```
 
-- `launch.ps1` exit 4: a game it did not start is running (it may carry other paks). Don't adopt it; report.
-- Install before launching, never during a session you don't hold.
-- `mod_session.py qa` writes into `--out` (`qa_run.ps1`: a dated folder under `<reference>\work\<mod>\ingame\`) with contact sheets and `index.md`. Open the sheets. Say what you saw (a T-pose, a pink material, cloth clipping), not that the run exited 0.
-- Give the seat back as soon as the captures are taken, then check `gamelock.py status` before saying it is free.
-- Only after the frames were looked at: `magician prove <mod.toml> --evidence <pass dir>` records a proof of the installed bytes on the build (refused, exit 3, when nothing is installed for the mod or it is not what the ledger installed).
+- It takes the game seat under each mod's name only while that mod plays (`MAGICIAN_GAME_HOLDER` names one holder for the whole run), and exits 3 at once if someone else holds it.
+- A mod's first pass on a build is two: a vanilla pass (the mod's paks out, the same scenarios, the paks put back exactly) gives the console log every later pass on that build is read against. A vanilla pass that cannot put the install back stops the whole run.
+- The report (`reprove-<build>-<date>-<time>.md` under `<reference>\work\passes\`, and `--json`) gives each mod `ready` (every scenario ran, no warning over vanilla), `look` (it adds warnings, or they could not be compared: listed) or `failed` (a scenario failed, a crash dump, no `[ingame] pass` in its `mod.toml`). Exit 0, 4, 1.
+- None of those is proof. Open the pass's contact sheets (`*_sheet.png`, listed in its `index.md`). Say what you saw (a T-pose, a pink material, cloth snapping, an ability that reads wrong), not that the run exited 0. If you cannot see images, stop here and report the pass folders for a person.
+- `accept` refuses a vanilla pass, a pass with a failed scenario, a pass on another build, and a pass whose paks are not the ones installed now. Otherwise it records the proof (`magician prove <mod.toml> --evidence <pass folder>`). The mod's `mod.toml` and `proofs.tsv` change: say so, and commit them only if that is the task.
+
+One mod, or a pak that is not installed yet:
+
+```
+magician session qa --mod <mod folder> --out <dir> [scenario ...]        the mod's [ingame] pass, or the scenarios named
+magician session qa --mod <mod folder> --out <dir> --pak <pak> --restore  a candidate pak over the mod's slot, the old one back at the end
+magician session up | run | film | down --out <dir> ...                    the same session in parts, steered between
+```
+
+- A session exits 5 when a game it did not start is running (it may carry other paks): don't adopt it, report. It exits 9 when the seat or the game stopped being its own: nothing was done.
+- `python -I ingame\gamelock.py status` says whether the seat is free (0) or held (3). Check it before saying the game is free.
