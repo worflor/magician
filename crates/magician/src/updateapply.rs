@@ -266,7 +266,7 @@ fn release_install(root: &Path, exe: &Path, src: Source, dry: bool) -> R {
         say!("  source       {}", src.label());
         for step in [
             format!("fetch {asset} from the source (its checksum is already read from {})", update::SUMS),
-            "check the zip's SHA-256 against SHA256SUMS".to_string(),
+            "check the archive's SHA-256 against SHA256SUMS".to_string(),
             format!("unpack it into {} and run its {name} --version", staging.display()),
             format!("move each entry of the toolkit {} aside into {PARTIAL} and put the new one in its place, putting everything back if a step fails", root.display()),
             format!("run the installed {name} --version, keep the old files as {PREVIOUS} until the next update"),
