@@ -6,7 +6,7 @@ examples/mod-source/check.mjs (and node on the PATH) it also runs DMM's own chec
 
     python -I tools/test_source.py
 """
-import hashlib, io, json, os, shutil, subprocess, sys, tempfile, unittest, zipfile
+import hashlib, io, json, os, re, shutil, subprocess, sys, tempfile, unittest, zipfile
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 CHECK = os.environ.get("DMM_SOURCE_CHECK")
@@ -394,6 +394,106 @@ class Source(unittest.TestCase):
         for bad in ({"title": "x", "in_manager": True}, {"title": "x", "id": "test-skin"}, {"title": "x", "id": "mods"}, {"note": "n"}):
             r = self.run_source(self.source(z, upcoming=[bad]))
             self.assertNotEqual(r.returncode, 0, bad)
+
+    def ld(self, *rel):
+        """Every schema.org script element of a page, parsed, and the raw text of each."""
+        page = self.text(*rel)
+        raw = re.findall(r'<script type="application/ld\+json">\n(.*?)\n</script>', page, flags=re.S)
+        return [json.loads(r) for r in raw], raw
+
+    def test_each_page_carries_structured_data_from_what_the_listing_says(self):
+        z = self.bundle()
+        self.ok(self.source(z, authors={"me": "https://me.example.org/"}, mods=[{
+            "bundle": "package/bundle.json", "zip": z, "blurb": "Short blurb.",
+            "links": [{"label": "Trailer", "url": "https://www.youtube.com/watch?v=x", "kind": "video"},
+                      {"label": "Nexus Mods", "url": "https://www.nexusmods.com/deadlock/mods/1", "kind": "same"},
+                      {"label": "Notes", "url": "https://example.com/notes"}]}]))
+        (doc,), _ = self.ld("test-skin", "index.html")
+        app, crumbs = doc["@graph"]
+        self.assertEqual(doc["@context"], "https://schema.org")
+        self.assertEqual((app["@type"], app["name"], app["url"]),
+                         ("SoftwareApplication", "Test Skin", "https://example.github.io/skins/test-skin/"))
+        self.assertEqual(app["author"], {"@type": "Person", "name": "me", "url": "https://me.example.org/"})
+        self.assertEqual((app["softwareVersion"], app["datePublished"], app["dateModified"]), ("1.0.0", "2026-11-22", "2026-11-22"))
+        self.assertEqual(app["softwareRequirements"]["name"], "Deadlock")
+        with open(z, "rb") as f:
+            sha = hashlib.sha256(f.read()).hexdigest()
+        self.assertEqual(app["downloadUrl"], "https://example.github.io/skins/files/TestSkin_1.0.0.zip")
+        self.assertEqual((app["encoding"]["sha256"], app["encoding"]["contentUrl"]), (sha, app["downloadUrl"]))
+        self.assertEqual(app["sameAs"], ["https://www.nexusmods.com/deadlock/mods/1"], "a plain link is not the same work")
+        self.assertEqual(app["subjectOf"], [{"@type": "VideoObject", "name": "Trailer", "url": "https://www.youtube.com/watch?v=x"}])
+        self.assertEqual(app["releaseNotes"], "1.0.0 (2026-11-22)\n\n- New thing wrapped.")
+        self.assertIn("listing=test-skin", app["installUrl"])
+        self.assertNotIn("6864", json.dumps(doc), "the build it was made for is no proof, and is not said here")
+        self.assertEqual([i["item"] for i in crumbs["itemListElement"]],
+                         ["https://example.github.io/skins/", "https://example.github.io/skins/test-skin/"])
+        page = self.text("test-skin", "index.html")
+        for href in ("https://www.youtube.com/watch?v=x", "https://www.nexusmods.com/deadlock/mods/1", "https://example.com/notes"):
+            self.assertIn(f'href="{href}">', page, "every link is a plain anchor")
+        self.assertNotIn("nofollow", page)
+        self.assertIn('by <a href="https://me.example.org/" rel="author">me</a>', page)
+        self.assertIn('<link rel="alternate" type="application/json" title="Deadlock Mod Manager listing" href="../mods/test-skin.json">', page)
+        (front,), _ = self.ld("index.html")
+        self.assertEqual(front["@type"], "CollectionPage")
+        self.assertEqual(front["mainEntity"]["itemListElement"],
+                         [{"@type": "ListItem", "position": 1, "url": "https://example.github.io/skins/test-skin/", "name": "Test Skin"}])
+        self.assertIn('<link rel="alternate" type="application/json" title="Deadlock Mod Manager catalog" href="catalog.json">',
+                      self.text("index.html"))
+        if Image:
+            self.assertEqual(app["image"][0], {"@type": "ImageObject", "contentUrl": "https://example.github.io/skins/media/test-skin/cover.jpg",
+                                               "width": 64, "height": 40})
+            self.assertIn('<meta property="og:image:width" content="64">\n<meta property="og:image:height" content="40">', page)
+        # a second release keeps the first one's date as the mod's
+        self.skin = b"new skin pak bytes"
+        z2 = self.bundle(release="1.1.0", date="2026-12-01")
+        self.ok(self.source(z2))
+        (doc,), _ = self.ld("test-skin", "index.html")
+        self.assertEqual((doc["@graph"][0]["datePublished"], doc["@graph"][0]["dateModified"]), ("2026-11-22", "2026-12-01"))
+
+    def test_a_hostile_name_cannot_leave_the_structured_data(self):
+        name = 'Evil </script><script>alert(1)</script> <!-- & "quoted"  '
+        self.ok(self.source(self.bundle(name=name, description="</SCRIPT> & <b>x</b>")))
+        for rel in (("test-skin", "index.html"), ("index.html",)):
+            docs, raw = self.ld(*rel)
+            self.assertEqual(len(docs), 1, rel)
+            self.assertFalse(re.search(r"[<>& ]", raw[0]), "markup characters are escaped inside the element")
+            self.assertEqual(self.text(*rel).count("<script"), 2, "the JSON-LD and the gallery's, nothing injected")
+        app = self.ld("test-skin", "index.html")[0][0]["@graph"][0]
+        self.assertEqual(app["name"], name)
+        self.assertEqual(app["description"], "</SCRIPT> & <b>x</b>")
+
+    def test_the_sitemap_lists_every_page_with_its_newest_release(self):
+        import xml.etree.ElementTree as ET
+        z = self.bundle()
+        self.ok(self.source(z, upcoming=[{"title": "Next Skin", "note": "Soon."}]))
+        ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+        root = ET.fromstring(self.text("sitemap.xml").encode())
+        rows = [(u.find("s:loc", ns).text, u.find("s:lastmod", ns).text) for u in root.findall("s:url", ns)]
+        self.assertEqual(rows, [("https://example.github.io/skins/", "2026-11-22"),
+                                ("https://example.github.io/skins/test-skin/", "2026-11-22")])
+        self.assertIn("sitemap.xml", self.text(".dmm-source-files"))
+
+    def test_a_spec_without_the_new_keys_renders_its_links_and_author_as_before(self):
+        z = self.bundle(readme_extra="\n\n# A loud heading")
+        self.ok(self.source(z, mods=[{"bundle": "package/bundle.json", "zip": z,
+                                      "links": [{"label": "Trailer", "url": "https://example.com/t"}]}]))
+        page = self.text("test-skin", "index.html")
+        self.assertIn('<a class="more" href="https://example.com/t">Trailer</a></p>', page)
+        self.assertIn("Lash &middot; by me &middot; version 1.0.0", page)
+        app = self.ld("test-skin", "index.html")[0][0]["@graph"][0]
+        self.assertNotIn("sameAs", app)
+        self.assertNotIn("subjectOf", app)
+        self.assertEqual(app["author"], {"@type": "Person", "name": "me"})
+        self.assertEqual(page.count("<h1"), 1, "a heading in the description is not a second h1")
+        self.assertIn("<h2>A loud heading</h2>", page)
+        for bad, why in (([{"label": "x", "url": "https://e.org/", "kind": "mirror"}], "a kind is one of"),
+                         ([{"label": "x", "url": "http://e.org/", "kind": "same"}], "needs an https address"),
+                         ([{"label": "x"}], "needs a label and a url")):
+            r = self.run_source(self.source(z, mods=[{"bundle": "package/bundle.json", "zip": z, "links": bad}]))
+            self.assertNotEqual(r.returncode, 0, why)
+            self.assertIn(why, r.stderr)
+        r = self.run_source(self.source(z, authors={"me": "ftp://me.example.org/"}))
+        self.assertNotEqual(r.returncode, 0)
 
     def test_a_mod_dropped_from_the_spec_takes_its_files_with_it(self):
         z = self.bundle()

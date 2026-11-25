@@ -17,6 +17,7 @@ on any static host (GitHub Pages is the worked case):
     index.html              the front page: a card per mod, what is coming, and the Add source button
     <id>/index.html         a page per mod: its pictures, Install with DMM, the description DMM shows, every release
     feed.xml                an Atom feed of every release, for a reader that is not a mod manager
+    sitemap.xml             the pages, each with the date of its newest release, for search engines
     .nojekyll               so GitHub Pages publishes .well-known and does not run Jekyll
     .dmm-source-files       what this tool wrote, so the next run replaces only its own files
 
@@ -33,7 +34,9 @@ https://github.com/<user>/<repo>/releases/download/{id}-{version}/), media_url (
 download_origins (more origins artifacts may come from or redirect to), icon (an image; a 256 px square JPEG),
 taxonomy (DMM's taxonomy.json, to check hero and content-type ids), dmm_url (the Get DMM link).
 Per mod, for the pages: tagline, blurb (the card's text, default the bundle's description; both take inline Markdown)
-and links [{label, url}] (a trailer, say).
+and links [{label, url, kind}] (a trailer, say): kind "same" says the link is this mod on another site (its Nexus
+Mods page), "video" that it is a video of it, and the pages' structured data says so (sameAs, subjectOf).
+authors {name: url}: an author's own site, for an author as bundle.json names them; the mod's page links it.
 page {title, intro, css, head, header, footer}: the pages' own look. css is a stylesheet appended to the built-in one
 (which is written on variables: --bg, --ink, --muted, --line, --accent, --font, --width ...), head, header and footer
 are HTML files put in <head>, above the content and in the footer of every page; {root} in them is the way back to
@@ -234,6 +237,17 @@ def read_bundle(entry, base, taxonomy):
         die(f"listing id {lid!r} must be lowercase letters, digits and hyphens (it names files in the tree)")
     if lid in RESERVED_DIRS:
         die(f"listing id {lid!r} is a folder the tree already uses; give the mod another id")
+    links = entry.get("links", [])
+    if not isinstance(links, list):
+        die(f"{lid}: links must be a list of {{label, url}}")
+    for x in links:
+        if not isinstance(x, dict) or not all(isinstance(x.get(k), str) and x[k] for k in ("label", "url")):
+            die(f"{lid}: each link needs a label and a url: {x!r}")
+        if "kind" in x:
+            if x["kind"] not in LINK_KINDS:
+                die(f"{lid}: link {x['label']!r} has kind {x['kind']!r}; a kind is one of {', '.join(LINK_KINDS)}")
+            if urllib.parse.urlsplit(x["url"]).scheme != "https":
+                die(f"{lid}: link {x['label']!r} is the mod elsewhere or a video, so it needs an https address")
 
     if entry.get("zip"):
         zpath = resolve(base, entry["zip"])
@@ -620,6 +634,11 @@ def main():
     base_url = folder_url(flag("--base-url") or src["base_url"], "base_url")
     homepage = src.get("homepage") or base_url
     check_url(homepage, "homepage")
+    authors = src.get("authors", {})
+    if not isinstance(authors, dict) or not all(isinstance(v, str) for v in authors.values()):
+        die("authors must map an author's name (as bundle.json says it) to the address of their own site")
+    for v in authors.values():
+        check_url(v, "authors entry")
     media_url = folder_url(src.get("media_url") or base_url + "media/", "media_url")
     dl_template = src.get("downloads_url") or base_url + "files/"
     taxonomy = None
@@ -677,16 +696,18 @@ def main():
             page_dl = dl_url
 
         images, image_rels = [], []
+        b["download_url"], b["image_sizes"] = dl_url, {}
         for name, data in b["previews"]:
             stem = os.path.splitext(name)[0]
             target = media_url + f"{b['id']}/{stem}.jpg"
             if not re.fullmatch(r"[A-Za-z0-9._-]+", stem):
                 die(f"{b['id']}: preview {name!r} needs a plain name (letters, digits, . _ -)")
-            jpg, _ = jpeg(data, 1920, MEDIA_TARGET)
+            jpg, size = jpeg(data, 1920, MEDIA_TARGET)
             if target.startswith(base_url):
                 rel = target[len(base_url):]
                 tree.put(rel, jpg)
                 image_rels.append(rel)
+                b["image_sizes"][rel] = size
                 images.append(rel_url(mrel, rel))
             else:
                 die(f"media_url {media_url} is not under base_url {base_url}: media is written into the tree, so "
@@ -698,7 +719,7 @@ def main():
         installation = {"mode": "components", "components": b["components"],
                         "requiredComponents": b["required"], "choiceGroups": b["groups"]}
         rev = revision([artifact], installation)
-        published = f"{spec['date']}T12:00:00Z"
+        published = published_of(spec)
         notes_text = changelog_section(b["changelog"], spec["release"]) if b["changelog"] else None
         if b["changelog"] and notes_text is None:
             die(f"{b['id']}: CHANGELOG.md has no '## {spec['release']}' section")
@@ -832,6 +853,7 @@ def main():
     for en in entries:
         tree.put(f"{en[1]['id']}/index.html", mod_page(src, base_url, desc_url, en, icon_rel, theme))
     tree.put("feed.xml", atom(src, base_url, entries))
+    tree.put("sitemap.xml", sitemap(base_url, entries))
     check_tree(tree, base_url, descriptor("dmm-source.json"))
 
     # Nothing is written over a file this tool did not write (unless it already holds the same bytes).
@@ -1004,6 +1026,9 @@ document.querySelectorAll('.gallery').forEach(function (g) {
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November",
           "December")
 RESERVED_DIRS = ("mods", "media", "files")
+# A link's kind: "same" is this mod on another site (its Nexus Mods page), "video" is a video of it (a trailer).
+# Without a kind a link is related material and appears on the page only.
+LINK_KINDS = ("same", "video")
 
 
 def long_date(iso):
@@ -1039,7 +1064,7 @@ def md_html(md):
         if re.fullmatch(r"-{3,}", block.strip()):
             out.append("<hr>")
         elif h and len(lines) == 1:
-            n = min(len(h.group(1)), 6)
+            n = max(2, min(len(h.group(1)), 6))   # the page's one h1 is the mod's name
             out.append(f"<h{n}>{md_inline(h.group(2))}</h{n}>")
         elif all(l.startswith(">") for l in lines):
             body = "\n".join(re.sub(r"^> ?", "", l) for l in lines)
@@ -1080,15 +1105,32 @@ def fragment(base, page, key):
     return open(p, encoding="utf-8").read().strip()
 
 
-def shell(title, desc, canonical, og_image, root, body, theme, icon_rel):
+def ld_script(doc):
+    """Structured data as a script element. JSON allows `<`, `>` and `&` only inside strings, where \\u escapes mean
+    the same characters, so a name holding `</script>` or `<!--` cannot end or bend the element."""
+    s = json.dumps(doc, indent=1, ensure_ascii=False)
+    for c, u in (("&", "\\u0026"), ("<", "\\u003c"), (">", "\\u003e"), (" ", "\\u2028"), (" ", "\\u2029")):
+        s = s.replace(c, u)
+    return f'<script type="application/ld+json">\n{s}\n</script>'
+
+
+def shell(title, desc, canonical, og_image, root, body, theme, icon_rel, og_size=None, alternate=None, ld=None):
     """One HTML document: the shared head, the theme's header and footer, and `body` between them. `root` is the
-    way from this page to the top of the tree ("" or "../"); {root} in a theme fragment becomes it."""
+    way from this page to the top of the tree ("" or "../"); {root} in a theme fragment becomes it. `alternate` is
+    (title, path in the tree) of the JSON the page is a view of; `ld` its schema.org structured data."""
     e = html.escape
     fill = lambda s: s.replace("{root}", root)
     head = [f'<meta property="og:image" content="{e(og_image)}">', '<meta name="twitter:card" content="summary_large_image">'] if og_image else []
+    if og_image and og_size:
+        head[1:1] = [f'<meta property="og:image:width" content="{og_size[0]}">',
+                     f'<meta property="og:image:height" content="{og_size[1]}">']
     if icon_rel:
         head.append(f'<link rel="icon" href="{e(root + icon_rel)}">')
     head.append(f'<link rel="alternate" type="application/atom+xml" title="Releases" href="{root}feed.xml">')
+    if alternate:
+        head.append(f'<link rel="alternate" type="application/json" title="{e(alternate[0])}" href="{e(root + alternate[1])}">')
+    if ld:
+        head.append(ld_script(ld))
     if theme["head"]:
         head.append(fill(theme["head"]))
     nl = "\n"
@@ -1188,7 +1230,14 @@ def landing(src, base_url, desc_url, entries, icon_rel, theme, upcoming):
   <code class="url">{e(desc_url)}</code>
 </section>"""
     og = base_url + entries[0][3][0] if entries and entries[0][3] else None
-    return shell(title, plain_text(intro), base_url, og, "", body, theme, icon_rel)
+    og_size = entries[0][0]["image_sizes"].get(entries[0][3][0]) if og else None
+    ld = {"@context": "https://schema.org", "@type": "CollectionPage", "@id": base_url, "url": base_url, "name": title,
+          "description": plain_text(intro), "inLanguage": "en",
+          "mainEntity": {"@type": "ItemList", "numberOfItems": len(entries), "itemListElement": [
+              {"@type": "ListItem", "position": i + 1, "url": f"{base_url}{en[1]['id']}/", "name": en[0]["spec"]["name"]}
+              for i, en in enumerate(entries)]}}
+    return shell(title, plain_text(intro), base_url, og, "", body, theme, icon_rel, og_size,
+                 ("Deadlock Mod Manager catalog", "catalog.json"), ld)
 
 
 def mod_page(src, base_url, desc_url, entry, icon_rel, theme):
@@ -1208,6 +1257,8 @@ def mod_page(src, base_url, desc_url, entry, icon_rel, theme):
                    + (f'<div class="thumbs">{thumbs}</div>' if len(image_rels) > 1 else "") + "</figure>")
     links = "".join(f'<a class="more" href="{e(x["url"])}">{e(x["label"])}</a>' for x in b["entry"].get("links", []))
     tagline = f'<p class="tagline">{md_inline(b["entry"]["tagline"])}</p>' if b["entry"].get("tagline") else ""
+    author_url = (src.get("authors") or {}).get(spec["author"])
+    author = f'<a href="{e(author_url)}" rel="author">{e(spec["author"])}</a>' if author_url else e(spec["author"])
     build = f" &middot; Deadlock build {e(str(spec['game_build']))}" if spec.get("game_build") else ""
     if b.get("proven"):
         build = f" &middot; proven on Deadlock build {e(str(b['proven'][-1]))}"
@@ -1223,7 +1274,7 @@ def mod_page(src, base_url, desc_url, entry, icon_rel, theme):
 <header class="top">
   <h1 class="page-title">{e(spec['name'])}</h1>
   {tagline}
-  <p class="meta">{e(hero_name)} &middot; by {e(spec['author'])} &middot; version {e(spec['release'])} &middot; {e(long_date(spec['date']))}{build}</p>
+  <p class="meta">{e(hero_name)} &middot; by {author} &middot; version {e(spec['release'])} &middot; {e(long_date(spec['date']))}{build}</p>
 </header>
 <p class="actions">{buttons(src, desc_url, b, l, up(dl_url))}{links}</p>
 <p class="small">One click needs a Deadlock Mod Manager with mod sources (<strong>Settings &gt; Mods &gt; Mod sources</strong>).
@@ -1242,7 +1293,80 @@ Without it, download the zip: its README has the steps, by hand or by import.</p
   <dt>SHA-256</dt><dd><code>{e(b['sha256'])}</code></dd></dl>
 </section>"""
     og = base_url + image_rels[0] if image_rels else None
-    return shell(f"{spec['name']} | {title}", plain_text(blurb_of(b)), f"{base_url}{l['id']}/", og, root, body, theme, icon_rel)
+    ld = mod_ld(src, base_url, desc_url, entry, title, author_url)
+    return shell(f"{spec['name']} | {title}", plain_text(blurb_of(b)), f"{base_url}{l['id']}/", og, root, body, theme,
+                 icon_rel, b["image_sizes"].get(image_rels[0]) if image_rels else None,
+                 ("Deadlock Mod Manager listing", f"mods/{l['id']}.json"), ld)
+
+
+# Deadlock's own page, the game every listing is for (gameId "deadlock" in the descriptor).
+DEADLOCK = {"@type": "VideoGame", "name": "Deadlock", "url": "https://store.steampowered.com/app/1422450/Deadlock/"}
+
+
+def mod_ld(src, base_url, desc_url, entry, site_title, author_url):
+    """A mod page's schema.org structured data, from what the listing already says.
+
+    The mod is a SoftwareApplication: the type search engines read for something downloaded and installed, with
+    the properties a release has (downloadUrl, fileSize, softwareVersion, releaseNotes, installUrl). The game is
+    its softwareRequirements, a VideoGame (itself a SoftwareApplication). The zip is a MediaObject under encoding,
+    the one type with a sha256 property. The same mod on another site is sameAs; a video of it is a VideoObject it
+    is the subjectOf. Builds it was proven on are said on the page and not here: no schema.org property means
+    "tested on", and softwareRequirements would claim the mod needs that build. The BreadcrumbList is the page's
+    own breadcrumb."""
+    b, l, _, image_rels, _, history = entry
+    spec = b["spec"]
+    url = f"{base_url}{l['id']}/"
+    person = {"@type": "Person", "name": spec["author"]}
+    if author_url:
+        person["url"] = author_url
+    app = {"@type": "SoftwareApplication", "@id": url + "#mod", "url": url, "name": spec["name"],
+           "description": plain_text(blurb_of(b)), "author": person, "softwareVersion": spec["release"],
+           "datePublished": min(r.get("publishedAt") or published_of(spec) for r in history)[:10],
+           "dateModified": spec["date"], "applicationCategory": "GameApplication", "softwareRequirements": DEADLOCK,
+           "isAccessibleForFree": True, "inLanguage": "en"}
+    if spec.get("tags"):
+        app["keywords"] = ", ".join(spec["tags"])
+    if image_rels:
+        app["image"] = [dict({"@type": "ImageObject", "contentUrl": base_url + r},
+                             **({"width": b["image_sizes"][r][0], "height": b["image_sizes"][r][1]} if r in b["image_sizes"] else {}))
+                        for r in image_rels]
+    app["downloadUrl"] = b["download_url"]
+    app["fileSize"] = f"{b['size'] / 1e6:.1f} MB"
+    app["encoding"] = {"@type": "MediaObject", "name": b["zip_name"], "contentUrl": b["download_url"],
+                       "encodingFormat": "application/zip", "contentSize": app["fileSize"], "sha256": b["sha256"]}
+    app["installUrl"] = dmm_link("install", url=desc_url, source=src["source_id"], listing=l["id"])
+    if l["release"].get("changelog"):
+        app["releaseNotes"] = l["release"]["changelog"]
+    links = b["entry"].get("links", [])
+    same = [x["url"] for x in links if x.get("kind") == "same"]
+    if spec.get("link") and not spec["link"].startswith(base_url) and spec["link"] not in same:
+        same.append(spec["link"])   # the bundle's own link, which the description says the mod is "also on"
+    if same:
+        app["sameAs"] = same
+    videos = [{"@type": "VideoObject", "name": x["label"], "url": x["url"]} for x in links if x.get("kind") == "video"]
+    if videos:
+        app["subjectOf"] = videos
+    crumbs = {"@type": "BreadcrumbList", "itemListElement": [
+        {"@type": "ListItem", "position": 1, "name": site_title, "item": base_url},
+        {"@type": "ListItem", "position": 2, "name": spec["name"], "item": url}]}
+    return {"@context": "https://schema.org", "@graph": [app, crumbs]}
+
+
+def published_of(spec):
+    return f"{spec['date']}T12:00:00Z"
+
+
+def sitemap(base_url, entries):
+    """The landing page and every mod's page, each last modified on its newest release (the landing page on the
+    newest of all), as the sitemaps.org protocol has it. It lists only pages under base_url, which a sitemap there
+    may hold."""
+    x = lambda t: html.escape(t, quote=False)
+    pages = [(f"{base_url}{l['id']}/", b["spec"]["date"]) for b, l, *_ in entries]
+    rows = [(base_url, max((d for _, d in pages), default=None))] + pages
+    out = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for loc, when in rows:
+        out.append(f"<url><loc>{x(loc)}</loc>" + (f"<lastmod>{when}</lastmod>" if when else "") + "</url>")
+    return "\n".join(out + ["</urlset>"]) + "\n"
 
 
 def atom(src, base_url, entries):
