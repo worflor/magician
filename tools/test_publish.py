@@ -1,6 +1,7 @@
 """The Nexus Mods publisher against a fake Nexus on this machine: the seven steps as Nexus's upload API has them (the
 key header, part sizes and ETags, the completion XML, the JSON bodies), each step failing in turn, a part that fails
-and is tried again, a version already there, the dry run touching nothing, a missing key, the release gate's refusal
+and is tried again, a version already there, a page's first file made from its address (and never a second of the
+same name), the page's text set only with --page, the dry run touching nothing, a missing key, the release gate's refusal
 and its override, the 255-character description, plain http refused off this machine, and the key in no output.
 Offline; needs no game and no magician binary (the gate's grade is stood in for).
 
@@ -31,6 +32,8 @@ class FakeNexus(ThreadingHTTPServer):
         self.parts, self.size, self.versions, self.changelogs, self.polls = {}, None, [], [], 0
         self.created = None
         self.errors = []
+        self.mod_files, self.file_body, self.page_body = [], None, None
+        self.mods = {("deadlock", "123"): "77"}   # a page's address (game, number) -> its id
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -68,6 +71,14 @@ class Handler(BaseHTTPRequestHandler):
             step = "versions" if method == "GET" else "version"
         elif path.startswith("/v3/mods/") and "/changelogs" in path:
             step = "changelogs" if method == "GET" else "changelog"
+        elif method == "GET" and re.fullmatch(r"/v3/games/[^/]+/mods/[^/]+", path):
+            step = "lookup"
+        elif method == "GET" and re.fullmatch(r"/v3/mods/[^/]+/files", path):
+            step = "files"
+        elif method == "POST" and path == "/v3/mod-files":
+            step = "file"
+        elif method == "PATCH" and re.fullmatch(r"/v3/mods/[^/]+", path):
+            step = "page"
         if step in s.fail:
             status, text = s.fail[step]
             # a server that echoes the key back must not get it printed
@@ -128,6 +139,33 @@ class Handler(BaseHTTPRequestHandler):
             doc = json.loads(data)
             s.changelogs.append((doc["version"], doc["changelog"]))
             return self.answer(201, {"data": doc})
+        if step == "lookup":
+            _, _, _, game, _, number = path.split("/")
+            mid = s.mods.get((game, number))
+            if mid is None:
+                return self.answer(404, {"title": "Not Found", "detail": f"no mod {number} for {game}"})
+            return self.answer(200, {"data": {"id": mid, "game_scoped_id": number, "game_id": "1", "name": "x", "status": "not_published"}})
+        if step == "files":
+            return self.answer(200, {"data": {"mod_files": s.mod_files}})
+        if step == "file":
+            doc = json.loads(data)
+            # CreateModFileRequest: every field typed as the schema has it, the mod by its id (not its page number)
+            for k, t in (("upload_id", str), ("mod_id", str), ("name", str), ("version", str), ("file_category", str),
+                         ("primary_mod_manager_download", bool), ("allow_mod_manager_download", bool),
+                         ("show_requirements_pop_up", bool), ("update_mod_version", bool)):
+                if not isinstance(doc.get(k), t):
+                    s.errors.append(f"file body: {k} is {doc.get(k)!r}")
+            if "archive_existing_file" in doc or doc.get("mod_id") not in s.mods.values():
+                s.errors.append(f"file body: {doc}")
+            s.file_body = doc
+            s.mod_files.append({"id": "f-new", "name": doc["name"]})
+            return self.answer(201, {"data": {"id": "f-new", "game_scoped_id": "9", "name": doc["name"], "file_category": doc["file_category"]}})
+        if step == "page":
+            doc = json.loads(data)
+            if not doc or set(doc) - {"summary", "description"} or not all(isinstance(v, str) and v.strip() for v in doc.values()):
+                s.errors.append(f"page body: {doc}")
+            s.page_body = doc
+            return self.answer(204)
         return self.answer(404, {"title": "Not Found", "detail": path})
 
     def do_GET(self):
@@ -138,6 +176,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         self.handle_one("PUT")
+
+    def do_PATCH(self):
+        self.handle_one("PATCH")
 
 
 def grade_doc(passes=True, blockers=()):
@@ -311,7 +352,7 @@ class Publish(unittest.TestCase):
         self.assertEqual(self.server.calls, [])
         with open(self.zip, "rb") as f:
             self.assertIn(hashlib.sha256(f.read()).hexdigest(), o)
-        for said in ("dry run, nothing is sent", "version      1.0.2", "file id      4242", "mod id       77", "category     main",
+        for said in ("dry run, nothing is sent", "version      1.0.2", "file         a new version of file 4242", "mod          77", "category     main",
                      "archive_existing_file          false", "allow_mod_manager_download     not sent (Nexus decides)",
                      "of 255 characters, cut from 399)", "changelog    1.0.2, to mod 77:", "      Ribbons stay down in the air.",
                      "NEXUSMODS_API_KEY is set", "release gate: pass", "dry run: nothing sent"):
@@ -320,9 +361,96 @@ class Publish(unittest.TestCase):
         os.environ.pop("NEXUSMODS_API_KEY")
         code, o, e = self.run_publish(self.bundle(nexus={}), "--dry-run")
         self.assertEqual(code, 2)
-        self.assertIn("file id      not set", o)
+        self.assertIn("file         not set", o)
         self.assertIn("NEXUSMODS_API_KEY is not set", o)
-        self.assertIn("no nexus.file_id", e)
+        self.assertIn("names no file and no page", e)
+        self.assertEqual(self.server.calls, [])
+
+    def page_files(self, summary="A maid.\n\n  Cosmetic   only.\n", description="[b]Maid[/b]\n\nLash.\n"):
+        os.makedirs(os.path.join(self.d, "package"), exist_ok=True)
+        for name, text in (("nexus-summary.txt", summary), ("nexus-description.bbcode", description)):
+            with open(os.path.join(self.d, "package", name), "w", encoding="utf-8") as f:
+                f.write(text)
+        return {"summary_file": "nexus-summary.txt", "description_file": "nexus-description.bbcode"}
+
+    def test_a_page_with_no_file_gets_its_first_file_and_its_id_is_said(self):
+        nexus = {"mod_url": "https://www.nexusmods.com/deadlock/mods/123"}
+        code, o, e = self.run_publish(self.bundle(nexus=nexus))
+        self.assertEqual(code, 0, o + e)
+        s = self.server
+        self.assertIn(("GET", "/v3/games/deadlock/mods/123"), s.calls, "the page's id is looked up from its address")
+        self.assertIn("mod page: deadlock/mods/123 is mod 77 (not_published)", o)
+        b = s.file_body
+        self.assertEqual((b["mod_id"], b["name"], b["version"], b["file_category"], b["description"]), ("77", "Test Skin", "1.0.2", "main", "A test skin."))
+        self.assertEqual((b["primary_mod_manager_download"], b["allow_mod_manager_download"], b["show_requirements_pop_up"], b["update_mod_version"]),
+                         (False, True, False, False), "Nexus's documented defaults")
+        self.assertFalse(any(c[1].endswith("/versions") for c in s.calls), "no version call for a new file")
+        self.assertIn("published: TestSkin_1.0.2.zip is version 1.0.2 of new file f-new", o)
+        self.assertIn('record it: put "file_id": "f-new" in the nexus block', o)
+        self.assertEqual(s.changelogs, [("1.0.2", "Ribbons stay down in the air.\nTested.")])
+        # run again without recording it: the file of that name is there, so no second one
+        s.calls.clear()
+        code, o, e = self.run_publish(self.bundle(nexus=nexus))
+        self.assertEqual(code, 3)
+        self.assertIn("already has a file named 'Test Skin' (file id f-new)", e)
+        self.assertFalse(any(c[1] == "/v3/uploads/multipart" for c in s.calls))
+        # a mod id given as well must be the same page
+        code, o, e = self.run_publish(self.bundle(nexus=dict(nexus, mod_id="78")))
+        self.assertEqual(code, 2)
+        self.assertIn("nexus.mod_url is mod 77, nexus.mod_id says 78", e)
+
+    def test_a_new_file_says_which_step_failed(self):
+        for step, said in (("lookup", "find the mod page deadlock/mods/123: HTTP 404"), ("files", "read mod 77's files: HTTP 403"),
+                           ("file", "step 6 of 7, create file 'Test Skin' on mod 77: HTTP 422")):
+            self.server.reset()
+            status = int(re.search(r"HTTP (\d+)", said).group(1))
+            self.server.fail = {step: (status, json.dumps({"title": "No", "detail": "not for this page"}))}
+            code, o, e = self.run_publish(self.bundle(nexus={"mod_url": "https://www.nexusmods.com/deadlock/mods/123"}))
+            self.assertEqual(code, 1, step)
+            self.assertIn(said, e, step)
+        self.server.reset()
+        for bad in ("https://www.nexusmods.com/deadlock/123", "http://www.nexusmods.com/deadlock/mods/123", "https://evil.example/deadlock/mods/1"):
+            code, o, e = self.run_publish(self.bundle(nexus={"mod_url": bad}))
+            self.assertEqual(code, 2, bad)
+            self.assertIn("is not a mod page's address", e)
+        self.assertEqual(self.server.calls, [])
+
+    def test_the_page_text_is_sent_only_with_page(self):
+        nexus = dict({"file_id": "4242", "mod_id": "77"}, **self.page_files())
+        code, o, e = self.run_publish(self.bundle(nexus=nexus))
+        self.assertEqual(code, 0, o + e)
+        self.assertIsNone(self.server.page_body, "a routine release never touches the page")
+        self.server.reset()
+        code, o, e = self.run_publish(self.bundle(nexus=nexus), "--dry-run", "--page")
+        self.assertEqual(code, 0, o + e)
+        self.assertEqual(self.server.calls, [])
+        self.assertIn("page summary", o)
+        self.assertIn("      A maid. Cosmetic only.\n", o, "the summary as Nexus stores it: one line")
+        self.assertIn("page description", o)
+        self.assertIn("      [b]Maid[/b]", o)
+        self.assertIn("characters (Nexus's schema sets no limit; its form may)", o)
+        code, o, e = self.run_publish(self.bundle(nexus=nexus), "--page")
+        self.assertEqual(code, 0, o + e)
+        self.assertEqual(self.server.page_body, {"summary": "A maid. Cosmetic only.", "description": "[b]Maid[/b]\n\nLash."})
+        self.assertIn(("PATCH", "/v3/mods/77"), self.server.calls)
+        # only the fields given are sent
+        self.server.reset()
+        code, o, e = self.run_publish(self.bundle(nexus={"file_id": "4242", "mod_id": "77", "summary_file": "nexus-summary.txt"}), "--page")
+        self.assertEqual(code, 0, o + e)
+        self.assertEqual(self.server.page_body, {"summary": "A maid. Cosmetic only."})
+        # its failure is named; --page with nothing to send, or no page, is a usage error; a blank text is refused
+        self.server.fail = {"page": (403, json.dumps({"title": "Forbidden", "detail": "not on the mod's team"}))}
+        code, o, e = self.run_publish(self.bundle(nexus=nexus), "--page")
+        self.assertEqual(code, 1)
+        self.assertIn("set mod 77's summary and description: HTTP 403: Forbidden - not on the mod's team", e)
+        self.server.reset()
+        for nx, said in (({"file_id": "4242", "mod_id": "77"}, "neither is given"), ({"file_id": "4242", **self.page_files()}, "names no page")):
+            code, o, e = self.run_publish(self.bundle(nexus=nx), "--page")
+            self.assertEqual(code, 2, nx)
+            self.assertIn(said, e)
+        code, o, e = self.run_publish(self.bundle(nexus=dict({"file_id": "4242", "mod_id": "77"}, **self.page_files(summary=" \n "))), "--page")
+        self.assertEqual(code, 2)
+        self.assertIn("is blank", e)
         self.assertEqual(self.server.calls, [])
 
     def test_a_missing_key_is_a_usage_error_that_says_where_to_get_one(self):

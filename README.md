@@ -102,7 +102,7 @@ Everything goes through `magician`. The parts written in Python run through it t
 | `magician reprove [--plan]`, `magician reprove accept <pass>` | `ingame/reprove.py` | patch day in game: every mod that needs a re-prove gets its pass, one report says where to look; `accept` records a pass that was looked at |
 | `magician bundle <bundle.json> [--zip]` | `tools/bundle.py` | a player release bundle with `mod-interchange.json` and the scene installers |
 | `magician source <source.json>` | `tools/source.py` | a static Deadlock Mod Manager mod source, with its pages, from bundles |
-| `magician publish nexus <bundle.json> [--dry-run]` | `tools/publish.py` | a bundle's zip as a new version of a file on an existing Nexus Mods page, past the release gate ([docs/reference/nexus-mods.md](docs/reference/nexus-mods.md)) |
+| `magician publish nexus <bundle.json> [--dry-run]` | `tools/publish.py` | a bundle's zip onto a Nexus Mods page made on the site (its first file, then a version per release; `--page` sets its text), past the release gate ([docs/reference/nexus-mods.md](docs/reference/nexus-mods.md)) |
 
 Everything after the verb belongs to the tool (`magician bundle --help` is the bundler's help), and the tool's own calls to `magician` go to the same program that ran it. When the toolkit folder or Python is missing the verb says which and how to point at it, and exits 2; `magician doctor` has a line for both.
 

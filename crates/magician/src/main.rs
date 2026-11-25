@@ -121,12 +121,14 @@ either is not there):
   magician source <source.json> [--out DIR] [--prune]
                                                 tools/source.py: a static Deadlock Mod Manager mod source from bundles;
                                                 `magician source --help`
-  magician publish nexus <bundle.json> [--zip FILE] [--mod mod.toml] [--dry-run] [--ignore-gate]
-                                                tools/publish.py: the bundle's zip as a new version of a file on an
-                                                existing Nexus Mods page (ids in bundle.json's nexus block, the key in
-                                                NEXUSMODS_API_KEY), refused (exit 3) when the release gate on the zip's
-                                                own paks has a blocker; --dry-run says what would go where and sends
-                                                nothing; `magician publish --help`
+  magician publish nexus <bundle.json> [--zip FILE] [--mod mod.toml] [--page] [--dry-run] [--ignore-gate]
+                                                tools/publish.py: the bundle's zip onto a Nexus Mods page made on the
+                                                site, as a new version of its file or, the first time, as a new file
+                                                (the page and file in bundle.json's nexus block, the key in
+                                                NEXUSMODS_API_KEY); --page also sets the page's summary and description
+                                                from files; refused (exit 3) when the release gate on the zip's own paks
+                                                has a blocker; --dry-run says what would go where and sends nothing;
+                                                `magician publish --help`
 
 Inside a mod's folder (one with a mod.toml, or below one) lint, grade, drift, release, install, uninstall, prove,
 footprint and scene check|install need nothing after the verb: the paks, hero, addon, allowances, last proven build
