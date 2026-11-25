@@ -148,17 +148,20 @@ pub(crate) fn zip_read(d: &[u8], m: &Member) -> Result<Vec<u8>, String> {
 
 // ------------------------------------------------------------------------------------------------------- bsdtar
 
-/// A tar that reads every archive kind: `bsdtar` where it is on PATH, else Windows' own `tar.exe`.
-fn bsdtar() -> PathBuf {
+/// A tar that reads `archive`: `bsdtar` where it is on PATH, else Windows' own `tar.exe` (which is bsdtar), else, for
+/// a tar archive only, the system's `tar`. `None` when there is none: GNU tar reads no .7z or .rar.
+fn bsdtar(archive: &Path) -> Option<PathBuf> {
     if crate::updateapply::run(std::process::Command::new("bsdtar").arg("--version"), Some(10)).is_ok_and(|r| r.ok) {
-        return PathBuf::from("bsdtar");
+        return Some(PathBuf::from("bsdtar"));
     }
-    crate::update::system_tool("tar")
+    let tar = crate::update::system_tool("tar");
+    let n = archive.to_string_lossy().to_ascii_lowercase();
+    (tar.is_absolute() || [".tar", ".tar.gz", ".tgz", ".tar.xz", ".tar.bz2"].iter().any(|e| n.ends_with(e))).then_some(tar)
 }
 
 fn with_bsdtar(archive: &Path, into: &Path) -> Result<Unpacked, String> {
-    let tar = bsdtar();
     let how = "a .7z or .rar needs bsdtar (Windows 10 and later have it as tar.exe; on Linux install libarchive-tools), or unpack it yourself and give init the .vpk";
+    let tar = bsdtar(archive).ok_or_else(|| format!("{}: no bsdtar on this machine to read it: {how}", archive.display()))?;
     let listed = crate::updateapply::run(std::process::Command::new(&tar).arg("-tf").arg(archive), Some(120)).map_err(|e| format!("{} did not run ({e}): {how}", tar.display()))?;
     if !listed.ok {
         return Err(format!("{} could not read {}: {}; {how}", tar.display(), archive.display(), listed.err.trim()));
