@@ -102,6 +102,7 @@ Everything goes through `magician`. The parts written in Python run through it t
 | `magician reprove [--plan]`, `magician reprove accept <pass>` | `ingame/reprove.py` | patch day in game: every mod that needs a re-prove gets its pass, one report says where to look; `accept` records a pass that was looked at |
 | `magician bundle <bundle.json> [--zip]` | `tools/bundle.py` | a player release bundle with `mod-interchange.json` and the scene installers |
 | `magician source <source.json>` | `tools/source.py` | a static Deadlock Mod Manager mod source, with its pages, from bundles |
+| `magician publish nexus <bundle.json> [--dry-run]` | `tools/publish.py` | a bundle's zip as a new version of a file on an existing Nexus Mods page, past the release gate ([docs/reference/nexus-mods.md](docs/reference/nexus-mods.md)) |
 
 Everything after the verb belongs to the tool (`magician bundle --help` is the bundler's help), and the tool's own calls to `magician` go to the same program that ran it. When the toolkit folder or Python is missing the verb says which and how to point at it, and exits 2; `magician doctor` has a line for both.
 
@@ -109,7 +110,7 @@ Everything after the verb belongs to the tool (`magician bundle --help` is the b
 
 - **Not a GUI.** No windows and no prompts. Commands read files and print text, and JSON where a machine consumes it.
 - **Not a Blender add-on.** Blender appears only as an offline renderer for visual QA (`qa/`, `harness/`).
-- **Not a mod loader or manager.** Deadlock has no runtime mod API: "loading" is a VPK in an addons folder plus one search-path line in `gameinfo.gi`, and [Deadlock Mod Manager](https://github.com/deadlock-mod-manager/deadlock-mod-manager) already does that well. Magician's install step exists so an automated pipeline can put a mod in the game and take it out again. For players it writes what the manager reads: a release bundle (`magician bundle`) and a static mod source they add to the manager once (`magician source`, [docs/reference/mod-source.md](docs/reference/mod-source.md)).
+- **Not a mod loader or manager.** Deadlock has no runtime mod API: "loading" is a VPK in an addons folder plus one search-path line in `gameinfo.gi`, and [Deadlock Mod Manager](https://github.com/deadlock-mod-manager/deadlock-mod-manager) already does that well. Magician's install step exists so an automated pipeline can put a mod in the game and take it out again. For players it writes what the manager reads: a release bundle (`magician bundle`) and a static mod source they add to the manager once (`magician source`, [docs/reference/mod-source.md](docs/reference/mod-source.md)), and it can put a release's zip on a Nexus Mods page made by hand (`magician publish nexus`).
 - **Not an auto-updater.** It won't rewrite your mod for a new build. It tells you exactly what the build changed underneath the mod and whether that breaks it. The fix is still yours, or your agent's.
 
 Most Deadlock modding tools are built for a person at a desk: a GUI, a Blender extension, or a thin layer over the game files. Magician is built for the machine that is still running when nobody is.
@@ -156,7 +157,7 @@ Every exit code has one meaning:
 | 0 | Clean: nothing to do. |
 | 1 | Broken: a contract or rule failed and a person or agent must act (lint errors, a mesh FAIL, `drift` or `patchday` BROKEN, a scene patch that no longer fits the game, a release whose lint failed, `grade --gate` with a blocker). |
 | 2 | Usage error: bad arguments, a missing file, a tool that is not there, a policy that does not read. |
-| 3 | Refused on purpose, nothing changed: an install with lint errors, a game seat or build lock someone else holds, a pak slot another mod owns, an uninstall of a file the ledger doesn't hold or whose bytes are no longer the ones Magician installed, a proof of nothing installed, an update that could not be checked, fetched or verified, or whose checkout has local changes. |
+| 3 | Refused on purpose, nothing changed: an install with lint errors, a game seat or build lock someone else holds, a pak slot another mod owns, an uninstall of a file the ledger doesn't hold or whose bytes are no longer the ones Magician installed, a proof of nothing installed, an update that could not be checked, fetched or verified, or whose checkout has local changes, a publish the release gate blocks. |
 | 4 | Re-prove: it loads, but must be proven in game on this build (`check`, `drift`, `patchday`). |
 | 5 | An update is available (`update --check`, and nothing else). |
 
@@ -350,7 +351,7 @@ What Linux has not met is the game itself. The seat check has read stand-in proc
 
 ### Staying current
 
-Magician never updates itself and never looks for an update. It touches the network only when you run `magician update` or pass `--updates` to `doctor`: a grade is worth something only while the judge stays the same, and Magician writes into a game install.
+Magician never updates itself and never looks for an update. It touches the network only when you run `magician update` or pass `--updates` to `doctor` (or run `magician publish nexus`, whose job is an upload): a grade is worth something only while the judge stays the same, and Magician writes into a game install.
 
 ```
 magician update --check            # exit 0 current or ahead, 5 an update is available, 3 could not check
@@ -387,7 +388,7 @@ The update source is the repository's latest release unless you name another: an
 | `magician scene make \| check \| compose \| install` | Ship a hero-page scene as a patch of only our files and build it from the player's own game |
 | `magician bundle <bundle.json>` / `source <source.json>` | A player release bundle for Deadlock Mod Manager; a static mod source and its pages from bundles |
 | `magician sign <addon>` / `verify <vpk>` | Put an invisible authorship mark in a mod's colour textures, and detect it in a compiled pak. The key is the author's: `--key`, else `[mark] key` or `[mod] author` in the mod's `mod.toml` |
-| `magician update --check` / `update [--dry-run]` / `update --describe` | Whether a newer Magician exists (exit 5 if so), installing it on request, and this build's own `VERSION`; the only commands, besides `doctor --updates`, that touch the network |
+| `magician update --check` / `update [--dry-run]` / `update --describe` | Whether a newer Magician exists (exit 5 if so), installing it on request, and this build's own `VERSION`; the only commands, besides `doctor --updates` and the upload `publish nexus` makes, that touch the network |
 | `magician paths` | Where every outside location resolved to, and why |
 | `magician ls`, `diff`, `refs`, `scan`, `dump`, `kv`, `textures`, `index`, `expr`, `pack`, `cache` | Inspection (`diff`: whether two paks are the same mod, exit 1 when not), evidence queries, material expression proofs, raw packing, the findings cache |
 

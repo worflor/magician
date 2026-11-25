@@ -4,7 +4,8 @@
 host. A player adds the source to Deadlock Mod Manager (DMM) once; from then on the mods are in its Mods Store with a
 one-click install, and a new release shows up as an update. The protocol is DMM's native source protocol,
 [Build a mod registry](https://docs.deadlockmods.app/developer-docs/build-a-mod-registry). Nothing about it needs an
-account, a key or DMM's own servers.
+account, a key or DMM's own servers. (The same zip goes to a Nexus Mods page with `magician publish nexus`:
+[nexus-mods.md](nexus-mods.md).)
 
 **Which DMM.** Mod sources (Settings > Mods > Mod sources, and the `deadlock-mod-manager://sources/...` links)
 arrive with DMM 2.4.0; 2.3.0 and older do not have them. Release builds accept only public HTTPS sources, so a source

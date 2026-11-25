@@ -26,7 +26,7 @@ For reading code and rules when a finding needs explaining, or when you are aske
 | `mcp/server.py` | The MCP server (seventeen JSON tools; no install or launch tool) |
 | `ingame/` | The in-game harness: `mod_session.py` (one session), `reprove.py` (patch day's passes), `logdiff.py` (warnings over vanilla), `gamelock.py` (the seat), `gamepaths.py` (locations), `scenarios/` (examples on a stock hero) |
 | `qa/`, `harness/` | Offline Blender QA and renders; `qa/heroes/<hero>.json` per-hero configs |
-| `tools/bundle.py`, `source.py` | Release bundles, and the static mod source with its pages; each documents its spec keys at the top |
+| `tools/bundle.py`, `source.py`, `publish.py` | Release bundles, the static mod source with its pages, and the upload to Nexus Mods; each documents its spec keys at the top |
 | `tools/scene_install.ps1`, `.py` | The player-side scene installers bundles ship |
 | `docs/PATCH-DAY.md` | Every patch-day message and its fix |
 | `docs/reference/engine.md` | What Deadlock, the CSDK compiler and Source 2 Viewer actually do |

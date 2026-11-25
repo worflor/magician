@@ -39,7 +39,7 @@ Each kind of knowledge has one home. Read it there, and put new knowledge there.
 - **Fair play is a lint category.** Cosmetic only. A rule that would let a mod make a hero harder to read is a defect in the linter.
 - **Say what was found.** A value a command fills in for its caller (from the mod's folder, the config, Steam) is named on stderr with where it came from, and shown by `magician paths` or `magician doctor`; an explicit argument always wins. A new command that can be completed from a mod's folder does it in `modctx::fill`, never inside the command, and a new command goes in `COMMANDS` (main.rs) so a typo of it is answered.
 - **Write through `out.rs`.** `outln!`, `out!`, `say!` (the human report, silent under `--json`) and `errln!`, never `println!` or `eprintln!`: a closed pipe must end in the command's own exit code, not a panic. Colour (`style.rs`) and progress lines (`progress.rs`) only ever on a terminal, and the words must read without them.
-- **The network only on request.** `magician update ...` and `doctor --updates` are the only code that touches it, each step bounded to about 10 s and a failure said as "could not check". A new command that goes online needs the same explicit flag, never a check on the way past. Updating never fetches and runs new code unasked (`update.rs`, `updateapply.rs`).
+- **The network only on request.** `magician update ...` and `doctor --updates` are the only code that touches it, each step bounded to about 10 s and a failure said as "could not check"; `magician publish nexus` (`tools/publish.py`) is the one tool whose whole job is an upload, every request bounded, its key read from the environment only. A new command that goes online needs the same explicit flag, never a check on the way past. Updating never fetches and runs new code unasked (`update.rs`, `updateapply.rs`).
 - **No machine in the code.** Outside locations go through `crates/magician/src/paths.rs` and `ingame/gamepaths.py` (flag, environment, config file, discovery). Never write a drive letter or a user folder into a default.
 - **Both systems, one implementation.** Windows and Linux run the same code. Where the system itself is asked something there is one seam for it: `paths.rs` for where things live (each platform's own folders), `install.rs` for whether the game runs and from where, `lock.rs` for whether a process is alive, `ingame/gameos.py` for everything the harness asks of the system (processes, the window, keys, mouse, capture, Steam). A new need from the system goes into its seam with a backend for each platform, or a refusal that says what is missing; never a second script for the other system, and never a quiet answer of "not running" or "free" because the question could not be asked. What runs on one system only says so once, in [README.md](README.md#platforms).
 
@@ -62,8 +62,8 @@ crates/fuzz       the fuzz harness, a dev-dependency only: seeded cases, byte an
 crates/magician   the CLI: main.rs, cli.rs (--help, --version, options, exit codes, the nearest real name for a typo),
                   paths.rs (where the game, reference folder, tools and policy are), modctx.rs (the mod of the working
                   folder, and filling a bare verb in from it), heroes.rs (the game's hero table), checkcmd.rs, doctor.rs,
-                  initcmd.rs, newcmd.rs (a skin's folder from nothing), frontdoor.rs (session, reprove, bundle and
-                  source: the Python tools through the CLI), update.rs (`update --check`, the release's `VERSION`,
+                  initcmd.rs, newcmd.rs (a skin's folder from nothing), frontdoor.rs (session, reprove, bundle,
+                  source and publish: the Python tools through the CLI), update.rs (`update --check`, the release's `VERSION`,
                   the update source and the curl fetch) and updateapply.rs (applying one: the checksum, the swap and
                   its rollback, the git fast-forward and rebuild), out.rs (every write to stdout and stderr), style.rs,
                   progress.rs, build.rs, lock.rs (per-addon build lock), install.rs (slots, ledger, scene route, seat
@@ -81,13 +81,14 @@ ingame/           retail-game driver, Python stdlib: mod_session.py is the one d
 qa/ harness/      offline visual QA and Blender render scripts; qa/heroes/haze.json is the example hero profile (a mod
                   keeps its own and passes its path)
 cinema/           the optional, dev-only film kit for trailers and stills (pak90, never installed during QA or play)
-tools/            bundle.py (player release bundles with mod-interchange.json) and source.py (a static mod source from
-                  bundles), behind `magician bundle` and `magician source`; make-release.ps1 (the release files: the
+tools/            bundle.py (player release bundles with mod-interchange.json), source.py (a static mod source from
+                  bundles) and publish.py (a bundle's zip onto a Nexus Mods page), behind `magician bundle`,
+                  `magician source` and `magician publish`; make-release.ps1 (the release files: the
                   asset for this platform, VERSION, SHA256SUMS; Windows PowerShell 5.1 or PowerShell 7),
                   scene_install.ps1 / .py (the player-side scene installers bundles ship), scene_lump.py (re-dress a
                   UI scene map), rip_heroes.py (hero glbs for reference, never committed) and s2v_mcp.py (the Source 2
-                  Viewer MCP launcher), each with a .ps1 caller; test_bundle.py, test_source.py and
-                  test_scene_install.py hold their guards
+                  Viewer MCP launcher), each with a .ps1 caller; test_bundle.py, test_source.py,
+                  test_publish.py and test_scene_install.py hold their guards
 docs/             PDD.md, TDD.md, STATUS.md, PATCH-DAY.md, SHOWCASE.md, reference/
 ```
 
@@ -112,6 +113,7 @@ python cinema/test_replay.py     # the free-camera film's shot list and demo-end
 python cinema/test_capture.py    # the film kit's grabs and recording on X11, against its own window (Xvfb and ffmpeg)
 python -I tools/test_bundle.py   # the bundler's guards (needs the release binary, not the game)
 python -I tools/test_source.py   # the mod-source writer, offline
+python -I tools/test_publish.py  # the Nexus Mods upload against a fake Nexus on this machine, offline
 python -I tools/test_scene_install.py  # both player installers and magician on good and malformed patches, offline
 python cinema/test_scene.py      # the film kit's language and encode, offline (needs ffmpeg)
 python cinema/test_session.py    # the film kit's seat hand-back, on a fake clock

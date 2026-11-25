@@ -145,9 +145,10 @@ After a game update, `check` exiting 1 (and `compose` or `install` refusing with
 ```
 magician bundle <bundle.json> --out <dir> [--zip]
 magician source <source.json> [--out <dir>]
+magician publish nexus <bundle.json> --dry-run        what would go to Nexus Mods; sends nothing
 ```
 
-`bundle` builds a Deadlock Mod Manager bundle (`mod-interchange.json`, paks, previews, scene patches with standalone installers, `SHA256SUMS.txt`). It refuses a path shipped in two paks and any file byte-identical to Valve's. `source` writes a static mod source from bundles: the catalogue the manager reads, a page per mod, a release feed. It states only the builds a proof holds the zip's own paks on. Write to a scratch `--out` unless told where releases go; never overwrite a published bundle or site, and never push one: publishing is the user's step.
+`bundle` builds a Deadlock Mod Manager bundle (`mod-interchange.json`, paks, previews, scene patches with standalone installers, `SHA256SUMS.txt`). It refuses a path shipped in two paks and any file byte-identical to Valve's. `source` writes a static mod source from bundles: the catalogue the manager reads, a page per mod, a release feed. It states only the builds a proof holds the zip's own paks on. Write to a scratch `--out` unless told where releases go; never overwrite a published bundle or site, and never push one: publishing is the user's step. `publish nexus` without `--dry-run` uploads to Nexus Mods: run it only when the operator says to publish that release, after showing them the dry run; exit 3 is the release gate refusing, and is reported, not overridden.
 
 ## In-game proof
 
