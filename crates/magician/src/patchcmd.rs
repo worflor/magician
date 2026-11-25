@@ -487,7 +487,7 @@ pub fn cmd_patchday(args: &[String]) -> R {
         "broken"
     } else if !who.is_empty() {
         say!("  loads, but re-prove in game: {}", who.join(", "));
-        say!("  then: `ingame\\qa_run.ps1 -Mod <slug> -Launch`, look at the frames, and `magician prove <mod.toml>` to record build {installed}");
+        say!("  then, per mod: `magician session qa --mod <its folder> --out <dir>`, look at the frames, and `magician prove <mod.toml> --evidence <dir>` to record its installed bytes on build {installed}");
         "re-prove"
     } else {
         say!("  clear: every installed pak holds on {installed} and every mod is proven on it");

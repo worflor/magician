@@ -576,6 +576,9 @@ def check_tree(tree, base_url, descriptor):
 
 def main():
     args = sys.argv[1:]
+    if args[:1] in (["--help"], ["-h"]):
+        print(__doc__)
+        return
     if not args or args[0].startswith("--"):
         sys.exit(__doc__)
 

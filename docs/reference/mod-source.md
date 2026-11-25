@@ -50,7 +50,7 @@ sha256 of every VPK in the zip. `[proven] builds` names no bytes and is not read
 ## The command
 
 ```
-python tools/source.py source.json [--out DIR] [--base-url URL] [--taxonomy FILE] [--prune]
+magician source source.json [--out DIR] [--base-url URL] [--taxonomy FILE] [--prune]   # runs python -I tools/source.py
 ```
 
 It writes `dmm-source.json` (the URL players add; also `.well-known/dmm-source.json` when the source is at the root of

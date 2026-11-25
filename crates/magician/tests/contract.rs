@@ -754,6 +754,46 @@ fn new_scaffolds_a_mod_from_the_games_own_data_and_never_over_a_folder() {
 }
 
 #[test]
+fn session_bundle_and_source_hand_everything_to_the_toolkits_python() {
+    let d = scratch("frontdoor");
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    let run = |args: &[&str], envs: &[(&str, &Path)]| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_magician"));
+        c.args(args).current_dir(&d).env_remove("MAGICIAN_HOME").env_remove("MAGICIAN_PYTHON").env("MAGICIAN_CONFIG", d.join("config.txt"));
+        for (k, v) in envs {
+            c.env(k, v);
+        }
+        c.output().unwrap()
+    };
+    // the toolkit and Python not there: exit 2, saying what is missing and how to point at it
+    let o = run(&["bundle", "x.json"], &[("MAGICIAN_HOME", &d)]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("holds no ingame\\mod_session.py: point MAGICIAN_HOME"), "{}", text(&o));
+    let o = run(&["session", "qa"], &[("MAGICIAN_HOME", &repo), ("MAGICIAN_PYTHON", &d.join("no-python.exe"))]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("does not run as Python 3: point MAGICIAN_PYTHON"), "{}", text(&o));
+    if Command::new("python").arg("--version").output().is_err() {
+        eprintln!("skipped the pass-through runs: no python");
+        let _ = std::fs::remove_dir_all(&d);
+        return;
+    }
+    // found from the executable's own checkout; the tool's --help is the tool's, with its exit code
+    let o = run(&["bundle", "--help"], &[]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(String::from_utf8_lossy(&o.stdout).starts_with("Assemble a release bundle"), "{}", text(&o));
+    let o = run(&["source", "-h"], &[("MAGICIAN_HOME", &repo)]);
+    assert!(o.status.code() == Some(0) && String::from_utf8_lossy(&o.stdout).contains("Deadlock Mod Manager mod source"), "{}", text(&o));
+    // the arguments arrive as given (a path with a space), and a failing tool's exit code is the verb's
+    let o = run(&["bundle", "a spec.json", "--zip"], &[]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("a spec.json"), "{}", text(&o));
+    // --json after the verb is the tool's, not magician's
+    let o = run(&["source", "--json"], &[]);
+    assert!(!String::from_utf8_lossy(&o.stdout).contains("magician.error/1"), "{}", text(&o));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
 fn a_mod_folder_needs_nothing_after_the_verb() {
     let d = scratch("modfolder");
     let game = fake_install_with_heroes(&d, "6864");

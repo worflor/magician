@@ -57,7 +57,7 @@ my-lash-skin: RE-PROVE  B Costume · NSFR · unproven  (build 6865)
   grade  warn   B Costume · NSFR · unproven for Lash; release gate blocked: freshness: not proven on 6865 (no proven build on record for these bytes)
   proof  warn   these bytes proven on none
   drift  warn   these bytes are proven on no build yet: nothing to compare from
-next: the in-game pass on build 6865 (python -I ingame\mod_session.py qa --mod . --out <dir>), look at the frames, then `magician prove`
+next: the in-game pass on build 6865 (`magician session qa --mod C:\mods\my-lash-skin --out <dir>`), look at the frames, then `magician prove --evidence <dir>`
 ```
 
 `check` exits 1 when something is broken, 4 when the mod loads but is not proven on the installed build, 0 when it is proven here and clean. The same bare verbs work for `lint`, `grade`, `drift` (from the mod's last proven build), `release` (its addon), `uninstall`, `prove`, `footprint` and `scene check`; whatever you pass explicitly wins. `magician help` lists every command and option, `magician help <command>` shows one, and a mistyped command, option or hero is answered with what it most likely meant. A hero can be named the way you would say it: `lash`, `Lash`, `hero_lash`, `"Lady Geist"`, or its model's path.
@@ -122,6 +122,18 @@ vrf       = E:\Tools\Source2Viewer-21.1\cli\Source2Viewer-CLI.exe
 ```
 
 The Python and PowerShell around the game read the same file through `ingame/gamepaths.py`, so the harness and the CLI always agree on where the game and the game lock are.
+
+### One front door
+
+Everything goes through `magician`. The parts written in Python run through it too, with your arguments, stdio and exit code passed through unchanged, so a script names one program:
+
+| Verb | Runs | For |
+|---|---|---|
+| `magician session qa --mod <folder> --out <dir>` | `ingame\mod_session.py` | a mod's in-game session: seat, install, launch, scenarios, takes, stop, contact sheets (`up`, `run`, `film`, `down`, `all`, `qa`) |
+| `magician bundle <bundle.json> [--zip]` | `tools\bundle.py` | a player release bundle with `mod-interchange.json` and the scene installers |
+| `magician source <source.json>` | `tools\source.py` | a static Deadlock Mod Manager mod source from bundles |
+
+Everything after the verb belongs to the tool (`magician bundle --help` is the bundler's help). The toolkit folder is `MAGICIAN_HOME` (or `home =` in the config file), else the folder above `magician.exe` that holds `ingame\mod_session.py`, which is what a checkout's `target\release\magician.exe` finds. Python is `MAGICIAN_PYTHON` (or `python =`), else `python`, `python3` or `py -3` on PATH. When either is missing the verb says which and how to point at it, and exits 2; `magician doctor` has a `toolkit` line for both. The PowerShell scripts beside them (`ingame\launch.ps1`, `stop_game.ps1`, `qa_run.ps1`) are the session driver's own parts and older entry points; `magician session` is the one to call.
 
 ### What each part needs
 

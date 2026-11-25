@@ -185,6 +185,56 @@ pub fn vrf(flag: Option<String>) -> Found {
     explicit(flag, "--vrf", "MAGICIAN_VRF", "vrf").unwrap_or_else(|| Found { path: PathBuf::from("Source2Viewer-CLI"), source: "PATH".into() })
 }
 
+/// The toolkit folder, the one holding `ingame\mod_session.py` and `tools\` (the Python the front-door verbs run):
+/// `MAGICIAN_HOME`, the config's `home`, else the nearest folder above this executable that holds
+/// `ingame/mod_session.py` (a checkout's `target\release\magician.exe` finds its own checkout). `Err` says what was
+/// looked for and how to point at it.
+pub fn toolkit() -> Result<Found, String> {
+    let marker = |d: &Path| d.join("ingame").join("mod_session.py").is_file();
+    if let Some(f) = explicit(None, "", "MAGICIAN_HOME", "home") {
+        return if marker(&f.path) { Ok(f) } else { Err(format!("{} ({}) holds no ingame\\mod_session.py: point MAGICIAN_HOME (or `home =` in the config file) at the magician folder", f.path.display(), f.source)) };
+    }
+    let exe = std::env::current_exe().map_err(|e| format!("this executable's own path can't be read ({e}); set MAGICIAN_HOME to the magician folder"))?;
+    exe.ancestors()
+        .skip(1)
+        .find(|d| marker(d))
+        .map(|d| Found { path: d.to_path_buf(), source: "the folder above magician.exe that holds ingame\\mod_session.py".into() })
+        .ok_or_else(|| format!("no folder above {} holds ingame\\mod_session.py, so the toolkit's Python tools are not here: set MAGICIAN_HOME (or `home =` in the config file) to the magician folder (the checkout with ingame\\ and tools\\)", exe.display()))
+}
+
+/// The Python 3 that runs the toolkit's tools: `MAGICIAN_PYTHON`, the config's `python`, else the first of `python`,
+/// `python3` and (Windows) `py -3` on PATH that answers `--version` with Python 3. The program and the arguments that
+/// come before a script.
+pub fn python() -> Result<(Found, Vec<String>), String> {
+    let answers = |prog: &Path, pre: &[&str]| {
+        std::process::Command::new(prog)
+            .args(pre)
+            .arg("--version")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+            .filter(|v| v.trim_start().starts_with("Python 3"))
+    };
+    if let Some(f) = explicit(None, "", "MAGICIAN_PYTHON", "python") {
+        return match answers(&f.path, &[]) {
+            Some(_) => Ok((f, Vec::new())),
+            None => Err(format!("{} ({}) does not run as Python 3: point MAGICIAN_PYTHON (or `python =` in the config file) at python.exe", f.path.display(), f.source)),
+        };
+    }
+    let mut tries: Vec<(&str, Vec<&str>)> = vec![("python", vec![]), ("python3", vec![])];
+    if cfg!(windows) {
+        tries.push(("py", vec!["-3"]));
+    }
+    for (prog, pre) in tries {
+        if answers(Path::new(prog), &pre).is_some() {
+            return Ok((Found { path: PathBuf::from(prog), source: "PATH".into() }, pre.iter().map(|s| s.to_string()).collect()));
+        }
+    }
+    Err("no Python 3 on PATH (python, python3, py -3): install Python 3.8 or newer, or set MAGICIAN_PYTHON (or `python =` in the config file) to python.exe".into())
+}
+
 /// The policy file (every judgement number a lint and a grade use): `--policy`, `MAGICIAN_POLICY`, the config's
 /// `policy`. `None` means the built-in defaults; there is no file to discover.
 pub fn policy(flag: Option<String>) -> Option<Found> {

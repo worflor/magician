@@ -249,9 +249,9 @@ pub fn cmd_check(args: &[String]) -> R {
     } else if reprove {
         let quiet_patch = items.iter().any(|i| i.what == "drift" && i.state == "ok");
         next.push(format!(
-            "{}the in-game pass on build {build} (ingame\\qa_run.ps1 -Mod {} -Launch), look at the frames, then `magician prove`",
+            "{}the in-game pass on build {build} (`magician session qa --mod {} --out <dir>`), look at the frames, then `magician prove --evidence <dir>`",
             if quiet_patch { "nothing under it changed since its last proven build, so a quick look: " } else { "" },
-            ctx.label()
+            ctx.dir.display()
         ));
     }
     let kin = ctx.unclaimed_kin(Some(&game.path));

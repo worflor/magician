@@ -99,6 +99,12 @@ pub fn checks(args: &[String]) -> Vec<Check> {
     // The reference folder and what it holds for the installed build.
     let reference = paths::reference();
     out.push(c("reference", State::Ok, format!("{} ({})", reference.path.display(), reference.source), None));
+    // The front door's Python tools (magician session, bundle, source).
+    match (paths::toolkit(), paths::python()) {
+        (Ok(t), Ok((py, pre))) => out.push(c("toolkit", State::Ok, format!("{} ({}); Python {}{} ({}): magician session, bundle and source run", t.path.display(), t.source, py.path.display(), pre.iter().map(|a| format!(" {a}")).collect::<String>(), py.source), None)),
+        (Err(e), _) => out.push(c("toolkit", State::Todo, format!("magician session, bundle and source can't run: {e}"), Some("set MAGICIAN_HOME to the magician folder (or `home = ...` in the config file)".into()))),
+        (_, Err(e)) => out.push(c("toolkit", State::Todo, format!("magician session, bundle and source can't run: {e}"), Some("install Python 3, or set MAGICIAN_PYTHON (or `python = ...` in the config file)".into()))),
+    }
     if let Some(b) = &build {
         let base = default_baseline_path(b);
         if base.is_file() {

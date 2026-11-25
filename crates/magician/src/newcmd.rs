@@ -95,7 +95,7 @@ impl Plan {
         );
         r += "```\nmagician release --out pak10_dir.vpk   build the pak from addon\\, lint and grade it (needs the CSDK)\nmagician check                         lint, grade and drift-check it on the installed build: one verdict\nmagician install                       put it in the game (lints first, never under a running game)\n```\n\n";
         r += &format!(
-            "Then the in-game pass (`python -I <magician>\\ingame\\mod_session.py qa --mod . --out <dir>` runs `{short}_angles` from\n`source\\ingame\\scenarios\\`), look at the frames, and record it: `magician prove --evidence <dir>`.\n\n"
+            "Then the in-game pass (`magician session qa --mod . --out <dir>` runs `{short}_angles` from `source\\ingame\\scenarios\\`),\nlook at the frames, and record it: `magician prove --evidence <dir>`.\n\n"
         );
         r += "## What not to commit\n\nThe skin is built on Valve's mesh, textures and audio. Keep every file derived from them out of git: a model document\nwith your meshes patched in, meshes bound to Valve's skeleton (`*.dmx`), re-dyed textures, renders on Valve's body\n(the hero cards), mixes over Valve's audio (`*.wav`), Valve's decompiled particles with your edits. The nested\n`.gitignore` files already cover the usual places; a new generated file that comes from Valve's goes into the nearest\n`.gitignore` first. Never weaken them to make a file stage. The pak holds only compiled files, and `tools/bundle.py`\nrefuses a file byte-identical to the game's.\n";
         v.push(("README.md".into(), r));

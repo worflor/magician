@@ -167,6 +167,9 @@ def check_spec(spec, base, args):
 
 def main():
     args = sys.argv[1:]
+    if args[:1] in (["--help"], ["-h"]):
+        print(__doc__)
+        return
     if not args:
         sys.exit(__doc__)
     spec_path = os.path.abspath(args[0])

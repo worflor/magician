@@ -30,7 +30,7 @@ What a script on an always-on machine can do without anyone, and where it has to
 3.  M patchday --from <build>               re-run with every mod compared from one older era (default: each mod's last proven build)
 4.  M drift <pak> --from <old>              full lists for any pak patchday flagged (paks are in game\citadel\addons\)
 5.  fix, rebuild, M release ...             only for BROKEN (next section); a clean patch skips this
-6.  re-prove in game                        the scenarios below, then LOOK at the frames
+6.  M session qa --mod <folder> --out <dir> re-prove in game (the scenarios below), then LOOK at the frames
 7.  M prove <mod.toml> --evidence <pass>    record a proof of the installed bytes on this build (proofs.tsv), per mod, then commit
                                             proofs.tsv and the mod.toml
 8.  ingame\stop_game.ps1                    hand the game back

@@ -45,6 +45,7 @@ mod cli;
 mod checkcmd;
 mod clothcmd;
 mod doctor;
+mod frontdoor;
 mod gamefiles;
 mod heroes;
 mod initcmd;
@@ -84,6 +85,20 @@ Start here:
                                                 the mod's one verdict on the installed build: its paks linted and graded
                                                 together, drift since its last proven build, its scene patches; exit 1
                                                 broken, 4 re-prove (not proven on this build), 0 clean
+
+The toolkit's Python, through the same door (everything after the verb is the tool's own, --help included, with its
+stdio and exit code; the toolkit folder is MAGICIAN_HOME, `home =`, else the one above magician.exe holding
+ingame\\mod_session.py; Python is MAGICIAN_PYTHON, `python =`, else python, python3 or py -3 on PATH; exit 2 when
+either is not there):
+  magician session qa --mod <folder> --out <dir> [scenario]...
+                                                ingame/mod_session.py: a mod's in-game session (up, run, film, down,
+                                                all, qa); `magician session --help` for the rest
+  magician bundle <bundle.json> [--zip] [--out DIR]
+                                                tools/bundle.py: a player release bundle (mod-interchange.json, files,
+                                                previews, the scene installers); `magician bundle --help`
+  magician source <source.json> [--out DIR] [--prune]
+                                                tools/source.py: a static Deadlock Mod Manager mod source from bundles;
+                                                `magician source --help`
 
 Inside a mod's folder (one with a mod.toml, or below one) lint, grade, drift, release, install, uninstall, prove,
 footprint and scene check|install need nothing after the verb: the paks, hero, addon, allowances, last proven build
@@ -231,7 +246,16 @@ MAGICIAN_VRF, `vrf =`, else Source2Viewer-CLI on PATH. `magician paths` prints w
 config file is.";
 
 fn main() -> ExitCode {
-    let mut args: Vec<String> = cli::command_first(&std::env::args().skip(1).collect::<Vec<_>>());
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    // The front door: `session`, `bundle` and `source` hand everything after the verb to the toolkit's Python tool
+    // (frontdoor.rs), `--help` and `--json` included: those are the tool's own.
+    if let Some(verb) = raw.first().filter(|v| frontdoor::script_of(v).is_some()) {
+        return match frontdoor::run(verb, &raw[1..]) {
+            Ok(c) => c,
+            Err(e) => stop(&e, verb, false),
+        };
+    }
+    let mut args: Vec<String> = cli::command_first(&raw);
     // `--help` and `--version` answer and stop: nothing else runs, whatever the rest of the line says.
     if cli::wants_help(&args) {
         let cmd = args.iter().find(|a| !a.starts_with('-') && *a != "help").map(String::as_str);
@@ -431,7 +455,7 @@ fn flag(args: &[String], name: &str) -> Option<String> {
 /// Every command `main` dispatches, for "did you mean" on a typo.
 const COMMANDS: &[&str] = &[
     "baseline", "ls", "refs", "dump", "kv", "index", "textures", "mesh", "cloth", "lint", "cache", "pack", "rules", "scan", "footprint", "grade", "rubric",
-    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "help",
+    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "help", "session", "bundle", "source",
 ];
 
 /// Options that take no value. Every other `--option` takes the argument after it, so `positional` skips that one.
@@ -510,6 +534,8 @@ fn cmd_paths(args: &[String]) -> R {
     row("csdk", paths::csdk(flag(args, "--csdk")));
     row("vrf", Ok(paths::vrf(flag(args, "--vrf"))));
     row("game_lock", Ok(paths::game_lock()));
+    row("toolkit", paths::toolkit());
+    row("python", paths::python().map(|(f, _)| f));
     match paths::policy(flag(args, "--policy")) {
         Some(f) => say!("policy	{}	{}", f.path.display(), f.source),
         None => say!("policy	-	built-in"),
