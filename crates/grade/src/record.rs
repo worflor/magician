@@ -24,6 +24,17 @@ use crate::rubric::{self, Report};
 pub const SCHEMA: &str = "magician.grade/3";
 /// How many violations and advisories of one rule the text report shows before it counts the rest.
 const VIOLATIONS_SHOWN: usize = 5;
+/// How long a finding's message runs in the text report before it is cut, at a word, with "...".
+const MESSAGE_SHOWN: usize = 180;
+
+/// A finding's message for the text report: whole, or cut at the last word that fits (the record keeps it whole).
+fn brief(m: &str) -> String {
+    if m.chars().count() <= MESSAGE_SHOWN {
+        return m.to_string();
+    }
+    let cut: String = m.chars().take(MESSAGE_SHOWN).collect();
+    format!("{}...", cut.rsplit_once(' ').map(|(a, _)| a).unwrap_or(&cut).trim_end_matches([',', ';', ':']))
+}
 use std::collections::BTreeMap;
 
 /// One pak of the mod, as judged.
@@ -441,7 +452,7 @@ impl<'a> Record<'a> {
             let n = shown.entry(v.rule).or_default();
             *n += 1;
             if *n <= VIOLATIONS_SHOWN {
-                line(format!("  violation {} {}: {} ({})", v.rule, v.path.as_deref().unwrap_or("(vpk)"), v.message.chars().take(140).collect::<String>(), v.why));
+                line(format!("  violation {} {}: {} ({})", v.rule, v.path.as_deref().unwrap_or("(vpk)"), brief(&v.message), v.why));
             }
         }
         for (rule, n) in &shown {
@@ -458,7 +469,7 @@ impl<'a> Record<'a> {
             let n = shown.entry(a.rule).or_default();
             *n += 1;
             if *n <= VIOLATIONS_SHOWN {
-                line(format!("  advisory {} {}: {}", a.rule, a.path.as_deref().unwrap_or("(vpk)"), a.message.chars().take(140).collect::<String>()));
+                line(format!("  advisory {} {}: {}", a.rule, a.path.as_deref().unwrap_or("(vpk)"), brief(&a.message)));
             }
         }
         for (rule, n) in &shown {
@@ -706,6 +717,15 @@ mod tests {
             assert!(t.contains("  and 3 more M124 violation(s): `magician lint` lists every one, the --json record too\n"), "{t}");
             assert_eq!(r.json().matches("\"rule\":\"M124\"").count(), 8, "the record keeps every one: {}", r.json());
         });
+    }
+
+    #[test]
+    fn a_long_message_is_cut_at_a_word_never_inside_one() {
+        let m124 = "front view: our in-game silhouette is 75.7% of Valve's (28231 vs 37272 px at 6 mm, 10569 px lost): the hero is harder to see than the original";
+        assert_eq!(brief(m124), m124, "a fair-play message is shown whole");
+        let long = "word ".repeat(60);
+        let b = brief(&long);
+        assert!(b.ends_with("word...") && b.chars().count() <= MESSAGE_SHOWN + 3, "{b}");
     }
 
     /// Fair play and rights both enforced.

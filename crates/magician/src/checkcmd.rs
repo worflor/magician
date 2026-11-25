@@ -178,12 +178,28 @@ pub fn cmd_check(args: &[String]) -> R {
             by_rule.push((what, tally_line(&these)));
         }
     }
-    let fp: Vec<&Tally> = tally.iter().filter(|t| t.severity != Severity::Info && fair(t)).collect();
+    // Fair play's advisory rules (M081 by default) are reported and never a violation: a row of their own, so a
+    // "fair play pass" above a row of them reads as what it is.
+    let policy = load_policy(args)?;
+    let advisory = |t: &&Tally| policy.compliance.advisory.iter().any(|a| a == t.code);
+    let fp: Vec<&Tally> = tally.iter().filter(|t| t.severity != Severity::Info && fair(t) && !advisory(t)).collect();
     if !fp.is_empty() {
         by_rule.push(("fair play", tally_line(&fp)));
     }
+    let adv: Vec<&Tally> = tally.iter().filter(|t| t.severity != Severity::Info && fair(t) && advisory(t)).collect();
+    if !adv.is_empty() {
+        by_rule.push(("advisory", format!("{} (fair play's advisories: reported, never a violation)", tally_line(&adv))));
+    }
     let by_rule_json = jsonout::arr(tally.iter().map(|t| {
-        jsonout::Obj::new().str("code", t.code).str("name", t.name).str("severity", sev_label(t.severity).trim()).bool("fair_play", fair(&t)).int("count", t.count as i64).int("files", t.files as i64).build()
+        jsonout::Obj::new()
+            .str("code", t.code)
+            .str("name", t.name)
+            .str("severity", sev_label(t.severity).trim())
+            .bool("fair_play", fair(&t))
+            .bool("advisory", fair(&t) && advisory(&t))
+            .int("count", t.count as i64)
+            .int("files", t.files as i64)
+            .build()
     }));
     if let Some(i) = items.iter_mut().find(|i| i.what == "lint") {
         i.json = format!("{},\"by_rule\":{by_rule_json}}}", &i.json[..i.json.len() - 1]);
@@ -292,7 +308,15 @@ pub fn cmd_check(args: &[String]) -> R {
     let verdict = if broken { "BROKEN" } else if reprove { "RE-PROVE" } else { "ok" };
     let mut next: Vec<String> = Vec::new();
     if broken {
-        next.push("fix what is BROKEN above; `magician lint` and `magician drift` list every finding".into());
+        // name only the list that holds what broke it: a drift with nothing to compare from has nothing to list
+        let drift_broke = items.iter().any(|i| i.what == "drift" && i.state == "broken");
+        let lint_broke = items.iter().any(|i| i.what == "lint" && i.state == "broken");
+        let lists = match (lint_broke, drift_broke, binding.last()) {
+            (true, true, Some(from)) => format!("`magician lint` lists every finding, `magician drift --from {from}` every change"),
+            (false, true, Some(from)) => format!("`magician drift --from {from}` lists every change"),
+            _ => "`magician lint` lists every finding".to_string(),
+        };
+        next.push(format!("fix what is BROKEN above; {lists}, and `magician rules` says what each rule costs in game"));
     } else if reprove {
         let quiet_patch = items.iter().any(|i| i.what == "drift" && i.state == "ok");
         next.push(format!(
