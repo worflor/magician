@@ -51,10 +51,11 @@ The installed build number is `ClientVersion` in `<game>\citadel\steam.inf`; eve
 | 2 | Usage error: bad arguments, an option without its value or given twice, a missing file, a tool that is not there, a policy that does not read | Read the line after `magician:` on stderr (with `--json`, the `magician.error/1` document on stdout says the same) and fix your call |
 | 3 | Refused on purpose: lint errors at install, a game seat or build lock someone else holds, a slot another mod owns, an uninstall of a file whose bytes are not the ones Magician installed, a proof of nothing installed | A decision, not a bug: report it, don't route around it |
 | 4 | Re-prove: it loads, but must be proven in game on this build (`check`, `drift`, `patchday`); from `reprove`, at least one mod's pass needs a look | Report which mods need an in-game pass, or which passes to read |
+| 5 | An update is available (`update --check` only) | Report it. Apply it only on the operator's standing instruction (below) |
 
-A session has a few of its own: 9 (the seat or the game is no longer this session's: nothing was done), 8 (a frozen hero), 7 (the hero never loaded), 6 (the demo ended before the film did), 5 (a game this session did not start is running).
+A session has a few of its own, and they are the session's alone (`magician session`, `reprove`; 5 from `update --check` is not one of them): 9 (the seat or the game is no longer this session's: nothing was done), 8 (a frozen hero), 7 (the hero never loaded), 6 (the demo ended before the film did), 5 (a game this session did not start is running).
 
-`--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release`, `rules` and `reprove` prints one JSON document (with a `schema` string) and nothing else; prefer it to reading text. Progress lines and colour appear only on a terminal, never in what you read.
+`--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release`, `rules`, `update` and `reprove` prints one JSON document (with a `schema` string) and nothing else; prefer it to reading text. Progress lines and colour appear only on a terminal, never in what you read.
 
 ## The loops
 
@@ -92,6 +93,14 @@ magician uninstall --mod <owner>         # rolls back only what the ledger says 
 Reuse the owner `install --status` already shows for that mod (`maid_lash`, which can differ from the slug `maid-lash`); a new mod defaults to its pak's folder name. When someone wants to look at a mod in game, install it and tell them it is in; launch only if they asked you to: [references/loops.md](references/loops.md#install-a-pak-for-someone-to-look-at).
 
 **Start a mod:** `magician new <hero> [--slug NAME] [--dir DIR] [--author NAME]` writes a mod folder from the installed game's own data: a `mod.toml` with the hero's real model and skeleton, the addon folders with the ignore files that keep Valve-derived files out of git, a package folder, two starter scenarios. It copies no Valve file and never writes into a folder that exists. `magician init` writes only the `mod.toml`, for a pak or an addon that already exists.
+
+**Staying current** (Magician only goes online when you run `update` or `doctor --updates`; nothing else checks):
+```
+magician update --check --json           # magician.update/1: state current|behind|ahead|unknown, judgement.changed, judgement.rerun; exit 0, 5 an update is available, 3 could not check
+magician update --dry-run                # what applying would do, changing nothing
+magician update                          # apply it
+```
+Checking is always fine to do and to report ("behind: 0.2.0 is out"; "could not check" is a note, not a failure). **Apply an update only when the operator's standing instruction says to**, never because a check said one exists: a grade is only worth something while the judge stays the same, and the update replaces the toolkit you are running. It refuses (exit 3, nothing changed) while a game session holds the seat, so never force past it. When `judgement.changed` is true, grades and lint from before the update were made by a different judge: after updating, re-run `magician check` (or `lint` and `grade`) on every mod you report on, and say that you did. Exit 1 means the update failed and was rolled back; report the `magician:` line.
 
 **Hero-page scenes:** `magician scene make | check | compose | install`. `check` is read-only and tells you whether the player's stock map still matches a patch after an update.
 

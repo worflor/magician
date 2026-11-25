@@ -11,13 +11,17 @@ Named for The Magnificent Sinclair, Deadlock's own magician, and a sibling to [M
 - **Not a GUI.** No windows and no prompts. Commands read files and print text, and JSON where a machine consumes it.
 - **Not a Blender add-on.** Blender appears only as an offline renderer for visual QA (`qa/`, `harness/`).
 - **Not a mod loader or manager.** Deadlock has no runtime mod API: "loading" is a VPK in an addons folder plus one search-path line in `gameinfo.gi`, and [Deadlock Mod Manager](https://github.com/deadlock-mod-manager/deadlock-mod-manager) already does that well. Magician's install step exists so an automated pipeline can put a mod in the game and take it out again. For players it writes what the manager reads: `magician bundle` makes a release bundle with its `mod-interchange.json`, and `magician source` turns bundles into a static mod source players add to the manager once for one-click installs and updates ([docs/reference/mod-source.md](docs/reference/mod-source.md)).
-- **Not an auto-updater.** It won't rewrite your mod for a new build. It tells you exactly what the build changed underneath the mod and whether that breaks it. The fix is still yours, or your agent's.
+- **Not an auto-updater.** It won't rewrite your mod for a new build. It tells you exactly what the build changed underneath the mod and whether that breaks it. The fix is still yours, or your agent's. It doesn't update itself either: no command checks for a new version, fetches one or nags about one unless you ran `magician update` (below).
 
 Most Deadlock modding tools are built for a person at a desk: a GUI, a Blender extension, or a thin layer over the game files. Magician is built for the machine that is still running when nobody is.
 
 ## Getting started
 
-You need Windows 10 or 11, a stable Rust toolchain, and Deadlock installed through Steam. The workspace has no external crates, so the build downloads nothing.
+You need Windows 10 or 11 and Deadlock installed through Steam. Then either unpack a release or build from source.
+
+**From a release.** A release carries the toolkit folder as one archive per platform: `magician-windows-x64.zip` for Windows (proven), and `magician-linux-x64.tar.gz` for Linux (built by the release workflow, not yet proven on a real machine). Unpack the one for your system anywhere you like. It holds `magician.exe` (`magician` on Linux), `ingame\`, `tools\`, `mcp\`, `skills\`, `docs\`, this README, the changelog and the licence, and `magician.exe` finds the rest of the folder from where it sits. Put the folder on PATH, or call the exe by its path. Nothing else is installed, so there is nothing to uninstall: delete the folder. Any other platform builds from source.
+
+**From source.** You need a stable Rust toolchain. The workspace has no external crates, so the build downloads nothing.
 
 ```
 git clone https://github.com/worflor/magician
@@ -101,6 +105,7 @@ Magician finds Deadlock through Steam's own library list. Everything it derives 
 | Policy (the judgement numbers, below) | `--policy` | `MAGICIAN_POLICY` | `policy` | the built-in defaults |
 | The toolkit folder | | `MAGICIAN_HOME` | `home` | the folder above `magician.exe` that holds `ingame\mod_session.py` |
 | Python | | `MAGICIAN_PYTHON` | `python` | `python`, `python3` or `py -3` on PATH |
+| Update source (a release's files) | `--source` | `MAGICIAN_UPDATE_SOURCE` | `update_source` | the latest release of this build's repository |
 
 The config file is `%APPDATA%\magician\config.txt` (or wherever `MAGICIAN_CONFIG` points), one `key = value` per line:
 
@@ -147,6 +152,29 @@ Everything after the verb belongs to the tool (`magician bundle --help` is the b
 
 The CLI is built and tested on Windows. On Linux the workspace builds and its tests pass; it finds Steam's libraries, sees a game running under Proton (its seat check reads `/proc`), and refuses to swap paks when it cannot tell whether the game is running. The in-game harness is Windows only: it types with SendInput and captures the game's window. Players don't need Magician at all: a release bundle installs its hero-page scene with `install-scene.ps1` (Windows PowerShell) or `install-scene.py` (Python 3, proven on Ubuntu and meant for the Steam Deck).
 
+## Staying current
+
+Finding out whether there is a newer Magician is one command, and so is installing it. Neither ever happens on its own: **Magician touches the network only when a person or a script runs `magician update ...`, or passes `--updates` to `doctor`.** No other command checks, phones home or prints an update nag, and every network step gives up after about 10 seconds with a plain "could not check". A grade or a proof is worth something only if the judge does not change underneath it, and Magician writes into a game install, so it never fetches and runs new code of itself unasked.
+
+```
+magician update --check            # exit 0 current or ahead, 5 an update is available, 3 could not check
+magician update --check --json     # the same as one document (magician.update/1), for a script or an agent
+magician update --dry-run          # what applying it would do, changing nothing
+magician update                    # apply it
+magician doctor --updates          # doctor, with the check as one more line (a source that can't be read is a note)
+```
+
+A release is its asset for your platform, `SHA256SUMS` (the checksum of every asset) and `VERSION`, which says the release's version, commit and date and the fingerprints of what does the judging: the grading rubric's rules version, the built-in policy, and the lint rule set. `--check` reads only `VERSION`, compares it with the running build (version, then commit), and says whether updating would change judgement: if the rubric, policy or rules differ it names them and tells you to re-run `lint` and `grade` on your mods afterwards. `magician update --describe` prints the `VERSION` of the build you are running.
+
+Where a release comes from is the update source: `--source`, `MAGICIAN_UPDATE_SOURCE`, `update_source =` in the config file, else the latest release of the repository the build came from. It is a URL (https only, fetched with `curl`, which sends nothing but a `magician/<version>` agent), or a folder holding the release's files: local, on a network share, or on a USB stick, which is how a machine with no internet or a fleet updates from one copy.
+
+`magician update` with no flag acts on what the folder is:
+
+- **A release install** (no `.git`): it checks the archive's SHA-256 against `SHA256SUMS`, unpacks it beside the toolkit, runs the new `magician --version` from there, swaps the files in and keeps the old ones until the next update. A bad checksum, a release that does not match its own `VERSION`, or a source with no build for your platform is refused with nothing changed. A step that fails after the swap began puts every file back. The checksum catches a damaged or truncated download; it is not a signature, so the trust is the https address, or the folder, you named. Updating replaces the toolkit's own files, so keep your own scenarios and mods outside it.
+- **A git checkout**: it follows its branch, not the releases. It refuses when the tree has local changes, the branch has no upstream or cannot fast-forward; otherwise it fast-forwards and runs `cargo build --release`, and if the build fails the tree and the program go back to what they were.
+
+It is refused (exit 3, nothing changed) while a game session holds the seat. Exit 0 is updated or already current, 3 refused or could not fetch, 1 failed after the swap began and was rolled back (the old files are back; the reason is on stderr).
+
 ## Patch day on an always-on machine
 
 The case Magician is shaped around: a spare Windows box that is on anyway, with Deadlock installed and your mods in its game folder.
@@ -189,12 +217,13 @@ Every exit code has one meaning:
 | 0 | Clean: nothing to do. |
 | 1 | Broken: a contract or rule failed and a person or agent must act (lint errors, a mesh FAIL, `drift` or `patchday` BROKEN, a scene patch that no longer fits the game, a release whose lint failed, `grade --gate` with a blocker). |
 | 2 | Usage error: bad arguments, a missing file, a tool that is not there, a policy that does not read. |
-| 3 | Refused on purpose, nothing changed: an install with lint errors, a game seat or build lock someone else holds, a pak slot another mod owns, an uninstall of a file the ledger doesn't hold or whose bytes are no longer the ones Magician installed, a proof of nothing installed. |
+| 3 | Refused on purpose, nothing changed: an install with lint errors, a game seat or build lock someone else holds, a pak slot another mod owns, an uninstall of a file the ledger doesn't hold or whose bytes are no longer the ones Magician installed, a proof of nothing installed, an update that could not be fetched or verified, a dirty checkout; and `update --check` when the source could not be read ("could not check"). |
 | 4 | Re-prove: it loads, but must be proven in game on this build (`check`, `drift`, `patchday`). |
+| 5 | An update is available (`update --check`, and nothing else). |
 
 The reason for 1, 2 and 3 follows `magician:` on stderr. `--help` (or `-h`) after any command prints its usage and does nothing else, `--version` names the toolchain and commit, and an option no command knows is a usage error rather than something silently ignored, as is an option given without its value, a single-valued option given twice, and an option whose value would be the next option.
 
-`--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release` and `rules` prints one JSON document on stdout and no human text. Each starts with a `schema` string (`magician.check/1`, `magician.grade/2`, `magician.patchday/1`, ...) so a reader can tell what it holds. A command that stops (exit 1, 2 or 3 with a reason) prints the reason as that one document, `{"schema":"magician.error/1","command":...,"exit":2,"kind":"usage","error":...}`, so stdout always parses. Also machine-readable: `lint --json-out FILE`, `mesh --json-out FILE`, `grade --record-out FILE`, `paths` and `policy` (tab-separated), and `lint --findings-out FILE` (a lint run that `grade --findings` judges without linting again). Results are deterministic: `pack` writes byte-identical VPKs from identical input, lint findings come out in a fixed order, a grade record is byte-for-byte the same for the same paks, build, policy and toolchain, and the findings cache only ever returns what a fresh run would compute.
+`--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release`, `rules` and `update` prints one JSON document on stdout and no human text. Each starts with a `schema` string (`magician.check/1`, `magician.grade/2`, `magician.patchday/1`, ...) so a reader can tell what it holds. A command that stops (exit 1, 2 or 3 with a reason) prints the reason as that one document, `{"schema":"magician.error/1","command":...,"exit":2,"kind":"usage","error":...}`, so stdout always parses. Also machine-readable: `lint --json-out FILE`, `mesh --json-out FILE`, `grade --record-out FILE`, `paths` and `policy` (tab-separated), and `lint --findings-out FILE` (a lint run that `grade --findings` judges without linting again). Results are deterministic: `pack` writes byte-identical VPKs from identical input, lint findings come out in a fixed order, a grade record is byte-for-byte the same for the same paks, build, policy and toolchain, and the findings cache only ever returns what a fresh run would compute.
 
 For agents there is an MCP server, [mcp/](mcp/README.md): seventeen tools (`check`, `lint`, `mesh`, `grade`, `release`, `build`, `drift`, `patchday`, `policy`, `refs`, `ls`, `dump`, `cloth`, `verify`, `rules`, read-only `doctor` and `install_status`) that return JSON, the commands' own documents where they have one. Installing, uninstalling and launching the game are deliberately not among them; those stay CLI calls that something has to choose to make. An agent that drives the CLI itself can load the skill in [skills/using-magician/](skills/using-magician/SKILL.md): the loops, the safety rules and how to report, in the Agent Skills format.
 
@@ -334,6 +363,7 @@ Everything Magician knows about a build it reads itself, with zero external crat
 | `magician scene make \| check \| compose \| install` | Ship a hero-page scene as a patch of only our files and build it from the player's own game |
 | `magician bundle <bundle.json>` / `source <source.json>` | A player release bundle for Deadlock Mod Manager; a static mod source and its pages from bundles |
 | `magician sign <addon>` / `verify <vpk>` | Put an invisible authorship mark in a mod's colour textures, and detect it in a compiled pak. The key is the author's: `--key`, else `[mark] key` or `[mod] author` in the mod's `mod.toml` |
+| `magician update --check` / `update [--dry-run]` / `update --describe` | Whether a newer Magician exists (exit 5 if so), installing it on request, and this build's own `VERSION`; the only commands, besides `doctor --updates`, that touch the network |
 | `magician paths` | Where every outside location resolved to, and why |
 | `magician ls`, `refs`, `scan`, `dump`, `kv`, `textures`, `index`, `expr`, `pack`, `cache` | Inspection, evidence queries, material expression proofs, raw packing, the findings cache |
 
@@ -347,7 +377,7 @@ ingame/   drive the retail game: sessions, patch-day passes, console, capture, l
 qa/       offline visual QA and detectors (Blender, glb)
 harness/  Blender render scripts: x-ray, lookdev, contact sheets
 cinema/   the optional film kit for trailers and stills
-tools/    release bundles, the mod-source writer, player scene installers, UI scene re-dressing, hero rips, the Source 2 Viewer MCP launcher
+tools/    the release script, release bundles, the mod-source writer, player scene installers, UI scene re-dressing, hero rips, the Source 2 Viewer MCP launcher
 docs/     design, status, the patch-day runbook, engine and mod-source reference
 ```
 

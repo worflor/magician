@@ -23,7 +23,7 @@ The runbook is [PATCH-DAY.md](PATCH-DAY.md). Every new capability should make so
 ## What the toolchain promises its caller
 
 - **Determinism.** The same mod against the same build gives the same findings in the same order. `pack` gives the same bytes. A cache may make a run faster; it never makes it different.
-- **Exit codes that mean something.** 0 clean, 1 broken (someone must act), 2 usage error, 3 refused on purpose, 4 loads but must be re-proven in game. A wrapper decides what to do from the code before it reads a word. `--help` on any command only prints its usage; an option nobody knows is an error, not a guess.
+- **Exit codes that mean something.** 0 clean, 1 broken (someone must act), 2 usage error, 3 refused on purpose, 4 loads but must be re-proven in game, 5 an update is available (`update --check` only). A wrapper decides what to do from the code before it reads a word. `--help` on any command only prints its usage; an option nobody knows is an error, not a guess.
 - **Text a script can read.** Stable labels (`ok`, `RE-PROVE`, `BROKEN`, rule codes like `M062`, `S Echo · NSFR`), one finding per line, the evidence on the line. One JSON document with a `schema` string wherever a machine is the main reader (`--json`).
 - **Specific findings.** A finding names the file, the rule, and what happens in the game: "the original asset shows instead", "the skin vanishes", "enemies shoot cloth that cannot be hit". "Something looks off" is not a finding.
 - **Honesty about limits.** What a rule can't see is said where the rule is. Unchecked is never clean: a bounded search says where it stopped. Unverified in-game behaviour is marked UNVERIFIED.
