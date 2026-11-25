@@ -6,6 +6,13 @@ It treats a Deadlock mod the way a compiler treats a program, and each game buil
 
 Named for The Magnificent Sinclair, Deadlock's own magician, and a sibling to [Mycelium](https://github.com/worflor/mycelium), which does the same job for Minecraft mods.
 
+<p>
+  <a href="docs/SHOWCASE.md"><img src="docs/showcase/maid-lash.jpg" alt="Maid Lash, a Lash skin, in game" height="270"></a>
+  <a href="docs/SHOWCASE.md"><img src="docs/showcase/loops-viscous.jpg" alt="Lööps Viscous, a Viscous skin, in game" height="270"></a>
+</p>
+
+Maid Lash and Lööps Viscous, two of the full hero skins built, checked and proven with it. [What Magician says about each](docs/SHOWCASE.md), in its own output.
+
 ## What it is not
 
 - **Not a GUI.** No windows and no prompts. Commands read files and print text, and JSON where a machine consumes it.
@@ -334,7 +341,7 @@ Compile-clean is not proof. A mod is done when it has been seen working in the g
 
 A mod's scenarios, QA configs and scene patches live with the mod; this repository carries worked examples on a stock hero (Haze).
 
-Three full hero skins are made with this toolchain. One is public: [Maid Lash](https://woflo.dev/deadlock-skins/maid-lash/), built, graded, proven on every game build since its release and published through this loop. Two more are in production.
+Three full hero skins are made with this toolchain. One is public: [Maid Lash](https://woflo.dev/deadlock-skins/maid-lash/), built, graded, proven on every game build since its release and published through this loop. Two more are in production. [docs/SHOWCASE.md](docs/SHOWCASE.md) shows two of them with their real verdicts, grades and proofs.
 
 ### A proof belongs to bytes
 
