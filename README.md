@@ -2,7 +2,7 @@
 
 Magician is a headless toolchain for creating, validating, and maintaining Deadlock mods through automation, scripts, and AI agents.
 
-It treats a Deadlock mod the way a compiler treats a program, and each game build the way a compiler treats a target. A mod is built reproducibly from its sources, linted against the build that is installed, re-linked when Valve ships a new one, graded for how much of a hero it actually reaches, and installed or rolled back without touching a file Magician didn't put there. Every one of those steps is a command with a deterministic answer and an exit code that means something, so a script or an agent can run the whole loop with nobody at the desk. A person can run the same commands; they just aren't where the design starts.
+It treats a Deadlock mod the way a compiler treats a program, and each game build the way a compiler treats a target. A mod is built reproducibly from its sources, linted against the build that is installed, re-linked when Valve ships a new one, graded for which parts of a hero it makes its own, and installed or rolled back without touching a file Magician didn't put there. Every one of those steps is a command with a deterministic answer and an exit code that means something, so a script or an agent can run the whole loop with nobody at the desk. A person can run the same commands; they just aren't where the design starts.
 
 Named for The Magnificent Sinclair, Deadlock's own magician, and a sibling to [Mycelium](https://github.com/worflor/mycelium), which does the same job for Minecraft mods.
 
@@ -11,24 +11,13 @@ Named for The Magnificent Sinclair, Deadlock's own magician, and a sibling to [M
   <a href="docs/SHOWCASE.md"><img src="docs/showcase/loops-viscous.jpg" alt="Lööps Viscous, a Viscous skin, in game" height="270"></a>
 </p>
 
-Maid Lash and Lööps Viscous, two of the full hero skins built, checked and proven with it. [What Magician says about each](docs/SHOWCASE.md), in its own output.
-
-## What it is not
-
-- **Not a GUI.** No windows and no prompts. Commands read files and print text, and JSON where a machine consumes it.
-- **Not a Blender add-on.** Blender appears only as an offline renderer for visual QA (`qa/`, `harness/`).
-- **Not a mod loader or manager.** Deadlock has no runtime mod API: "loading" is a VPK in an addons folder plus one search-path line in `gameinfo.gi`, and [Deadlock Mod Manager](https://github.com/deadlock-mod-manager/deadlock-mod-manager) already does that well. Magician's install step exists so an automated pipeline can put a mod in the game and take it out again. For players it writes what the manager reads: `magician bundle` makes a release bundle with its `mod-interchange.json`, and `magician source` turns bundles into a static mod source players add to the manager once for one-click installs and updates ([docs/reference/mod-source.md](docs/reference/mod-source.md)).
-- **Not an auto-updater.** It won't rewrite your mod for a new build. It tells you exactly what the build changed underneath the mod and whether that breaks it. The fix is still yours, or your agent's. It doesn't update itself either: no command checks for a new version, fetches one or nags about one unless you ran `magician update` (below).
-
-Most Deadlock modding tools are built for a person at a desk: a GUI, a Blender extension, or a thin layer over the game files. Magician is built for the machine that is still running when nobody is.
+Two of the three full hero skins made with it: [Maid Lash](https://woflo.dev/deadlock-skins/maid-lash/), public and proven on every game build since its release, and Lööps Viscous, still in production. [What Magician says about each](docs/SHOWCASE.md), in its own output.
 
 ## Getting started
 
-You need Windows 10 or 11, or Linux on x86-64, and Deadlock installed through Steam (on Linux it runs under Proton, and the files Magician reads and writes are the same). [Platforms](#platforms) says what runs where. Then either unpack a release or build from source.
+You need Windows 10 or 11, or Linux on x86-64, with Deadlock installed through Steam (on Linux the game runs under Proton, and the files Magician reads and writes are the same).
 
-**From a release.** A release carries the toolkit folder as one archive per platform: `magician-windows-x64.zip` and `magician-linux-x64.tar.gz`. Unpack the one for your system anywhere you like. It holds the program (`magician.exe` on Windows, `magician` on Linux), `ingame/`, `tools/`, `mcp/`, `skills/`, `docs/`, this README, the changelog and the licence, and the program finds the rest of the folder from where it sits. Put the folder on PATH, or call the program by its path. Nothing else is installed, so there is nothing to uninstall: delete the folder. Any other platform builds from source.
-
-**From source.** You need a stable Rust toolchain. The workspace has no external crates, so the build downloads nothing.
+**From source.** A stable Rust toolchain is all it takes. The workspace has no external crates, so the build downloads nothing.
 
 ```
 git clone https://github.com/worflor/magician
@@ -36,6 +25,8 @@ cd magician
 cargo build --release              # target/release/magician (magician.exe on Windows)
 cargo test --workspace             # synthetic fixtures only: needs no game and no Valve file
 ```
+
+**From a release.** A release is the same toolkit folder already built, one archive per platform: `magician-windows-x64.zip` and `magician-linux-x64.tar.gz`. Unpack it anywhere and put the folder on PATH, or call the program by its path; it finds the rest of the folder from where it sits. Nothing else is installed, so there is nothing to uninstall: delete the folder.
 
 Commands here are written once for both systems: `magician` is the program, paths use `/` (Windows takes it too), and `python` is the Python 3 on PATH, which most Linux distributions call `python3`.
 
@@ -46,9 +37,11 @@ magician                           # the game it found, the mod of this folder, 
 magician doctor                    # every part of the setup, one line each, with the fix for any gap
 ```
 
+Some commands need more than the game (the Source 2 Viewer CLI to grade, Valve's CSDK to compile). `doctor` names what is missing, and [Setting up a machine](#setting-up-a-machine) has the whole list, where Magician looks for each thing, and what runs on Linux.
+
 ### A mod is a folder with a `mod.toml`
 
-To start a skin from nothing, `magician new <hero>` writes that folder from the installed game's own data: a `mod.toml` whose `[target]` is the hero's real model and skeleton, an `addon/` laid out at the game's paths with `.gitignore` files that keep Valve-derived work (a model document made from Valve's, meshes on Valve's skeleton, renders on Valve's body, mixes over Valve's audio) out of git, a `package/` that `magician bundle` takes once there is a pak, two in-game scenarios for the hero, and a README with the next commands. It copies no Valve file and never writes into a folder that exists.
+To start a skin from nothing, `magician new <hero>` writes that folder from the installed game's own data: a `mod.toml` whose `[target]` is the hero's real model and skeleton, an `addon/` laid out at the game's paths with `.gitignore` files that keep Valve-derived work out of git, a `package/` that `magician bundle` takes once there is a pak, two in-game scenarios for the hero, and a README with the next commands. It copies no Valve file and never writes into a folder that exists.
 
 ```
 magician new lash --author you     # lash-skin/: mod.toml, addon/, package/, source/ingame/scenarios/, README.md
@@ -77,7 +70,7 @@ next: the in-game pass on build 6865 (`magician session qa --mod /home/you/mods/
 
 `check` exits 1 when something is broken, 4 when the mod loads but is not proven on the installed build, 0 when it is proven here and clean. The same bare verbs work for `lint`, `grade`, `drift` (from the mod's last proven build), `release` (its addon), `uninstall`, `prove`, `footprint` and `scene check`; whatever you pass explicitly wins. `magician help` lists every command and option, `magician help <command>` shows one, and a mistyped command, option or hero is answered with what it most likely meant. A hero can be named the way you would say it: `lash`, `Lash`, `hero_lash`, `"Lady Geist"`, or its model's path.
 
-A `mod.toml` is plain text, read line by line: flat tables of strings, numbers and lists, the shape `new` and `init` write. The keys Magician reads:
+A `mod.toml` is plain text, read line by line: flat tables of strings, numbers and lists, the shape `new` and `init` write. The keys a mod usually carries:
 
 ```
 [mod]
@@ -99,58 +92,6 @@ state = "cleared"                   # unreviewed | cleared | denied: a person's 
 pass = ["lash_angles", "lash_motion"]   # the scenarios an in-game pass of this mod runs
 ```
 
-### Where it finds things
-
-Magician finds Deadlock through Steam's own library list. Everything it derives from a build (baselines, sidecars, indexes, in-game passes) goes to a reference folder. Each location is a flag, then an environment variable, then a line in a config file, then discovery:
-
-| Location | Flag | Variable | Config key | Otherwise |
-|---|---|---|---|---|
-| Deadlock's `game` folder | `--game` | `DEADLOCK_GAME` | `game` | found through Steam |
-| Reference folder | `--reference` | `MAGICIAN_REFERENCE` | `reference` | `magician/reference` in the data folder (below) |
-| Findings cache | `--no-cache` turns it off | `MAGICIAN_CACHE` | | the cache folder (below) |
-| Valve's CSDK | `--csdk` | `MAGICIAN_CSDK` | `csdk` | none: `build`, `release` and `sign` ask for it |
-| Source 2 Viewer CLI | `--vrf` | `MAGICIAN_VRF` | `vrf` | `Source2Viewer-CLI` on PATH |
-| The mods `patchday` checks | `--mod` (each one) | `MAGICIAN_MODS` | `mods` | the nearest folder, from the working one upward, with mods one or two levels below it |
-| Game lock | | `MAGICIAN_GAME_LOCK` | `game_lock` | `<reference>/work/ingame-game.lock` |
-| Policy (the judgement numbers, below) | `--policy` | `MAGICIAN_POLICY` | `policy` | the built-in defaults |
-| The toolkit folder | | `MAGICIAN_HOME` | `home` | the folder above the program that holds `ingame/mod_session.py`, else the checkout it was built from |
-| Python | | `MAGICIAN_PYTHON` | `python` | `python` or `python3` on PATH (or `py -3` on Windows) |
-| Update source (a release's files) | `--source` | `MAGICIAN_UPDATE_SOURCE` | `update_source` | the latest release of this build's repository |
-| Wine, which runs Valve's compiler off Windows (and its prefix) | | `MAGICIAN_WINE` (`WINEPREFIX`) | `wine` (`wine_prefix`) | `wine` on PATH (`magician/wine` in the data folder) |
-| Steam, for the in-game harness to launch the game | | `MAGICIAN_STEAM` | `steam` | Windows: the `SteamExe` Steam records; Linux: `steam` on PATH, else the Flatpak's |
-
-Each system's own folders are the defaults:
-
-| | Windows | Linux |
-|---|---|---|
-| Config file (`MAGICIAN_CONFIG` overrides) | `%APPDATA%\magician\config.txt` | `$XDG_CONFIG_HOME/magician/config.txt` (`~/.config/...`) |
-| Data folder (the reference folder lives in it) | `%LOCALAPPDATA%` | `$XDG_DATA_HOME` (`~/.local/share`) |
-| Cache folder | `%LOCALAPPDATA%\magician\cache` | `$XDG_CACHE_HOME/magician` (`~/.cache/magician`) |
-| Steam's library list | the registry's `SteamPath`, then Program Files | `~/.steam/steam`, `~/.local/share/Steam`, the Flatpak's and the Snap's |
-
-The config file is one `key = value` per line, written as the machine writes paths:
-
-```
-# where Magician finds things on this machine (Windows)
-game      = E:\Games\SteamLibrary\steamapps\common\Deadlock\game
-reference = E:\deadlock-reference
-csdk      = E:\Tools\Reduced_CSDK_13
-vrf       = E:\Tools\Source2Viewer-21.1\cli\Source2Viewer-CLI.exe
-mods      = E:\mods
-```
-
-```
-# the same on a Linux box
-game      = /srv/steam/steamapps/common/Deadlock/game
-reference = /srv/deadlock-reference
-vrf       = /opt/Source2Viewer/Source2Viewer-CLI
-mods      = /srv/mods
-```
-
-`magician paths` prints every location and where the answer came from, except Steam, which only the in-game harness uses (`python ingame/gameos.py` prints it, with what the harness can and cannot drive on this machine). The Python tools around the game read the same file through `ingame/gamepaths.py`, so the harness and the CLI always agree on where the game and the game lock are.
-
-The first command run on a new build captures that build's baseline into the reference folder, as `magician baseline` would, so later drift checks have it. It does that only for this machine's own game (found through Steam or named in the config file), never for one a flag or `DEADLOCK_GAME` points at, which is often a drill's copy.
-
 ### One front door
 
 Everything goes through `magician`. The parts written in Python run through it too, with your arguments, stdio and exit code passed through unchanged, so a script names one program:
@@ -164,67 +105,14 @@ Everything goes through `magician`. The parts written in Python run through it t
 
 Everything after the verb belongs to the tool (`magician bundle --help` is the bundler's help), and the tool's own calls to `magician` go to the same program that ran it. When the toolkit folder or Python is missing the verb says which and how to point at it, and exits 2; `magician doctor` has a line for both.
 
-### What each part needs
+## What it is not
 
-| You want to | You need |
-|---|---|
-| Inspect a pak (`ls`, `refs`, `dump`, `kv`, `textures`, `verify`), prove an expression (`expr`) | nothing else |
-| Lint, mesh and cloth reports, `pack` (it lints what it packs), drift, `patchday`, `install`, `scene`, `new` | Deadlock installed |
-| `footprint`, `grade`, `index` | Deadlock and the [Source 2 Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat) CLI (21.1; flags change between versions, so pin it). The decompiled files are cached per build in the reference folder |
-| `build`, `release`, `sign` | Valve's CSDK 13, the community-distributed build that carries `resourcecompiler.exe` (setup notes in [docs/reference/engine.md](docs/reference/engine.md#the-compiler-csdk-13)); off Windows the compiler runs under Wine ([Platforms](#platforms)) |
-| `session`, `reprove` | Python 3.11 or newer, standard library only, and the desktop the game is shown on |
-| `bundle`, `source`, the MCP server | Python 3.8 or newer, standard library only; `bundle` and `source` use Pillow for preview images |
-| Offline visual QA (`qa/`, `harness/`) | Blender 5.2 and the Source 2 Viewer CLI; some scripts use Pillow, numpy and scipy |
-| The film kit (`cinema/`) | ffmpeg, a Python venv with Boon, and the CSDK; see its README |
+- **Not a GUI.** No windows and no prompts. Commands read files and print text, and JSON where a machine consumes it.
+- **Not a Blender add-on.** Blender appears only as an offline renderer for visual QA (`qa/`, `harness/`).
+- **Not a mod loader or manager.** Deadlock has no runtime mod API: "loading" is a VPK in an addons folder plus one search-path line in `gameinfo.gi`, and [Deadlock Mod Manager](https://github.com/deadlock-mod-manager/deadlock-mod-manager) already does that well. Magician's install step exists so an automated pipeline can put a mod in the game and take it out again. For players it writes what the manager reads: a release bundle (`magician bundle`) and a static mod source they add to the manager once (`magician source`, [docs/reference/mod-source.md](docs/reference/mod-source.md)).
+- **Not an auto-updater.** It won't rewrite your mod for a new build. It tells you exactly what the build changed underneath the mod and whether that breaks it. The fix is still yours, or your agent's.
 
-### Platforms
-
-Magician is the same program on Windows and Linux. Deadlock is a Windows game that Linux runs through Proton, and a mod is the same thing on both: a VPK in the game's `citadel/addons` and one search-path line in `gameinfo.gi`. So everything that reads or writes files works on either, and the differences are where the system itself is involved: where things live (the defaults above), how a running game is seen, and how the in-game harness types and looks. Each of those has one home in the code: `crates/magician/src/paths.rs` and `install.rs` for the CLI, `ingame/gameos.py` for the harness.
-
-| | Windows | Linux |
-|---|---|---|
-| Build, `cargo test`, clippy, the Python suites | proven | proven (Ubuntu 24.04) |
-| `doctor`, `paths`, `check`, `lint`, `drift`, `patchday`, `rules`, the MCP server, on a real game and reference folder | proven | proven, read-only against a real install |
-| Finding Deadlock through Steam | registry and Program Files | native, Flatpak and Snap homes and every library `libraryfolders.vdf` lists, proven on scratch homes laid out like Steam's |
-| `install`, `uninstall`, `install --status`, `prove`, `scene install` | proven | proven on scratch game folders |
-| The seat check (no pak swapped under a running game) | `tasklist` | `/proc`: the game under Proton is `deadlock.exe`, placed by its Wine path, so a game running from another folder does not block a scratch install; proven with stand-in processes, not with Proton |
-| `bundle`, `source`, the front door (`magician session`, `reprove`, `bundle`, `source`) | proven | proven: a Linux bundle of a real release is byte for byte the Windows one, except preview images, which Pillow encodes (the pixels are the same) |
-| A release asset and `magician update` from a folder | proven | proven: `tools/make-release.ps1` under PowerShell 7 writes `magician-linux-x64.tar.gz`, and an unpacked install updates itself from a folder |
-| `grade`, `footprint`, `index`, `check` with its grade | proven | proven with Source 2 Viewer 21.1's own Linux CLI: Maid Lash's grade record is byte for byte the Windows one, Lash's footprint lists the same 2,201 files, and the users index is the same file |
-| `build`, `release` (compiling) | proven | proven: Valve's compiler is a Windows program, and Wine runs it (`MAGICIAN_WINE` or `wine =`, else `wine` on PATH; `magician doctor` says when it is missing). A full compile of Maid Lash's addon gives 550 of its 551 files byte for byte as Windows does; the one left, the body model, differs only in its distance-field block, which the compiler does not repeat from one run to the next (two compiles under Wine differ there too). `release` compiles, lints, grades and signs |
-| The in-game harness: processes, the game lock, launch and stop | proven | built: processes and the game lock through `/proc`, proven with stand-in processes; launching goes through `steam -applaunch` and is not proven, because the game has not run here (below) |
-| The in-game harness: window, focus, keys, mouse, capture | proven (SendInput, PrintWindow) | built on X11 (libX11 and libXtst, through `ctypes`), proven against a test window under Xvfb and under WSLg's XWayland: keys, buttons, the wheel and mouse moves arrive, and the capture is the pixels drawn. Not proven with the game under Proton or gamescope |
-| The film kit (`cinema/`) | proven | on the same seam: its frame grabs and its recording (ffmpeg's `x11grab` of the game's window, which works under XWayland, where a screen grab is black) are proven against the test window; not with the game |
-| `tools/rip_heroes.py`, `tools/s2v_mcp.py` | proven | `rip_heroes.py` proven with the Linux viewer (the same glb, its tangents within a float's last digit). `s2v_mcp.py` talks to a viewer from anywhere; the viewer's GUI is a Windows Forms program, and under Wine it opens, but its MCP server does not listen (Wine's HTTP server API), so `start` is for Windows |
-
-The game itself has not run on Linux here: this machine's Linux is WSL, whose Vulkan is the CPU's (llvmpipe; Ubuntu's Mesa has no driver for the GPU behind WSL), and Steam for Linux would need its agreement accepted, the client downloaded from Valve, a sign-in and its own copy of the game (about 38 GB). The smallest real setup is a Linux desktop with a GPU and Steam, or a Steam Deck in desktop mode, signed in with the game installed; there `python3 ingame/prove_harness.py` runs the whole harness once (launch, seat, console, capture, stop) and writes a report.
-
-On Linux the harness needs an X display the game is shown on (`DISPLAY`; under a Wayland desktop that is XWayland, where Proton puts the game's window) and the libX11 and libXtst libraries (`libx11-6`, `libxtst6` on Debian and Ubuntu). `python ingame/gameos.py` says what this machine has. Without a piece, every harness tool refuses before it takes the game seat or launches anything, and names the piece.
-
-Players don't need Magician at all: a release bundle installs its hero-page scene with `install-scene.ps1` (Windows PowerShell) or `install-scene.py` (Python 3, proven on Ubuntu and meant for the Steam Deck).
-
-## Staying current
-
-Finding out whether there is a newer Magician is one command, and so is installing it. Neither ever happens on its own: **Magician touches the network only when a person or a script runs `magician update ...`, or passes `--updates` to `doctor`.** No other command checks, phones home or prints an update nag, and every network step gives up after about 10 seconds with a plain "could not check". A grade or a proof is worth something only if the judge does not change underneath it, and Magician writes into a game install, so it never fetches and runs new code of itself unasked.
-
-```
-magician update --check            # exit 0 current or ahead, 5 an update is available, 3 could not check
-magician update --check --json     # the same as one document (magician.update/1), for a script or an agent
-magician update --dry-run          # what applying it would do, changing nothing
-magician update                    # apply it
-magician doctor --updates          # doctor, with the check as one more line (a source that can't be read is a note)
-```
-
-A release is its asset for your platform, `SHA256SUMS` (the checksum of every asset) and `VERSION`, which says the release's version, commit and date and the fingerprints of what does the judging: the grading rubric's rules version, the built-in policy, and the lint rule set. `--check` reads only `VERSION`, compares it with the running build (version, then commit), and says whether updating would change judgement: if the rubric, policy or rules differ it names them and tells you to re-run `lint` and `grade` on your mods afterwards. `magician update --describe` prints the `VERSION` of the build you are running.
-
-Where a release comes from is the update source: `--source`, `MAGICIAN_UPDATE_SOURCE`, `update_source =` in the config file, else the latest release of the repository the build came from. It is a URL (https only, fetched with `curl`, which sends nothing but a `magician/<version>` agent), or a folder holding the release's files: local, on a network share, or on a USB stick, which is how a machine with no internet or a fleet updates from one copy.
-
-`magician update` with no flag acts on what the folder is:
-
-- **A release install** (no `.git`): it checks the archive's SHA-256 against `SHA256SUMS`, unpacks it beside the toolkit, runs the new `magician --version` from there, swaps the files in and keeps the old ones until the next update. A bad checksum, a release that does not match its own `VERSION`, or a source with no build for your platform is refused with nothing changed. A step that fails after the swap began puts every file back. The checksum catches a damaged or truncated download; it is not a signature, so the trust is the https address, or the folder, you named. Updating replaces the toolkit's own files, so keep your own scenarios and mods outside it.
-- **A git checkout**: it follows its branch, not the releases. It refuses when the tree has local changes, the branch has no upstream or cannot fast-forward; otherwise it fast-forwards and runs `cargo build --release`, and if the build fails the tree and the program go back to what they were.
-
-It is refused (exit 3, nothing changed) while a game session holds the seat. Exit 0 is updated or already current, 3 refused or could not fetch, 1 failed after the swap began and was rolled back (the old files are back; the reason is on stderr).
+Most Deadlock modding tools are built for a person at a desk: a GUI, a Blender extension, or a thin layer over the game files. Magician is built for the machine that is still running when nobody is.
 
 ## Patch day on an always-on machine
 
@@ -268,15 +156,17 @@ Every exit code has one meaning:
 | 0 | Clean: nothing to do. |
 | 1 | Broken: a contract or rule failed and a person or agent must act (lint errors, a mesh FAIL, `drift` or `patchday` BROKEN, a scene patch that no longer fits the game, a release whose lint failed, `grade --gate` with a blocker). |
 | 2 | Usage error: bad arguments, a missing file, a tool that is not there, a policy that does not read. |
-| 3 | Refused on purpose, nothing changed: an install with lint errors, a game seat or build lock someone else holds, a pak slot another mod owns, an uninstall of a file the ledger doesn't hold or whose bytes are no longer the ones Magician installed, a proof of nothing installed, an update that could not be fetched or verified, a dirty checkout; and `update --check` when the source could not be read ("could not check"). |
+| 3 | Refused on purpose, nothing changed: an install with lint errors, a game seat or build lock someone else holds, a pak slot another mod owns, an uninstall of a file the ledger doesn't hold or whose bytes are no longer the ones Magician installed, a proof of nothing installed, an update that could not be checked, fetched or verified, or whose checkout has local changes. |
 | 4 | Re-prove: it loads, but must be proven in game on this build (`check`, `drift`, `patchday`). |
 | 5 | An update is available (`update --check`, and nothing else). |
 
-The reason for 1, 2 and 3 follows `magician:` on stderr. `--help` (or `-h`) after any command prints its usage and does nothing else, `--version` names the toolchain and commit, and an option the command does not take is a usage error before anything runs, rather than something silently ignored: a typo, and just as much an option of another command (`install --dry-run` is refused, naming `sign` and `update`, which take it; `magician help <command>` lists exactly what a command takes). So is an option given without its value, a single-valued option given twice, and an option whose value would be the next option.
+The reason for 1, 2 and 3 follows `magician:` on stderr. `--help` (or `-h`) after any command prints its usage and does nothing else, and `--version` names the toolchain and commit. An option the command does not take is a usage error before anything runs, whether it is a typo or another command's option: `install --dry-run` is refused, naming `sign` and `update`, which take it. So is an option without its value, and a single-valued option given twice.
 
 `--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release`, `rules` and `update` prints one JSON document on stdout and no human text. Each starts with a `schema` string (`magician.check/1`, `magician.grade/3`, `magician.patchday/1`, ...) so a reader can tell what it holds. A command that stops (exit 1, 2 or 3 with a reason) prints the reason as that one document, `{"schema":"magician.error/1","command":...,"exit":2,"kind":"usage","error":...}`, so stdout always parses. Also machine-readable: `lint --json-out FILE`, `mesh --json-out FILE`, `grade --record-out FILE`, `paths` and `policy` (tab-separated), and `lint --findings-out FILE` (a lint run that `grade --findings` judges without linting again). Results are deterministic: `pack` writes byte-identical VPKs from identical input, lint findings come out in a fixed order, a grade record is byte-for-byte the same for the same paks, build, policy and toolchain, and the findings cache only ever returns what a fresh run would compute.
 
-For agents there is an MCP server, [mcp/](mcp/README.md): seventeen tools (`check`, `lint`, `mesh`, `grade`, `release`, `build`, `drift`, `patchday`, `policy`, `refs`, `ls`, `dump`, `cloth`, `verify`, `rules`, read-only `doctor` and `install_status`) that return JSON, the commands' own documents where they have one. Installing, uninstalling and launching the game are deliberately not among them; those stay CLI calls that something has to choose to make. An agent that drives the CLI itself can load the skill in [skills/using-magician/](skills/using-magician/SKILL.md): the loops, the safety rules and how to report, in the Agent Skills format. For mods that were made without Magician there is a second one, [skills/moving-to-magician/](skills/moving-to-magician/SKILL.md): point an agent at a pak, a folder of mods or the game's addons folder and it brings each one under Magician as the same bytes, gets its verdict, and says what still needs a person.
+For agents there is an MCP server, [mcp/](mcp/README.md): seventeen tools that return JSON, the commands' own documents where they have one. Installing, uninstalling and launching the game are deliberately not among them; those stay CLI calls that something has to choose to make.
+
+An agent that drives the CLI itself can load a skill, in the Agent Skills format. [using-magician](skills/using-magician/SKILL.md) has the loops, the safety rules and how to report. [moving-to-magician](skills/moving-to-magician/SKILL.md) is for mods made without Magician: point an agent at a pak, a folder of mods or the game's addons folder and it brings each one under Magician as the same bytes, gets its verdict, and says what still needs a person.
 
 What it leaves to the host:
 
@@ -292,7 +182,7 @@ A finding can be accepted only per site, in the addon's `magician.allow`, with a
 
 ## Grading
 
-`magician grade <pak>... --hero <hero>` (or `--mod <mod.toml>`, whose `[mod] hero` names the hero) grades every pak of one mod together, as the game loads them: where two paks ship a path, the lower pak number wins. A grade says what kind of mod it is and which of the hero's look, effects and sound it makes its own. It describes; it does not rank. The label is a short projection of the record behind it:
+`magician grade` in a mod's folder (or `magician grade <pak>... --hero <hero>` anywhere) grades every pak of one mod together, as the game loads them: where two paks ship a path, the lower pak number wins. A grade says what kind of mod it is and which of the hero's look, effects and sound it makes its own. It describes; it does not rank. The label is a short projection of the record behind it:
 
 ```
 Echo (look, effects, sound)              a new character, its look, effects and sound all its own
@@ -302,19 +192,13 @@ Variant (look) · broken                  Valve's mesh in new materials, with li
 not graded (HUD mod)                     no rubric for it, and it says so
 ```
 
-- **The kind** comes from identity: Echo (a new character), Costume (the same character, a new model), Variant (Valve's mesh kept, new materials), Kit (no model).
-- **The groups** are measured against the hero's footprint, every file the hero is made of, discovered from the game's own data (2,201 files for Lash on build 6864). **look** is the model, materials, UI art and showcase scenes; **effects** the ability VFX and animation; **sound** the kit sound, and the voice once the mod treats it (a skin that keeps Valve's voice still has its own sound; the facts line says `Valve's voice`). Across the board, a part that only some mods take on (a kit's UI art, a variant's effects, a character's voice) counts once the mod touches it. A group is named when the mod covers it, `some <group>` when it has begun it, and left out while it is still Valve's. Coverage is per ability and per moment, not per file. Below the label the report says what was counted, in the game's terms (`look     model, materials, UI art 11 of 13, scenes 1 of 3`).
-- **broken** is the flag `magician check` uses, by the same definition: lint errors that are not fair play. It never changes the description. Shipping a skeleton, graph or data file, or dropping a dependency of Valve's original, is a note in the report and the record.
-- **Compliance** is fair play: nothing in the label when it passes, `NSFR` (not safe for ranked) on a confirmed violation, `FP?` when a check that should have run could not (a light lint over a model, or M144). Unknown never becomes pass, and a violation never changes the description. Each fair-play rule is never allowable (a hidden cue, a smaller silhouette, M129's egregious hitbox overflow), advisory (reported, never a violation: M081, M130), or allowable within a limit (M140, accepted with a reason up to the M129 line); the record lists every allowance with its measured value and limit.
-- **Freshness** is `stale(<last proven build>)` when the paks graded are not proven on the build they are judged for, `unproven` when no proof holds them, nothing when current. It is asked of the bytes: the builds a recorded proof holds every graded pak on.
+- **The kind** is identity, decided from what is in the paks: Echo (a new character), Costume (the same character, a new model), Variant (Valve's mesh kept, new materials), Kit (no model). A new character takes two signals out of a replaced head, a new name, new portrait and card art, and a new voice, which counts for half and is declared in the `mod.toml` (`[identity] voice = "new"`), because bytes can't tell a new voice from a treatment of the old one. Maid Lash keeps Valve's head and is still Lash: a Costume.
+- **The groups** are measured against the hero's footprint, every file the hero is made of, discovered from the game's own data (2,201 files for Lash on build 6864). **look** is the model, materials, UI art and showcase scenes; **effects** the ability VFX and animation; **sound** the kit sound, and the voice once the mod treats it. A group is named when the mod covers it, `some <group>` when it has begun it, and left out while it is still Valve's. Coverage is per ability and per moment, not per file, and below the label the report says what was counted, in the game's terms (`look     model, materials, UI art 11 of 13, scenes 1 of 3`).
+- **The flags** never change the description. `broken` is lint errors that are not fair play, the same test `magician check` uses. `NSFR` (not safe for ranked) is a confirmed fair-play violation, and `FP?` a fair-play check that should have run and could not: unknown never becomes pass. A fair-play finding accepted at one site holds only within its rule's limit, and the record lists it with its measured value. `stale(<last proven build>)` and `unproven` say the paks graded are not proven on the build they are judged for, which is asked [of the bytes](#a-proof-belongs-to-bytes).
 
-On a terminal the flags are coloured, never instead of the words: `broken` red (and red means only that), `NSFR` pink, `FP?`, `stale(N)` and `unproven` orange, a fair-play pass green.
+The **release gate** is separate from the label: it decides whether automated packaging or publishing may go ahead. Its blockers are lint errors that are not fair play, files byte-identical to Valve's at the same path, not proven on the target build, and rights denied. Fair play and rights are lenient by default: NSFR, FP? and unreviewed rights are listed as gate warnings, and a policy turns each into a blocker with one switch (`[fair_play] enforce = true`, `[rights] enforce = true`). Rights are a person's call, never Magician's: `[rights] state = "cleared"` (or `"denied"`, default `"unreviewed"`) in the `mod.toml`. `grade` exits 0 whatever the grade; `--gate` makes it exit 1 when the gate has a blocker.
 
-Identity is decided by signals and stored in the record: a new character needs two of `head_replaced` (our head's vertices against Valve's), `renamed` (a new name in the mod's localisation, or a new name logo for a name that is not the hero's), `new_hero_art` (the portrait and card art) and a declared new voice, worth half a signal. A new character's skin pak reads `Echo (look, effects, sound)` alone and with its voice pak; alone, its sound line says `Valve's voice`; Maid Lash keeps Valve's head and is still Lash, `Costume (look, effects, sound)`, with its M140 allowance listed and fair play `pass`. A new voice is declared in the `mod.toml` (`[identity] voice = "new"`), because bytes can't tell a new voice from a treatment of the old one.
-
-The **release gate** is separate from the label: it decides whether automated packaging or publishing may go ahead. Its blockers are lint errors that are not fair play, files byte-identical to Valve's at the same path, not proven on the target build, and rights denied. Fair play and rights are lenient by default: NSFR, FP? and unreviewed rights are listed as gate warnings, and the label and record still say them. A policy enforces each with one switch (`[fair_play] enforce = true`, `[rights] enforce = true`), and then they block. Rights are a person's call, never Magician's: `[rights] state = "cleared"` (or `"denied"`, default `"unreviewed"`) in the `mod.toml`. `grade` exits 0 whatever the grade; `--gate` makes it exit 1 when the gate has a blocker.
-
-`--json` prints the record (`magician.grade/3`): the toolchain and commit, the build, a fingerprint of the baseline and of the policy, every pak's SHA-256, the kind, each group's state, coverage and what was counted, every criterion with its group, weight and measured coverage (enough for anyone to weigh them their own way), the notes, `broken`, the identity signals with what was measured for each, every fair-play check run or not run, violation, allowance and advisory, freshness, rights, the gate, and the next steps. Whoever reads it later can explain the grade from it alone. `grade` lints deep unless `--light` (fair play then reads `FP?` for a mod with a model). `magician rubric` prints the criteria, their groups, the weights and the lines that name a group in force; their single home is `crates/grade/src/rubric.rs`. There are rubrics for hero mods only: a map, HUD or music mod is `not graded`, and says so.
+`--json` prints the record (`magician.grade/3`): the toolchain and commit, the build, fingerprints of the baseline, the policy and every pak, each group and criterion with its measured coverage, the identity signals with what was measured for each, every fair-play check run or not run with its violations and allowances, freshness, rights, the gate, and the next steps. Whoever reads it later can explain the grade from it alone, or weigh the criteria their own way. `grade` lints deep unless `--light` (fair play then reads `FP?` for a mod with a model). `magician rubric` prints the criteria, their groups and the weights in force, and [docs/TDD.md](docs/TDD.md#grading) says how each part is decided. There are rubrics for hero mods only: a map, HUD or music mod is `not graded`, and says so.
 
 ## Policy
 
@@ -344,8 +228,6 @@ Compile-clean is not proof. A mod is done when it has been seen working in the g
 - [`cinema/`](cinema/README.md) is an optional, dev-only film kit for trailers and stills: a scene file becomes an animatic, then a frame-exact render from a SourceTV take of the retail game. Nothing else depends on it, and it is never installed during QA or play.
 
 A mod's scenarios, QA configs and scene patches live with the mod; this repository carries worked examples on a stock hero (Haze).
-
-Three full hero skins are made with this toolchain. One is public: [Maid Lash](https://woflo.dev/deadlock-skins/maid-lash/), built, graded, proven on every game build since its release and published through this loop. Two more are in production. [docs/SHOWCASE.md](docs/SHOWCASE.md) shows two of them with their real verdicts, grades and proofs.
 
 ### A proof belongs to bytes
 
@@ -386,11 +268,99 @@ magician scene install <patch dir> [--mod NAME] [--force]        compose, then i
 
 `install` goes through the same code as `magician install`: the seat check while the game runs, the ledger, the `gameinfo.gi` backup, and one slot per hero, so it will not overwrite another mod's scene without `--force`. Run `magician uninstall maps/ui/hero_prefabs/<hero>.vpk` to take it out.
 
-A release bundle carries the patch under `scene/<hero>/` with installers that need neither Magician nor Python on Windows (`install-scene.cmd` runs `install-scene.ps1`) and only Python 3 elsewhere (`install-scene.sh` runs `install-scene.py`). Both produce the same bytes as `magician scene install`. The patch format is documented at the top of `crates/magician/src/scene.rs`.
+Players don't need Magician for any of this. A release bundle carries the patch under `scene/<hero>/` with installers that need neither Magician nor Python on Windows (`install-scene.cmd` runs `install-scene.ps1`) and only Python 3 elsewhere (`install-scene.sh` runs `install-scene.py`). Both produce the same bytes as `magician scene install`. The patch format is documented at the top of `crates/magician/src/scene.rs`.
 
 ## Reading the game natively
 
 Everything Magician knows about a build it reads itself, with zero external crates: VPK read and write; the Source 2 resource block table and reference lists; binary KV3 (v4 and v5, LZ4 and zstd blocks) read and written; texture headers and pixels (BC7, DXT, ATI); compiled model meshes down to every triangle (meshoptimizer codecs v0 and v1), skeletons, hitboxes and the cloth FeModel. The decoders are checked against Source 2 Viewer's output: meshes through `mesh --glb`, cloth to within 4e-7, KV3 writes line for line. Valve's files themselves are never part of this repository, and nothing Magician ships contains them.
+
+## Setting up a machine
+
+### What each part needs
+
+| You want to | You need |
+|---|---|
+| Inspect a pak (`ls`, `refs`, `dump`, `kv`, `textures`, `verify`), prove an expression (`expr`) | nothing else |
+| Lint, mesh and cloth reports, `pack` (it lints what it packs), drift, `patchday`, `install`, `scene`, `new` | Deadlock installed |
+| `footprint`, `grade`, `index` | Deadlock and the [Source 2 Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat) CLI (21.1; flags change between versions, so pin it). The decompiled files are cached per build in the reference folder |
+| `build`, `release`, `sign` | Valve's CSDK 13, the community-distributed build that carries `resourcecompiler.exe` (setup notes in [docs/reference/engine.md](docs/reference/engine.md#the-compiler-csdk-13)); on Linux, Wine to run it |
+| `session`, `reprove` | Python 3.11 or newer, standard library only, and the desktop the game is shown on. On Linux that is an X display (XWayland under a Wayland desktop) with libX11 and libXtst (`libx11-6`, `libxtst6` on Debian and Ubuntu); `python ingame/gameos.py` says what this machine has, and a harness tool that lacks a piece names it before it takes the game seat or launches anything |
+| `bundle`, `source`, the MCP server | Python 3.8 or newer, standard library only; `bundle` and `source` use Pillow for preview images |
+| Offline visual QA (`qa/`, `harness/`) | Blender 5.2 and the Source 2 Viewer CLI; some scripts use Pillow, numpy and scipy |
+| The film kit (`cinema/`) | ffmpeg, a Python venv with Boon, and the CSDK; see its README |
+
+### Where it finds things
+
+Magician finds Deadlock through Steam's own library list. Everything it derives from a build (baselines, sidecars, indexes, in-game passes) goes to a reference folder. Each location is a flag, then an environment variable, then a line in a config file, then discovery:
+
+| Location | Flag | Variable | Config key | Otherwise |
+|---|---|---|---|---|
+| Deadlock's `game` folder | `--game` | `DEADLOCK_GAME` | `game` | found through Steam |
+| Reference folder | `--reference` | `MAGICIAN_REFERENCE` | `reference` | `magician/reference` in the data folder (below) |
+| Findings cache | `--no-cache` turns it off | `MAGICIAN_CACHE` | | the cache folder (below) |
+| Valve's CSDK | `--csdk` | `MAGICIAN_CSDK` | `csdk` | none: `build`, `release` and `sign` ask for it |
+| Wine and its prefix, for Valve's compiler on Linux | | `MAGICIAN_WINE`, `WINEPREFIX` | `wine`, `wine_prefix` | `wine` on PATH; `magician/wine` in the data folder |
+| Source 2 Viewer CLI | `--vrf` | `MAGICIAN_VRF` | `vrf` | `Source2Viewer-CLI` on PATH |
+| The mods `patchday` checks | `--mod` (each one) | `MAGICIAN_MODS` | `mods` | the nearest folder, from the working one upward, with mods one or two levels below it |
+| Policy ([above](#policy)) | `--policy` | `MAGICIAN_POLICY` | `policy` | the built-in defaults |
+| Game lock | | `MAGICIAN_GAME_LOCK` | `game_lock` | `<reference>/work/ingame-game.lock` |
+| Steam, for the in-game harness to launch the game | | `MAGICIAN_STEAM` | `steam` | Windows: the `SteamExe` Steam records; Linux: `steam` on PATH, else the Flatpak's |
+| The toolkit folder | | `MAGICIAN_HOME` | `home` | the folder above the program that holds `ingame/mod_session.py`, else the checkout it was built from |
+| Python | | `MAGICIAN_PYTHON` | `python` | `python` or `python3` on PATH (or `py -3` on Windows) |
+| Update source ([below](#staying-current)) | `--source` | `MAGICIAN_UPDATE_SOURCE` | `update_source` | the latest release of this build's repository |
+
+Each system's own folders are the defaults:
+
+| | Windows | Linux |
+|---|---|---|
+| Config file (`MAGICIAN_CONFIG` overrides) | `%APPDATA%\magician\config.txt` | `$XDG_CONFIG_HOME/magician/config.txt` (`~/.config/...`) |
+| Data folder (the reference folder lives in it) | `%LOCALAPPDATA%` | `$XDG_DATA_HOME` (`~/.local/share`) |
+| Cache folder | `%LOCALAPPDATA%\magician\cache` | `$XDG_CACHE_HOME/magician` (`~/.cache/magician`) |
+| Steam's library list | the registry's `SteamPath`, then Program Files | `~/.steam/steam`, `~/.local/share/Steam`, the Flatpak's and the Snap's |
+
+The config file is one `key = value` per line, written as the machine writes paths (on Linux, `game = /srv/steam/steamapps/common/Deadlock/game`):
+
+```
+# where Magician finds things on this machine
+game      = E:\Games\SteamLibrary\steamapps\common\Deadlock\game
+reference = E:\deadlock-reference
+csdk      = E:\Tools\Reduced_CSDK_13
+vrf       = E:\Tools\Source2Viewer-21.1\cli\Source2Viewer-CLI.exe
+mods      = E:\mods
+```
+
+`magician paths` prints every location and where the answer came from, except Steam, which only the in-game harness uses (`python ingame/gameos.py` prints it). The Python tools around the game read the same file through `ingame/gamepaths.py`, so the harness and the CLI always agree on where the game and the game lock are.
+
+The first command run on a new build captures that build's baseline into the reference folder, as `magician baseline` would, so later drift checks have it. It does that only for this machine's own game (found through Steam or named in the config file), never for one a flag or `DEADLOCK_GAME` points at, which is often a drill's copy.
+
+### Platforms
+
+Magician is the same program on Windows and Linux. Deadlock is a Windows game that Linux runs through Proton, and a mod is the same thing on both: a VPK in the game's `citadel/addons` and one search-path line in `gameinfo.gi`. So everything that reads or writes files behaves the same, and the systems differ only where the system itself is asked something: where things live, whether the game is running, and how the in-game harness types and looks.
+
+| | Windows | Linux (Ubuntu 24.04) |
+|---|---|---|
+| The build and its tests | proven | proven |
+| Reading the game: `doctor`, `paths`, `check`, `lint`, `drift`, `patchday`, `grade`, `footprint`, `index`, the MCP server | proven | proven against a real install. Maid Lash's grade record is byte for byte the Windows one |
+| Writing: `install`, `uninstall`, `prove`, `scene install`, `update` | proven | proven on scratch game folders and toolkits. The game is found in Steam's native, Flatpak and Snap homes |
+| `bundle`, `source` | proven | proven: a bundle of a real release is byte for byte the Windows one, preview images aside (the same pixels, encoded by that system's Pillow) |
+| `build`, `release` | proven | proven under Wine, which runs Valve's compiler: Maid Lash's addon compiles to the same bytes as on Windows in 550 of its 551 files, and the one left differs between any two compiles |
+| The in-game harness and the film kit: `session`, `reprove`, `cinema/` | proven | built on X11 and proven against a test window, under Xvfb and XWayland; not yet run with the game |
+
+What Linux has not met is the game itself. The seat check has read stand-in processes, not a real one under Proton; the harness has typed into and captured a test window, not the game's; the launch through `steam -applaunch` has not run. On a Linux desktop or a Steam Deck with the game installed, `python ingame/prove_harness.py` runs the whole harness once (launch, seat, console, capture, stop) and writes a report.
+
+### Staying current
+
+Magician never updates itself and never looks for an update. It touches the network only when you run `magician update` or pass `--updates` to `doctor`: a grade is worth something only while the judge stays the same, and Magician writes into a game install.
+
+```
+magician update --check            # exit 0 current or ahead, 5 an update is available, 3 could not check
+magician update --dry-run          # what applying it would do, changing nothing
+magician update                    # apply it
+```
+
+`--check` also says whether updating would change judgement (the lint rules, the grading rubric, the built-in policy), so you know to re-run `lint` and `grade` on your mods afterwards. `update` acts on what the folder is. A release install checks the archive against the release's `SHA256SUMS`, swaps the files in and keeps the old ones until the next update; a step that fails puts every file back (exit 1). A git checkout fast-forwards its branch and rebuilds, and refuses local changes. Either is refused (exit 3, nothing changed) while a game session holds the seat.
+
+The update source is the repository's latest release unless you name another: an https URL, or a folder holding a release's files, which is how a machine with no internet, or a fleet, updates from one copy. The checksum catches a damaged download; it is not a signature, so the trust is the address, or the folder, you named. Updating replaces the toolkit's own files, so keep your scenarios and mods outside it.
 
 ## Commands
 
@@ -406,11 +376,11 @@ Everything Magician knows about a build it reads itself, with zero external crat
 | `magician reprove [--mod FOLDER]... [--plan]` / `reprove accept <pass>` | Patch day in game: a pass for every mod that needs one and one report; `accept` records a pass that was looked at |
 | `magician session up \| run \| film \| down \| all \| qa` | One in-game session for a mod: seat, pak, launch, scenarios, takes, stop, contact sheets |
 | `magician prove <mod.toml> [--evidence DIR] [--build BUILD] [--date DATE] [--pak FILE]...` | Record a proof of the mod's installed bytes (or the files `--pak` names) on a build in its `proofs.tsv`; refused when nothing is installed for it (exit 3) |
-| `magician lint <mod.vpk>` | All rules; exit 1 on errors |
+| `magician lint <mod.vpk>` / `rules` | Every rule against the installed build (exit 1 on errors); the catalogue, with what each rule means in game |
 | `magician mesh <vpk> <model>` / `cloth <vpk> <model>` | One compiled model's mesh verdict, or its cloth, beside Valve's model at the same path |
 | `magician grade <pak>... --hero HERO \| --mod mod.toml` / `rubric` / `footprint HERO` | Grade a hero mod (what it makes its own, identity, fair play, freshness, release gate); the rubric in force; everything a hero is made of |
 | `magician policy` | Every judgement value in force, where it came from, and its fingerprint |
-| `magician build <addon> <out.vpk>` | Compile an addon's real sources with Valve's resourcecompiler (on Windows), pack deterministically, lint |
+| `magician build <addon> <out.vpk>` | Compile an addon's real sources with Valve's resourcecompiler, pack deterministically, lint |
 | `magician release <addon> --hero HERO [--mod mod.toml]` | One VPK from every department, linted and graded, with a release report and the grade record |
 | `magician install <pak>` / `install --status` / `uninstall <pak> \| --mod NAME \| --all` | The only write into the game install: lint first, back up `gameinfo.gi`, ledger every file (under a lock, written atomically, following a pak a mod manager renamed by its crc), roll back from the ledger, never removing bytes it did not install |
 | `magician scene make \| check \| compose \| install` | Ship a hero-page scene as a patch of only our files and build it from the player's own game |
@@ -432,11 +402,12 @@ qa/       offline visual QA and detectors (Blender, glb)
 harness/  Blender render scripts: x-ray, lookdev, contact sheets
 cinema/   the optional film kit for trailers and stills
 tools/    the release script, release bundles, the mod-source writer, player scene installers, UI scene re-dressing, hero rips, the Source 2 Viewer MCP launcher
-docs/     design, status, the patch-day runbook, engine and mod-source reference
+docs/     design, status, the showcase, the patch-day runbook, engine and mod-source reference
 ```
 
 ## More
 
+- [docs/SHOWCASE.md](docs/SHOWCASE.md): two real skins, and what Magician says about each.
 - [docs/PDD.md](docs/PDD.md): what Magician is for, the taste that follows from it, and the name.
 - [docs/TDD.md](docs/TDD.md): how it is built.
 - [docs/PATCH-DAY.md](docs/PATCH-DAY.md): the patch-day runbook.
