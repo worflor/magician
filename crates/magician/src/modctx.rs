@@ -325,9 +325,29 @@ pub fn fill(args: &[String]) -> Result<Vec<Vec<String>>, Stop> {
                 a.push(s(&p.path));
             }
             if !has(&a, "--from") {
-                let last = ctx.proven().last().cloned().ok_or_else(|| Stop::Usage(format!("{} has no proven build to compare from ([proven] builds is empty); pass --from BUILD", ctx.label())))?;
-                errln!("magician:   from build {last} (its last proven build, [proven] builds)");
-                a.extend(["--from".into(), last]);
+                // From the last build these bytes are proven on (the proof ledger), never a build [proven] claims for
+                // other bytes; with none, the newest baseline older than the installed build, as patchday does.
+                let bytes = crate::proofs::mod_bytes(&ctx, game.as_deref()).map_err(Stop::Usage)?;
+                let ledger = crate::proofs::Ledger::for_toml(&ctx.toml).map_err(Stop::Usage)?;
+                let b = crate::proofs::Binding::of(&ledger, &ctx.proven(), &crate::proofs::shas(&bytes));
+                let installed = game.as_deref().and_then(|g| crate::game_build(g).ok());
+                let note = b.unbound_note();
+                let from = match (b.last(), &installed) {
+                    (Some(last), _) => {
+                        errln!("magician:   from build {last} (the last build these paks are proven on, {})", crate::proofs::FILE);
+                        last.clone()
+                    }
+                    (None, Some(i)) => {
+                        let older = crate::patchday::default_from(&crate::patchday::builds_on_record(&crate::reference_root()), i);
+                        if older == *i {
+                            return Err(Stop::Usage(format!("{}: these paks are proven on no build{} and no baseline older than {i} is on record; pass --from BUILD", ctx.label(), if note.is_empty() { String::new() } else { format!(" ({note})") })));
+                        }
+                        errln!("magician:   from build {older} (these paks are proven on no build{}; the newest baseline older than {i})", if note.is_empty() { String::new() } else { format!(": {note}") });
+                        older
+                    }
+                    (None, None) => return Err(Stop::Usage(format!("{}: these paks are proven on no build and there is no installed game to compare with; pass --from BUILD", ctx.label()))),
+                };
+                a.extend(["--from".into(), from]);
             }
             Ok(vec![a])
         }

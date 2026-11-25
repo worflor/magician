@@ -8,7 +8,7 @@ For reading code and rules when a finding needs explaining, or when you are aske
 | `crates/magician/src/cli.rs` | `--help`, `--version`, option checking and the exit codes |
 | `crates/magician/src/paths.rs` | How the game, reference folder, CSDK, viewer, game lock and policy file are found |
 | `crates/magician/src/install.rs` | Install, uninstall, the ledger, slots, the `gameinfo.gi` backup, the seat check |
-| `crates/magician/src/patchday.rs`, `patchcmd.rs` | Baselines as eras, rig sidecars, drift verdicts, `patchday`, `prove`, mod discovery |
+| `crates/magician/src/patchday.rs`, `patchcmd.rs`, `proofs.rs` | Baselines as eras, rig sidecars, drift verdicts, `patchday`, `prove`, mod discovery; the proof ledger (`proofs.tsv`: which bytes were proven on which build) |
 | `crates/magician/src/scene.rs` | Scene patches; the patch format is documented at the top |
 | `crates/magician/src/build.rs`, `lock.rs` | Compiling with resourcecompiler, packing, the per-addon build lock |
 | `crates/lint/src/lib.rs` | The rule catalogue (`RULES`: code, name, severity, in-game consequence) and the light rules |
@@ -47,7 +47,8 @@ model    = "models/heroes_wip/lash/lash.vmdl"        # must still exist in a new
 skeleton = "models/heroes_wip/lash/lash.vnmskel"
 
 [proven]
-builds = [6864]                                      # written by `magician prove`, never by hand
+builds = [6864]                                      # the summary `magician prove` keeps, never by hand; the proofs
+                                                     # of which bytes were seen on which build are in proofs.tsv
 
 [identity]
 voice = "new"                                        # a new voice identity, declared; a treatment of the lines is not one

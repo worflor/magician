@@ -59,6 +59,7 @@ mod patchcmd;
 mod patchday;
 mod paths;
 mod progress;
+mod proofs;
 mod scene;
 mod style;
 
@@ -115,7 +116,7 @@ Every command:
                 [--addon-root DIR]... [--scene-root DIR]... [--gate] [--json] [--record-out FILE]
                                                 grade a hero mod (every pak it ships, together; the lower pak number wins
                                                 a shared path): depth (S-F within its archetype), identity, fair play
-                                                (NSFR, FP?), freshness (stale(N) against [proven] builds), rights and
+                                                (NSFR, FP?), freshness (stale(N): the builds a proof holds these paks on), rights and
                                                 the release gate, as a label (`S Echo · stale(6864)`) and, with --json,
                                                 the record (magician.grade/2; --record-out writes it to a file too);
                                                 lints deep unless --light, or judges a lint run written by
@@ -177,10 +178,19 @@ Every command:
   magician patchday [--from <build>] [--capture] [--mod <mod.toml>]... [--json]
                                                 the patch-day check: baseline for the installed build (--capture writes it),
                                                 install state, every installed pak's drift grouped by mod and compared from
-                                                that mod's last proven build (mod.toml [proven] builds; owners it installs
+                                                the last build a proof holds its installed bytes on (proofs.tsv; owners it installs
                                                 under other names in [mod] owners = [...]), `proven on N of M`; exit 1
                                                 broken, 4 re-prove, 0 clear
-  magician prove <mod.toml> [--build <build>]   record a build in the mod's [proven] builds (after the in-game pass was looked at)
+  magician prove <mod.toml> [--evidence DIR] [--build <build>] [--date YYYY-MM-DD] [--pak FILE]... [--json]
+                                                after the in-game pass was looked at: record a proof of the mod's bytes in
+                                                proofs.tsv beside the mod.toml (the build, the date, every file the install
+                                                ledger holds for its owners with crc and sha256, or the files --pak names,
+                                                and the pass folder with its index.md's sha256), and the build in
+                                                [proven] builds; refused when nothing is installed for it or what is
+                                                installed is not what the ledger installed. Proven anywhere means a proof
+                                                holds the bytes judged: a rebuilt pak is unproven, and a build [proven]
+                                                lists without one counts for nothing (said as \"claimed for other bytes or
+                                                never recorded\")
   magician paths [--mod mod.toml]               where the game, reference folder, CSDK, Source 2 Viewer CLI, game lock,
                                                 cache and config file resolved to, and why (tab-separated); for the mod
                                                 (--mod, or the one of this folder) its hero, paks, addon, allowance files
@@ -1401,6 +1411,19 @@ pub(crate) fn grade_run(args: &[String]) -> Result<GradeOut, Stop> {
         orphans: lf.orphans,
         material_slots,
     };
+    // Freshness is asked of these paks' bytes: the builds a recorded proof holds every one of them on (proofs.rs).
+    let freshness = match &toml_path {
+        Some(p) => {
+            let ledger = proofs::Ledger::for_toml(p)?;
+            for problem in &ledger.problems {
+                errln!("magician: note: {}: {problem} (the line counts for nothing)", ledger.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default());
+            }
+            let shas: Vec<String> = pak_records.iter().map(|p| p.sha256.clone()).collect();
+            let b = proofs::Binding::of(&ledger, &grade::manifest::proven(t), &shas);
+            grade::record::Freshness::bound(&b.bound, &b.unbound(), &target)
+        }
+        None => grade::record::Freshness::new(&[], &target),
+    };
     let mut evidence: Vec<String> = grade::manifest::list(t, "proven", "evidence");
     evidence.extend(scene_maps.iter().map(|s| format!("scene {s}")));
     let record = grade::record::build(grade::record::Inputs {
@@ -1420,7 +1443,7 @@ pub(crate) fn grade_run(args: &[String]) -> Result<GradeOut, Stop> {
         identity,
         valve_files,
         shadowed,
-        freshness: grade::record::Freshness::new(&grade::manifest::proven(t), &target),
+        freshness,
         rights,
         rights_notes: grade::manifest::string(t, "rights", "notes").or_else(|| grade::manifest::string(t, "rights", "policy")).unwrap_or_default(),
         allowance_files: allow_names,
@@ -1923,6 +1946,30 @@ fn cmd_release(args: &[String]) -> R {
     for l in grade_out.lines() {
         line(l.to_string());
     }
+    // A proof belongs to bytes: a new pak inherits none from the one it replaces. Only the same bytes again (the pack
+    // is deterministic) keep theirs.
+    line(String::new());
+    line("## Proof".into());
+    let proof_line = match flag(args, "--mod") {
+        None => "no mod.toml (--mod): no proof ledger read; a pak is proven only by `magician prove` after its in-game pass".to_string(),
+        Some(m) => {
+            let toml = PathBuf::from(&m);
+            let ledger = proofs::Ledger::for_toml(&toml)?;
+            let claimed = std::fs::read_to_string(&toml).map(|t| grade::manifest::proven(&t)).unwrap_or_default();
+            let sha = grade::sha256::file(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+            let b = proofs::Binding::of(&ledger, &claimed, std::slice::from_ref(&sha));
+            let note = b.unbound_note();
+            if b.bound.is_empty() {
+                format!(
+                    "these bytes (sha256 {sha}) are proven on no build: no proof is carried over from an earlier pak{}. Install it, run its in-game pass, then `magician prove --evidence <the pass folder>`",
+                    if note.is_empty() { String::new() } else { format!(" ([proven] builds {note})") }
+                )
+            } else {
+                format!("these bytes (sha256 {sha}) are the ones already proven on {}: the same pak again, so its proofs hold", b.bound_text())
+            }
+        }
+    };
+    line(proof_line);
     let rp = out.with_file_name("release-report.txt");
     std::fs::write(&rp, &report).map_err(|e| e.to_string())?;
     say!("report -> {}", rp.display());
@@ -2092,7 +2139,9 @@ fn install_paths(args: &[String]) -> Result<install::Paths, String> {
     Ok(install::Paths { citadel: game_dir(args)?.join("citadel") })
 }
 
-/// Refuse to swap installed paks under a running game that another pipeline (or a player) is using.
+/// Refuse to swap installed paks under a running game that another pipeline (or a player) is using. The game that
+/// matters is the one in the folder being changed: a running game elsewhere (the real one, while a test changes a
+/// scratch copy) does not block it; a running game whose executable can't be placed does.
 fn game_seat(args: &[String]) -> Result<(), Stop> {
     if args.iter().any(|a| a == "--ignore-game") {
         return Ok(());
@@ -2101,6 +2150,10 @@ fn game_seat(args: &[String]) -> Result<(), Stop> {
     let lock = std::fs::read_to_string(&lock_path).ok();
     let me = flag(args, "--holder").or_else(|| std::env::var("MAGICIAN_GAME_HOLDER").ok());
     match install::game_running() {
+        Ok(true) => {
+            let here = game_dir(args).map(|g| install::runs_from(&g, &install::running_game_exes())).unwrap_or(true);
+            install::seat_check(here, lock.as_deref(), me.as_deref())
+        }
         Ok(running) => install::seat_check(running, lock.as_deref(), me.as_deref()),
         Err(why) => install::seat_check_unknown(&why, lock.as_deref(), me.as_deref()),
     }

@@ -45,8 +45,9 @@ magician install                   # lints first, backs up gameinfo.gi, never un
 ```
 my-lash-skin: RE-PROVE  B Costume · NSFR · unproven  (build 6865)
   lint   warn   0 error(s), 365 warning(s), 0 allowed (deep; fair play fail)
-  grade  warn   B Costume · NSFR · unproven for Lash; release gate blocked: freshness: not proven on 6865 (no proven build on record)
-  drift  warn   proven on no build yet: nothing to compare from
+  grade  warn   B Costume · NSFR · unproven for Lash; release gate blocked: freshness: not proven on 6865 (no proven build on record for these bytes)
+  proof  warn   these bytes proven on none
+  drift  warn   these bytes are proven on no build yet: nothing to compare from
 next: the in-game pass on build 6865 (python -I ingame\mod_session.py qa --mod . --out <dir>), look at the frames, then `magician prove`
 ```
 
@@ -63,10 +64,30 @@ paks  = ["pak10_dir.vpk"]           # optional: else the paks beside it, else th
 addon = "maid_lash"                 # optional: the CSDK addon `release` builds (default: the slug with _)
 owners = ["lash_showcase"]          # other ledger names its paks or scenes install under
 [proven]
-builds = [6864]                     # written by `magician prove`, after the in-game pass was looked at
+builds = [6864]                     # the summary `magician prove` keeps; the proofs themselves are in proofs.tsv
 [rights]
 state = "cleared"                   # unreviewed | cleared | denied: a person's call
 ```
+
+### A proof belongs to bytes
+
+`magician prove` is the step after an in-game pass was looked at. It records, in `proofs.tsv` beside the `mod.toml`, the game build, the date, every file the install ledger holds for the mod (owner, file name, crc32, sha256) and the folder the pass was written into (`--evidence DIR`, with the sha256 of its `index.md`), and adds the build to `[proven] builds`. Everything that asks whether a mod is proven on a build (`check`, `grade`'s freshness and release gate, `patchday`, `drift`, `doctor`, the mod-source page) asks it of the bytes it is judging: a recorded proof of that build that holds every one of them. So a rebuilt pak starts unproven, whatever `[proven] builds` lists, and a build listed there with no proof for these bytes is shown as "claimed for other bytes or never recorded" and counts for nothing; the list itself is never rewritten or trimmed. `prove` refuses (exit 3, nothing written) when nothing is installed for the mod, or what is installed is not the bytes the install ledger put there.
+
+```
+magician prove --evidence <pass folder>                                    in the mod's folder, after the pass was looked at
+magician prove mod.toml --build 6865 --date 2026-11-24 --evidence <file>  a pass on an earlier build, the same files installed
+magician prove mod.toml --build 6864 --pak <release copy>\pak10_dir.vpk    bytes that are no longer installed
+```
+
+The ledger is plain text, one row per file per proof, sorted, and deterministic:
+
+```
+build  date        proof             owner          file                           crc32     sha256      evidence                         evidence_sha256
+6866   2026-11-24  03abbf6e4c9a86a3  lash_showcase  maps/ui/hero_prefabs/lash.vpk  d287ca64  81f9345a...  ...\work\patchday-6866\maid-lash  c0314ba1...
+6866   2026-11-24  03abbf6e4c9a86a3  maid_lash      pak10_dir.vpk                  24994007  8fdb0ea4...  ...\work\patchday-6866\maid-lash  c0314ba1...
+```
+
+A row stands on its own, so two machines' copies merge as a union of their lines (`merge=union` in git does it; so does keeping both sides of a conflict). The `proof` id is a hash of the build and the proof's (owner, sha256) pairs: the same bytes proven on one build from two machines are one proof with two dates, and a proof that lost a row in a merge no longer adds up to its id and counts for nothing. A line that does not read is reported, never dropped, and `prove` will not rewrite the file until it is fixed.
 
 The first run on a new build captures that build's baseline (every path and CRC, plus every skeleton's bones) into the reference folder, as `magician baseline` would, so later drift checks have it. It does that only for this machine's own game (found through Steam or named in the config file), never for one a flag or `DEADLOCK_GAME` points at, which is often a drill's copy; `magician paths` prints every location and where the answer came from.
 
@@ -120,7 +141,7 @@ The case Magician is shaped around: a spare Windows box that is on anyway, with 
    magician patchday --capture
    ```
 
-   It snapshots the new build (every path and CRC, plus every skeleton's bones and every anim graph's parameters), checks that the game still mounts the addons folder, works out what changed under every installed pak since the build its mod was last proven on (the `mod.toml`'s `[proven] builds`), checks each mod's `mod.toml` targets, and ends with a verdict. On the 6861 to 6864 patch, with both skins last proven on 6861, it reads:
+   It snapshots the new build (every path and CRC, plus every skeleton's bones and every anim graph's parameters), checks that the game still mounts the addons folder, works out what changed under every installed pak since the last build a proof holds its bytes on (the mod's `proofs.tsv`), checks each mod's `mod.toml` targets, and ends with a verdict. On the 6861 to 6864 patch, with both skins last proven on 6861, it reads:
 
    ```
    [3] drift: each mod from its last proven build -> installed 6864
@@ -135,7 +156,7 @@ The case Magician is shaped around: a spare Windows box that is on anyway, with 
 
    and exits 4: everything loads, something must be re-proven in game. When Valve renames a bone a skin depends on, the same check says `bone 'spine_1' is now 'spine_1_renamed'`, prints `BROKEN`, and exits 1. A clean patch, or one where every mod is already proven on the installed build, exits 0. `--json` prints the same report as one document.
 3. Only now does anything wake up an agent, and only for the mods that need one. It reads the full list with `magician drift <pak> --from <old build>`, fixes the sources, rebuilds with `magician release`, swaps the pak with `magician install`, takes it out with `magician uninstall --mod NAME` (or `--all`) if it can't fix it yet, and drives the in-game harness to film the result.
-4. Once the frames have been looked at, `magician prove <mod.toml>` records the new build in the mod's `[proven] builds`. From then on `patchday` reports that mod current (`ok (proven on 6864)`) and `proven on N of M builds`.
+4. Once the frames have been looked at, `magician prove <mod.toml> --evidence <pass folder>` records a proof of the installed bytes on the new build (and the build in `[proven] builds`). From then on `patchday` reports that mod current (`ok (proven on 6864)`) and `its installed bytes proven on N of M builds`; a pak rebuilt later is unproven again until its own pass.
 
 What reaches your phone is short and specific: *new Deadlock build; 13 mods checked; 12 load and only need their motion re-filmed; one is broken because Valve renamed a bone in Lash's skeleton.*
 
@@ -186,7 +207,7 @@ Three axes that never touch each other:
 
 - **Depth** is the letter, S to F: how completely the mod fulfils its archetype. It means completeness, not taste: S is "it did it all", never "it looks great", and letters compare within an archetype, never across. A character (Echo, Echolite, Costume) is judged on nine weighted criteria against the hero's footprint, every file the hero is made of, discovered from the game's own data (2,201 files for Lash): hero model, materials, ability VFX, kit sound, animation, UI art, showcase scenes, voice and craft. A variant (Valve's mesh, new materials) is judged on every visible material slot of the hero; a kit (no model) on the departments it touches, at least two of VFX, sound, UI and voice, each complete per ability, weapon and movement before it can be S. Caps keep it honest about the mod working: shipping a skeleton, graph or data file caps it at D, lint errors that are not fair play at C, dropped dependencies at B.
 - **Compliance** is fair play: nothing in the label when it passes, `NSFR` (not safe for ranked) on a confirmed violation, `FP?` when a check that should have run could not (a light lint over a model, or M144). Unknown never becomes pass, and a violation never lowers the letter. Each fair-play rule is never allowable (a hidden cue, a smaller silhouette, M129's egregious hitbox overflow), advisory (reported, never a violation: M081, M130), or allowable within a limit (M140, accepted with a reason up to the M129 line); the record lists every allowance with its measured value and limit.
-- **Freshness** is `stale(<last proven build>)` when the mod is not proven on the build it is judged for, `unproven` when no build is on record, nothing when current.
+- **Freshness** is `stale(<last proven build>)` when the paks graded are not proven on the build they are judged for, `unproven` when no proof holds them, nothing when current. It is asked of the bytes: the builds a recorded proof (`proofs.tsv`) holds every graded pak on; builds `[proven] builds` claims for other bytes are listed in the record (`unbound`) and count for nothing.
 
 Identity is decided by signals and stored in the record: a new character needs two of `head_replaced` (our head's vertices against Valve's), `renamed` (a new name in the mod's localisation, or a new name logo for a name that is not the hero's), `new_hero_art` (the portrait and card art) and a declared new voice, worth half a signal. A new character with all but the voice grades `S Echo` with its voice pak (`A Echolite` from the skin pak alone); Maid Lash keeps Valve's head and is still Lash, `S Costume`, with its M140 allowance listed and fair play `pass`.
 
@@ -258,7 +279,7 @@ Everything Magician knows about a build it reads itself, with zero external crat
 | `magician patchday [--capture] [--from BUILD] [--mod mod.toml]...` | The patch-day check: baseline, install state, each mod's drift from its last proven build, `proven on N of M`, a verdict (exit 1 broken, 4 re-prove) |
 | `magician baseline` | Snapshot the installed build to `<reference>\<build>\baseline.tsv`, with `rig.tsv` beside it |
 | `magician drift <mod.vpk>... --from BUILD [--to BUILD]` | What a patch changed under a mod, down to bones and anim graph parameters (exit 1 broken, 4 re-prove) |
-| `magician prove <mod.toml> [--build BUILD]` | Record a build in the mod's `[proven] builds` |
+| `magician prove <mod.toml> [--evidence DIR] [--build BUILD] [--date DATE] [--pak FILE]...` | Record a proof of the mod's installed bytes (or the files `--pak` names) on a build in its `proofs.tsv`, and the build in `[proven] builds`; refused when nothing is installed for it (exit 3) |
 | `magician lint <mod.vpk>` | All rules; exit 1 on errors |
 | `magician mesh <vpk> <model>` / `cloth <vpk> <model>` | One compiled model's mesh verdict, or its cloth, beside Valve's model at the same path |
 | `magician grade <pak>... --hero HERO \| --mod mod.toml` / `rubric` / `footprint HERO` | Grade a hero mod (depth, identity, fair play, freshness, release gate); the rubric in force; everything a hero is made of |

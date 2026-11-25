@@ -44,7 +44,8 @@ crates/magician   the CLI: main.rs, cli.rs (--help, --version, options, exit cod
                   folder, and filling a bare verb in from it), heroes.rs (the game's hero table), checkcmd.rs, doctor.rs,
                   initcmd.rs, out.rs (every write to stdout and stderr), style.rs, progress.rs, build.rs, lock.rs (per-addon
                   build lock), install.rs (slots, ledger, scene route, seat check), scene.rs (scene patches), patchday.rs and
-                  patchcmd.rs (eras, rig sidecar, drift verdicts, prove), gamefiles.rs, meshcmd.rs, clothcmd.rs, markcmd.rs,
+                  patchcmd.rs (eras, rig sidecar, drift verdicts, prove), proofs.rs (the proof ledger: which
+                  bytes were proven on which build, and the one "is it proven here" question), gamefiles.rs, meshcmd.rs, clothcmd.rs, markcmd.rs,
                   jsonout.rs
 mcp/              MCP server: the CLI as JSON tools for agents, Python stdlib only; no install or launch tool
 skills/           using-magician: the Agent Skill for driving the CLI on a mod

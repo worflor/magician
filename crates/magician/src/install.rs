@@ -649,6 +649,42 @@ pub fn game_running() -> Result<bool, String> {
     Err("no process list Magician can read on this system".into())
 }
 
+/// Whether a running game is the one in `game` (the `game` folder an install changes): one of `exes`, the running
+/// games' executables, lies under it. An executable whose path could not be read counts as this game's: a running
+/// game that can't be placed is not assumed to be somewhere else. No running game is never this one.
+pub fn runs_from(game: &Path, exes: &[Option<PathBuf>]) -> bool {
+    let norm = |p: &Path| {
+        let p = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        p.to_string_lossy().replace('/', "\\").trim_start_matches(r"\\?\").trim_end_matches('\\').to_ascii_lowercase()
+    };
+    let root = norm(game);
+    exes.iter().any(|e| match e {
+        None => true,
+        Some(x) => {
+            let x = norm(x);
+            x.starts_with(&format!("{root}\\"))
+        }
+    })
+}
+
+/// The executables of the running games (`deadlock.exe`), each `None` when its path can't be read (another user's or
+/// an elevated process). Windows only; elsewhere the path is not read and every running game counts as unplaced.
+pub fn running_game_exes() -> Vec<Option<PathBuf>> {
+    if !cfg!(windows) {
+        return vec![None];
+    }
+    let o = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", "Get-CimInstance Win32_Process -Filter \"Name='deadlock.exe'\" | ForEach-Object { if ($_.ExecutablePath) { $_.ExecutablePath } else { '?' } }"])
+        .output();
+    match o {
+        Ok(o) if o.status.success() => {
+            let v: Vec<Option<PathBuf>> = String::from_utf8_lossy(&o.stdout).lines().map(str::trim).filter(|l| !l.is_empty()).map(|l| (l != "?").then(|| PathBuf::from(l))).collect();
+            if v.is_empty() { vec![None] } else { v }
+        }
+        _ => vec![None],
+    }
+}
+
 /// A process is the game when its name, or its program in its command line, is `deadlock.exe` (Windows, or Proton) or
 /// `project8`. `cmdline` is `/proc/<pid>/cmdline`: arguments separated by NULs; only the program (the first one, or a
 /// Wine loader's second) counts, so an editor with `deadlock.exe` in an argument is not the game.
@@ -675,6 +711,19 @@ mod tests {
         assert!(e.contains("can't tell whether Deadlock is running (tasklist did not run)") && e.contains("--ignore-game"), "{e}");
         assert!(seat_check_unknown("x", Some(lock), Some("other")).is_err());
         assert!(seat_check_unknown("x", Some(lock), Some("lash-fix")).is_ok());
+    }
+
+    #[test]
+    fn a_running_game_blocks_only_the_install_it_runs_from() {
+        let real = Path::new(r"D:\SteamLibrary\steamapps\common\Deadlock\game");
+        let exe = Some(PathBuf::from(r"D:\SteamLibrary\steamapps\common\Deadlock\game\bin\win64\deadlock.exe"));
+        assert!(runs_from(real, std::slice::from_ref(&exe)), "the real install, under the running game");
+        assert!(runs_from(Path::new(r"d:/steamlibrary/steamapps/common/deadlock/game/"), std::slice::from_ref(&exe)), "case and separators do not matter");
+        let scratch = Path::new(r"C:\Temp\magician-test\game");
+        assert!(!runs_from(scratch, std::slice::from_ref(&exe)), "a scratch game folder is not the running game's");
+        assert!(!runs_from(Path::new(r"D:\SteamLibrary\steamapps\common\Deadlock\gam"), std::slice::from_ref(&exe)), "a prefix of a folder name is not the folder");
+        assert!(runs_from(scratch, &[exe.clone(), None]), "a game whose path can't be read counts as this one");
+        assert!(!runs_from(scratch, &[]), "no game running");
     }
 
     #[test]

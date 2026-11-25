@@ -60,7 +60,7 @@ Give every pak of the mod at once (a skin pak and its voice pak grade as one; al
 - the letter (S to F) is depth: how completely the mod fulfils its archetype, never whether the art is good. Don't present it as a quality verdict;
 - the word is identity: Echo (a new character at S), Echolite (a new character below S), Costume (the same character), Variant (Valve's mesh, new materials), Kit (no model);
 - `NSFR` is a confirmed fair-play violation, `FP?` a fair-play check that could not run (a `--light` lint over a model reads `FP?`: grade lints deep by default), and neither ever lowers the letter;
-- `stale(N)` means not proven on this build, last proven on N; `unproven`, no build on record.
+- `stale(N)` means these paks are not proven on this build, last proven on N; `unproven`, no proof holds these bytes (a rebuilt pak, whatever `[proven] builds` lists; the record's `freshness.unbound` names the builds claimed for other bytes).
 
 In the record (`--json`, schema `magician.grade/2`) the useful parts are `release_gate.blockers` (what stops publishing: lint errors that are not fair play, Valve's own files, not proven, rights denied; and fair play unknown or NSFR, and unreviewed rights, when the policy enforces them; otherwise those are in `release_gate.warnings`), `allowance_files` (which `magician.allow` the grade read, or that none was found: an unexplained NSFR is often a missing one), `fair_play.violations` and `fair_play.allowances` (each with its measured value and limit), `identity.evidence` and `next_steps` (they name files). `rights: unreviewed` is a person's call: never set `[rights] state` yourself. `--gate` exits 1 when the gate blocks.
 
@@ -163,4 +163,4 @@ powershell -ExecutionPolicy Bypass -File ingame\stop_game.ps1          gives the
 - Install before launching, never during a session you don't hold.
 - `mod_session.py qa` writes into `--out` (`qa_run.ps1`: a dated folder under `<reference>\work\<mod>\ingame\`) with contact sheets and `index.md`. Open the sheets. Say what you saw (a T-pose, a pink material, cloth clipping), not that the run exited 0.
 - Give the seat back as soon as the captures are taken, then check `gamelock.py status` before saying it is free.
-- Only after the frames were looked at: `magician prove <mod.toml>` records the build.
+- Only after the frames were looked at: `magician prove <mod.toml> --evidence <pass dir>` records a proof of the installed bytes on the build (refused, exit 3, when nothing is installed for the mod or it is not what the ledger installed).

@@ -136,12 +136,45 @@ pub fn cmd_check(args: &[String]) -> R {
         }
     }
 
-    // 2. Drift since the last proven build.
-    let proven = ctx.proven();
-    let mut reprove = !proven.contains(&build);
+    // 2. Proof and drift, asked of the bytes judged: the mod's own paks, else every file installed for it (proofs.rs).
+    let (bytes, unreadable) = match proofs::mod_bytes(&ctx, Some(&game.path)) {
+        Ok(b) => (b, None),
+        Err(e) => (Vec::new(), Some(e)),
+    };
+    let ledger = proofs::Ledger::for_toml(&ctx.toml)?;
+    let binding = proofs::Binding::of(&ledger, &ctx.proven(), &proofs::shas(&bytes));
+    let mut reprove = !binding.holds(&build);
+    let unbound = binding.unbound_note();
+    let mut proof_lines: Vec<String> = Vec::new();
+    if let Some(e) = &unreadable {
+        proof_lines.push(format!("its installed files do not read as installed ({e}): no proof can hold them"));
+    }
+    if reprove {
+        proof_lines.extend(proofs::differences(&ledger, &build, &bytes));
+    }
+    proof_lines.extend(ledger.problems.iter().map(|p| format!("{}: {p} (the line counts for nothing)", proofs::FILE)));
+    proof_lines.extend(ledger.incomplete().into_iter().map(|(b, id)| format!("{}: proof {id} of build {b} lost a row (a merge?) and counts for nothing", proofs::FILE)));
+    let proof_text = format!(
+        "these bytes proven on {}{}{}",
+        binding.bound_text(),
+        if unbound.is_empty() { String::new() } else { format!("; {unbound}") },
+        if proof_lines.is_empty() { String::new() } else { format!("; {}", proof_lines.join("; ")) }
+    );
+    items.push(Item {
+        what: "proof",
+        state: if !reprove { "ok" } else { "warn" },
+        text: proof_text,
+        json: jsonout::Obj::new()
+            .str("state", if !reprove { "current" } else if binding.bound.is_empty() { "unproven" } else { "stale" })
+            .strs("proven", &binding.bound)
+            .strs("unbound", &binding.unbound())
+            .strs("notes", &proof_lines)
+            .raw("files", jsonout::arr(bytes.iter().map(|f| jsonout::Obj::new().str("owner", &f.owner).str("file", &f.file).str("crc", &f.crc).str("sha256", &f.sha256).build())))
+            .build(),
+    });
     let mut drift_text = String::new();
-    match proven.last() {
-        None => items.push(Item { what: "drift", state: "warn", text: "proven on no build yet: nothing to compare from".into(), json: jsonout::Obj::new().str("state", "unproven").build() }),
+    match binding.last() {
+        None => items.push(Item { what: "drift", state: "warn", text: "these bytes are proven on no build yet: nothing to compare from".into(), json: jsonout::Obj::new().str("state", "unproven").build() }),
         Some(_) if !reprove => items.push(Item { what: "drift", state: "ok", text: format!("proven on {build}, the installed build"), json: jsonout::Obj::new().str("state", "current").str("from", &build).str("to", &build).build() }),
         Some(from) => {
             if !default_baseline_path(&build).exists() {

@@ -26,7 +26,8 @@ mods [{bundle (a bundle.json), zip (the zip bundle.py --zip wrote) or bundle_dir
 beside it as bundle.py names it), id (the listing id, default the bundle's slug), sections (README sections copied
 into the description, default ["Not seen yet"]), preselect (optional mods ticked by default, default none),
 homepage (the mod's page, default the landing page's entry), mod_toml (default the mod.toml beside the bundle's
-folder: its [proven] builds are said in the listing, so a re-prove after a game update shows without a new release)}].
+folder: the builds its proof ledger, proofs.tsv beside it, proves the zip's own paks on are said in the listing, so a
+re-prove after a game update shows without a new release; [proven] builds, which names no bytes, is not read)}].
 Optional: homepage (default base_url), downloads_url (default base_url + "files/"; may hold {id} and {version}, e.g.
 https://github.com/<user>/<repo>/releases/download/{id}-{version}/), media_url (default base_url + "media/"),
 download_origins (more origins artifacts may come from or redirect to), icon (an image; a 256 px square JPEG),
@@ -269,6 +270,7 @@ def read_bundle(entry, base, taxonomy):
     if len(imods) != len(mods):
         die(f"{zpath} holds {len(imods)} mod(s), {spec_path} has {len(mods)}: rebuild the zip")
     components, required, groups = [], [], []
+    pak_shas = []
     preselect = entry.get("preselect", [])
     for m in mods:
         im = imods.get((m["order"], m["name"]))
@@ -287,6 +289,8 @@ def read_bundle(entry, base, taxonomy):
                     h.update(b)
             if h.hexdigest() != f["sha256"] or z.getinfo(data).file_size != f["size"]:
                 die(f"{zpath}: {data} does not match the sha256 and size in its mod-interchange.json")
+            if data.lower().endswith(".vpk"):
+                pak_shas.append(f["sha256"])
             files.append({"artifactId": "release-zip", "path": data})
         components.append({"id": m["slug"], "label": m["name"], "files": files})
         if m.get("optional"):
@@ -309,21 +313,49 @@ def read_bundle(entry, base, taxonomy):
             "size": os.path.getsize(zpath), "sha256": sha256_file(zpath), "readme": readme, "changelog": changelog,
             "previews": previews, "components": components, "required": required, "groups": groups,
             "scenes": [sc["hero"] for sc in spec.get("scenes", [])], "entry": entry,
-            "proven": proven_builds(entry, base, sbase),
+            "proven": proven_builds(entry, base, sbase, pak_shas),
             "page": open(resolve(base, entry["page"]), encoding="utf-8").read() if entry.get("page") else None}
 
 
-def proven_builds(entry, base, bundle_dir):
-    """The game builds a mod was proven on in game: `[proven] builds = [...]` of its mod.toml (the entry's mod_toml,
-    else the mod.toml beside the bundle's folder). A listing says them, so after a game update and a re-prove the
-    page and DMM show the mod is good on the new build without a new release."""
+PROOF_COLUMNS = 9
+
+
+def proof_id(build, pairs):
+    """Magician's proof id (crates/magician/src/proofs.rs): the build and the proof's sorted (owner, sha256) pairs."""
+    h = hashlib.sha256(build.encode())
+    for owner, sha in sorted(set(pairs)):
+        h.update(f"\n{owner}\t{sha}".encode())
+    return h.hexdigest()[:16]
+
+
+def proven_builds(entry, base, bundle_dir, shas):
+    """The game builds the bytes being published were proven on in game. A proof belongs to bytes: the mod's proof
+    ledger (`proofs.tsv` beside its mod.toml, the entry's mod_toml, else the mod.toml beside the bundle's folder,
+    written by `magician prove`) holds, per proof, the build and the sha256 of every file seen in game. A build counts
+    when one complete proof of it holds every pak in the zip (`shas`). `[proven] builds` in the mod.toml is a summary
+    for any bytes and is not read: a rebuilt pak's release says nothing about proofs until it is proven itself. A
+    listing says them, so after a game update and a re-prove the page and DMM show it without a new release."""
     path = resolve(base, entry["mod_toml"]) if entry.get("mod_toml") else os.path.join(os.path.dirname(bundle_dir), "mod.toml")
     if not os.path.isfile(path):
         if entry.get("mod_toml"):
             die(f"mod_toml {path} does not exist")
         return []
-    m = re.search(r"^\[proven\][^\[]*?^\s*builds\s*=\s*\[([^\]]*)\]", open(path, encoding="utf-8").read(), flags=re.M | re.S)
-    return sorted({int(b) for b in re.findall(r"\d+", m.group(1))}) if m else []
+    ledger = os.path.join(os.path.dirname(path), "proofs.tsv")
+    if not shas or not os.path.isfile(ledger):
+        return []
+    proofs = {}
+    for line in open(ledger, encoding="utf-8"):
+        c = line.rstrip("\r\n").split("\t")
+        if line.startswith("#") or len(c) != PROOF_COLUMNS or not c[0].isdigit():
+            continue
+        p = proofs.setdefault((c[0], c[2]), set())
+        p.add((c[3], c[6]))
+    builds = set()
+    for (build, pid), pairs in proofs.items():
+        # a proof that lost a row in a merge no longer adds up to its id, and counts for nothing
+        if proof_id(build, pairs) == pid and set(shas) <= {s for _, s in pairs}:
+            builds.add(int(build))
+    return sorted(builds)
 
 
 def join_and(items):

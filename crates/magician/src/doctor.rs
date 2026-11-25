@@ -187,12 +187,26 @@ pub fn checks(args: &[String]) -> Vec<Check> {
             for s in m.scenes() {
                 out.push(c("scene", State::Ok, format!("{} ({})", s.path.display(), s.source), None));
             }
-            let proven = m.proven();
-            match (&build, proven.last()) {
-                (Some(b), Some(_)) if proven.contains(b) => out.push(c("proven", State::Ok, format!("on build {b} (and {} in all)", proven.len()), None)),
-                (Some(b), Some(last)) => out.push(c("proven", State::Todo, format!("last on build {last}, not on {b}"), Some("magician check, then the in-game pass, then magician prove".into()))),
-                (_, None) => out.push(c("proven", State::Todo, "on no build yet", Some("the in-game pass, looked at, then magician prove".into()))),
-                (None, Some(last)) => out.push(c("proven", State::Ok, format!("last on build {last}"), None)),
+            // Proven is asked of the bytes: the mod's own paks, else what is installed for it (proofs.rs).
+            let game_path = game.as_ref().ok().map(|g| g.path.as_path());
+            let ledger = crate::proofs::Ledger::for_toml(&m.toml);
+            let bytes = crate::proofs::mod_bytes(&m, game_path);
+            match (ledger, bytes) {
+                (Err(e), _) => out.push(c("proven", State::Fail, e, Some(format!("fix or remove {}", crate::proofs::FILE)))),
+                (_, Err(e)) => out.push(c("proven", State::Todo, format!("the installed files can't be held to a proof: {e}"), Some("magician install --status; reinstall the mod".into()))),
+                (Ok(l), Ok(files)) => {
+                    let b = crate::proofs::Binding::of(&l, &m.proven(), &crate::proofs::shas(&files));
+                    let note = b.unbound_note();
+                    let note = if note.is_empty() { String::new() } else { format!("; {note}") };
+                    let bad = if l.problems.is_empty() { String::new() } else { format!("; {} line(s) of {} do not read", l.problems.len(), crate::proofs::FILE) };
+                    let fix = "the in-game pass, looked at, then magician prove --evidence <its folder>";
+                    match (&build, b.last()) {
+                        (Some(v), Some(_)) if b.holds(v) => out.push(c("proven", State::Ok, format!("these bytes on build {v} ({} in all){note}{bad}", b.bound.len()), None)),
+                        (Some(v), Some(last)) => out.push(c("proven", State::Todo, format!("these bytes last on build {last}, not on {v}{note}{bad}"), Some(format!("magician check, then {fix}")))),
+                        (_, None) => out.push(c("proven", State::Todo, format!("these bytes on no build yet{note}{bad}"), Some(fix.into()))),
+                        (None, Some(last)) => out.push(c("proven", State::Ok, format!("these bytes last on build {last}{note}{bad}"), None)),
+                    }
+                }
             }
         }
     }

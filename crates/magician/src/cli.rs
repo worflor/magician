@@ -75,7 +75,7 @@ pub fn version() -> String {
 }
 
 /// The commands that print one JSON document on stdout with `--json` (and nothing else).
-pub const JSON_COMMANDS: &[&str] = &["lint", "grade", "drift", "patchday", "release", "rules", "check", "doctor"];
+pub const JSON_COMMANDS: &[&str] = &["lint", "grade", "drift", "patchday", "release", "rules", "check", "doctor", "prove"];
 
 /// Options every command accepts or that are passed between Magician's own processes, beyond the ones the usage text
 /// lists for a command.

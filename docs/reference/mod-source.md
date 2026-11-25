@@ -41,6 +41,12 @@ From `bundle.json` a listing needs `release`, `date`, `hero_id`, `content_type` 
 unknown classification along with adult content); the tool refuses a spec without them, a zip built from another
 spec or release, and a zip whose paks do not match its own `mod-interchange.json`.
 
+The listing and the mod's page say which game builds the release was proven on in game, and only for the bytes in
+the zip: the mod's proof ledger (`proofs.tsv` beside its `mod.toml`, an entry's `mod_toml` or the one beside the
+bundle's folder, written by `magician prove`) is read, and a build counts when one complete proof of it holds the
+sha256 of every VPK in the zip. `[proven] builds` names no bytes and is not read. A release whose paks have no proof
+(a rebuild) says nothing about proofs; a re-prove after a game update shows on the next run without a new release.
+
 ## The command
 
 ```

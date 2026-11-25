@@ -31,7 +31,8 @@ What a script on an always-on machine can do without anyone, and where it has to
 4.  M drift <pak> --from <old>              full lists for any pak patchday flagged (paks are in game\citadel\addons\)
 5.  fix, rebuild, M release ...             only for BROKEN (next section); a clean patch skips this
 6.  re-prove in game                        the scenarios below, then LOOK at the frames
-7.  M prove <mod.toml>                      record the build in [proven] builds, per mod, then commit the mod.toml
+7.  M prove <mod.toml> --evidence <pass>    record a proof of the installed bytes on this build (proofs.tsv), per mod, then commit
+                                            proofs.tsv and the mod.toml
 8.  ingame\stop_game.ps1                    hand the game back
 ```
 
@@ -39,11 +40,11 @@ What a script on an always-on machine can do without anyone, and where it has to
 
 1. **Baseline** for the installed build (`ClientVersion` in `game\citadel\steam.inf`). Missing: written (`--capture`) or refused with the command to run. Present: compared with the live game, and a mismatch is reported as STALE (same build number, different bytes, so a hotfix). It never overwrites an existing baseline. With `--capture` it also writes a missing `rig.tsv` beside it; without, it only says the sidecar is missing. About 1 s for the baseline, a few seconds for the rig (107 skeletons, 1,972 graphs on 6864).
 2. **Install state**: the `Game citadel/addons` line in `gameinfo.gi`, the per-build backup, and every ledger row against the file on disk (missing file, or a crc that is not ours).
-3. **Drift** of every ledger pak (skin pak, pose pak, voice pak, hero-page scenes) from the build its mod was last proven on to the installed one, grouped by mod, with the model-contract check (bones, attachments, hitboxes against Valve's current models). The ledger owner is matched to a `mod.toml` by its slug (`maid-lash` installs as `maid_lash`) or `[mod] owners = [...]` (a voice pak or a showcase scene installed under its own name); an owner no manifest claims is compared from the newest older baseline, and says so.
-4. **Mods**: each `model-replacements\*\mod.toml`: do its `[target]` model and skeleton still exist in the new build, and `proven on N of M builds`. When the mod names its hero (`[mod] hero`) and the hero data was edited since the build the mod is compared from, a line says whether any name in the hero's block moved (the hero data is kept as text per build under `<build>\decompiled\scripts\heroes.vdata`; `--capture` writes it, which needs Source 2 Viewer).
+3. **Drift** of every ledger pak (skin pak, pose pak, voice pak, hero-page scenes) from the last build a proof holds its mod's installed bytes on (the mod's `proofs.tsv`) to the installed one, grouped by mod, with the model-contract check (bones, attachments, hitboxes against Valve's current models). The ledger owner is matched to a `mod.toml` by its slug (`maid-lash` installs as `maid_lash`) or `[mod] owners = [...]` (a voice pak or a showcase scene installed under its own name); an owner no manifest claims is compared from the newest older baseline, and says so.
+4. **Mods**: each `model-replacements\*\mod.toml`: do its `[target]` model and skeleton still exist in the new build, and `its installed bytes proven on N of M builds`, with any build `[proven] builds` lists that no proof binds to these bytes said as `claimed for other bytes or never recorded`, and the file that differs from the proof of the installed build when one does. When the mod names its hero (`[mod] hero`) and the hero data was edited since the build the mod is compared from, a line says whether any name in the hero's block moved (the hero data is kept as text per build under `<build>\decompiled\scripts\heroes.vdata`; `--capture` writes it, which needs Source 2 Viewer).
 5. A **verdict**: `clear` (exit 0), `loads, but re-prove in game: <mods>` (exit 4), or `BROKEN: n problem(s)` (exit 1).
 
-A mod proven on the installed build reads `ok (proven on 6864)`: there is nothing to re-film for it, whatever changed between older eras. A mod whose last proven build has no baseline on record is compared from the newest older one, and the line says so.
+A mod whose installed bytes are proven on the installed build reads `ok (proven on 6864)`: there is nothing to re-film for it, whatever changed between older eras. Proven means a recorded proof of that build holds the sha256 of every file installed for the mod; a pak rebuilt since is unproven, whatever `[proven] builds` lists. A mod whose last proven build has no baseline on record, or whose bytes no proof holds, is compared from the newest older one, and the line says so.
 
 Whole check: 2 to 15 s on 6864 depending on whether the disk cache is warm (the paks are 110 MB and 104 MB). Run it before launching anything.
 
@@ -73,6 +74,9 @@ Also useful: `M lint <pak>` (uses the cached baseline of the installed build; wi
 | `hero data: <hero> was edited since N; none of the n names a skin leans on moved` | Valve edited the hero's block in `heroes.vdata` (numbers, a table), and every file, ability, sound event and particle it names is the same | Nothing beyond the re-prove. A balance patch reads like this |
 | `hero data: <hero> since N: n name(s) gone, n new`, with `-` and `+` lines | The hero's block names something else now: a moved model, a renamed ability or sound event, a new particle | `M footprint <hero>` for the full picture; a `-` line the mod replaces is a file that no longer does anything. Compare with `mod.toml` targets and the kit docs |
 | `hero data: none on record for build N` | The older build's hero data was never kept, so there is no "before" | Compare by hand with `M footprint <hero>`. `patchday --capture` keeps it from then on |
+| `<file> (<owner>): crc X is not the bytes proven on N` (RE-PROVE) | That file was rebuilt or replaced since the proof: the combination now installed was never seen in game | The in-game pass on the installed bytes, then `M prove --evidence <pass>` |
+| `N (claimed for other bytes or never recorded)` | `[proven] builds` lists N, and no proof binds N to the bytes installed: a pak proven before a rebuild, or a build recorded before proofs were kept | Nothing to fix; it counts for nothing. Record a proof of the bytes that were really seen on N, if the evidence exists: `M prove <mod.toml> --build N --date D --evidence <that pass> [--pak <release copy>]` |
+| `proofs.tsv: line N: ...` / `proof X of build N has lost a row` | A hand merge left a line that does not read, or dropped a row of a proof | Fix the line by hand (rows stand alone: keep both sides of a conflict). `prove` refuses to rewrite the file until it reads |
 
 Exit code 1 means at least one BROKEN line. RE-PROVE is exit 4: the mod loads, and the proof is in game. Exit 0 is clear.
 

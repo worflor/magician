@@ -34,7 +34,26 @@ struct Manifest {
     text: String,
     slug: String,
     owners: Vec<String>,
-    proven: Vec<String>,
+    /// `[proven] builds`: the summary, which says nothing about bytes.
+    claimed: Vec<String>,
+    ledger: proofs::Ledger,
+    /// The mod's files as installed, when every one the ledger holds for it reads as installed.
+    files: Option<Vec<proofs::FileId>>,
+    binding: proofs::Binding,
+}
+
+/// The files the install ledger holds for `owners`, with their bytes' sha256, when every one of them reads as the ledger
+/// installed it; `None` when one is missing or replaced (the game then holds bytes no proof could speak for).
+fn installed_files(ledger: &[install::Installed], rows: &[(String, String, Option<String>)], owners: &[String], sha: &BTreeMap<String, String>) -> Option<Vec<proofs::FileId>> {
+    let mut v = Vec::new();
+    for (r, (_, crc, disk)) in ledger.iter().zip(rows).filter(|(r, _)| owners.contains(&r.owner)) {
+        if disk.as_deref() != Some(crc.as_str()) {
+            return None;
+        }
+        v.push(proofs::FileId { owner: r.owner.clone(), file: r.name.clone(), crc: crc.clone(), sha256: sha.get(&r.name)?.clone() });
+    }
+    v.sort();
+    Some(v)
 }
 
 /// The patch-day check: one command that answers "did the new build break our skins, and what must be re-proven".
@@ -126,11 +145,17 @@ pub fn cmd_patchday(args: &[String]) -> R {
     for (old, new) in &moved {
         say!("  {old} is now {new} (the same bytes; renamed by another tool, so the ledger's name is out of date until the next install or uninstall)");
     }
+    // Each file is read once: its crc against the ledger's, and its sha256 for the proofs (a proof belongs to bytes).
+    let mut sha: BTreeMap<String, String> = BTreeMap::new();
     let rows: Vec<(String, String, Option<String>)> = ledger
         .iter()
         .map(|r| {
             let p = ip.addons().join(&r.name);
-            let crc = if p.is_file() { std::fs::read(&p).ok().map(|b| format!("{:08x}", vpk::crc32(&b))) } else { None };
+            let bytes = if p.is_file() { std::fs::read(&p).ok() } else { None };
+            let crc = bytes.as_ref().map(|b| format!("{:08x}", vpk::crc32(b)));
+            if let Some(b) = &bytes {
+                sha.insert(r.name.clone(), grade::sha256::hex(b));
+            }
             (r.name.clone(), r.crc.clone(), crc)
         })
         .collect();
@@ -161,13 +186,18 @@ pub fn cmd_patchday(args: &[String]) -> R {
         .build();
     let doc = doc.raw("install", install_json);
 
-    // The mods' manifests: which owners each speaks for, and where each was last proven.
+    // The mods' manifests: which owners each speaks for, its files as installed, and the builds a proof holds them on.
     let manifests: Vec<Manifest> = find_mod_tomls(args)
         .into_iter()
         .filter_map(|path| {
             let text = std::fs::read_to_string(&path).ok()?;
             let slug = patchday::mod_slug(&text).unwrap_or_else(|| path.display().to_string());
-            Some(Manifest { owners: patchday::mod_owners(&text), proven: patchday::proven_builds(&text), slug, text, path })
+            let owners = patchday::mod_owners(&text);
+            let claimed = patchday::proven_builds(&text);
+            let proof_ledger = proofs::Ledger::for_toml(&path).unwrap_or_else(proofs::Ledger::unreadable);
+            let files = installed_files(&ledger, &rows, &owners, &sha);
+            let binding = proofs::Binding::of(&proof_ledger, &claimed, &files.as_deref().map(proofs::shas).unwrap_or_default());
+            Some(Manifest { owners, claimed, ledger: proof_ledger, files, binding, slug, text, path })
         })
         .collect();
 
@@ -195,7 +225,7 @@ pub fn cmd_patchday(args: &[String]) -> R {
             .or_insert_with(|| match &forced {
                 Some(f) => (f.clone(), None),
                 None => match manifests.iter().find(|m| m.owners.contains(&r.owner)) {
-                    Some(m) => patchday::era_for(&m.proven, &builds, &installed),
+                    Some(m) => patchday::era_for(&m.binding.bound, &builds, &installed),
                     None => (previous.clone(), Some(format!("no mod.toml claims this owner; compared from {previous}"))),
                 },
             })
@@ -274,17 +304,34 @@ pub fn cmd_patchday(args: &[String]) -> R {
     let mut now_heroes: Option<Result<String, String>> = None;
     for m in &manifests {
         let is_installed = m.owners.iter().any(|o| by_owner.contains_key(o));
-        let first = m.proven.first().map(|f| f.parse::<u64>().unwrap_or(0)).unwrap_or(0);
-        let of = builds.iter().filter(|b| b.parse::<u64>().unwrap_or(0) >= first).count().max(m.proven.len());
-        let here = m.proven.contains(&installed);
+        let bound = &m.binding.bound;
+        let first = bound.first().map(|f| f.parse::<u64>().unwrap_or(0)).unwrap_or(0);
+        let of = builds.iter().filter(|b| b.parse::<u64>().unwrap_or(0) >= first).count().max(bound.len());
+        let here = m.binding.holds(&installed);
+        let unbound = m.binding.unbound_note();
         say!(
-            "  {}: proven on {} of {of} builds on record ({}); build {installed}: {}{}",
+            "  {}: its installed bytes proven on {} of {of} builds on record ({}){}; build {installed}: {}{}",
             m.slug,
-            m.proven.len(),
-            if m.proven.is_empty() { "none".to_string() } else { m.proven.join(", ") },
+            bound.len(),
+            m.binding.bound_text(),
+            if unbound.is_empty() { String::new() } else { format!("; {unbound}") },
             if here { "proven" } else { "NOT proven" },
             if is_installed { "" } else { " (no installed pak in the ledger)" }
         );
+        if is_installed && m.files.is_none() {
+            say!("    its installed files do not all read as the install ledger has them ([2]), so no proof can hold them");
+        }
+        if let Some(files) = m.files.as_ref().filter(|_| !here) {
+            for d in proofs::differences(&m.ledger, &installed, files) {
+                say!("    {d}");
+            }
+        }
+        for p in &m.ledger.problems {
+            say!("    {}: {p} (the line counts for nothing)", proofs::FILE);
+        }
+        for (b, id) in m.ledger.incomplete() {
+            say!("    {}: proof {id} of build {b} has lost a row (a merge?): it no longer adds up to its id and counts for nothing", proofs::FILE);
+        }
         let mut missing: Vec<String> = Vec::new();
         for (k, p) in patchday::target_paths(&m.text) {
             // Only game resources: `materials_dir` is a folder, `catalog` an evidence file.
@@ -304,7 +351,7 @@ pub fn cmd_patchday(args: &[String]) -> R {
         }
         // The hero's own data: did anything the skin can lean on move since the build the mod is compared from?
         let mut hero_json: Option<String> = None;
-        let (era, _) = patchday::era_for(&m.proven, &builds, &installed);
+        let (era, _) = patchday::era_for(&m.binding.bound, &builds, &installed);
         if let (Some(hero), true) = (patchday::mod_hero(&m.text), era != installed) {
             if now_heroes.is_none() {
                 now_heroes = Some(std::fs::read_to_string(patchday::hero_data_path(&reference, &installed)).or_else(|_| grade_sources(args).and_then(|src| src.text("scripts/heroes.vdata_c"))));
@@ -359,7 +406,11 @@ pub fn cmd_patchday(args: &[String]) -> R {
                 .str("slug", &m.slug)
                 .str("path", &m.path.display().to_string())
                 .strs("owners", &m.owners)
-                .strs("proven", &m.proven)
+                .strs("proven", &m.binding.bound)
+                .strs("claimed", &m.claimed)
+                .strs("unbound", &m.binding.unbound())
+                .str("proofs", &m.path.with_file_name(proofs::FILE).display().to_string())
+                .strs("proof_problems", &m.ledger.problems)
                 .bool("proven_on_installed", here)
                 .bool("installed", is_installed)
                 .raw("missing_targets", jsonout::arr(missing))
@@ -392,22 +443,117 @@ pub fn cmd_patchday(args: &[String]) -> R {
     Ok(state_code(if state == "clear" { "clean" } else { state }))
 }
 
-/// `magician prove <mod.toml> [--build N]`: write a build into the mod's `[proven] builds`. Run it only after the
-/// in-game pass for that build was looked at (a green exit code is not proof; docs/PDD.md).
+/// `magician prove <mod.toml> [--build N] [--date YYYY-MM-DD] [--evidence DIR] [--pak FILE]...`: record that the
+/// mod's bytes were seen working in game on a build. Run it only after the in-game pass for that build was looked at
+/// (a green exit code is not proof; docs/PDD.md).
+///
+/// The proof goes into the mod's proof ledger (`proofs.tsv` beside its `mod.toml`, proofs.rs): every file the install
+/// ledger holds for the mod's owners, as installed now (owner, name, crc, sha256), or the files `--pak` names (a
+/// release copy proven earlier), and the session folder the pass was written into. The build is also added to
+/// `[proven] builds`, the summary a person reads. Refused, with nothing written, when the mod has no installed file,
+/// or what is installed is not what the install ledger says it installed.
 pub fn cmd_prove(args: &[String]) -> R {
+    let usage = "prove <mod.toml> [--build <build>] [--date YYYY-MM-DD] [--evidence DIR] [--pak FILE]...";
     let p = positional(args);
-    let path = PathBuf::from(p.first().ok_or("prove <mod.toml> [--build <build>]")?);
-    let build = match flag(args, "--build") {
-        Some(b) => b,
-        None => game_build(&game_dir(args)?)?,
+    let ctx = crate::modctx::ModCtx::load(Path::new(p.first().ok_or(usage)?.as_str()), "given")?;
+    let game = game_dir(args);
+    let installed = game.as_ref().ok().and_then(|g| game_build(g).ok());
+    let build = match (flag(args, "--build"), &installed) {
+        (Some(b), _) => b,
+        (None, Some(b)) => b.clone(),
+        (None, None) => return Err(Stop::Usage(format!("no installed game to read the build from ({}); pass --build", game.err().unwrap_or_default()))),
     };
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let new = patchday::add_proven(&text, &build)?;
-    if new == text {
-        say!("{}: already proven on {build}", path.display());
+    let date = match flag(args, "--date") {
+        Some(d) if mark::scheme::parse_date(&d).is_some() => d,
+        Some(d) => return Err(Stop::Usage(format!("--date {d} is not a date (YYYY-MM-DD)"))),
+        None => mark::scheme::date_text(mark::scheme::today()),
+    };
+    let named = flags(args, "--pak");
+    let files: Vec<proofs::FileId> = if named.is_empty() {
+        let g = game.as_ref().map_err(|e| Stop::Usage(format!("{e}; pass --pak FILE to prove files that are not installed")))?;
+        let owners = ctx.owners();
+        let files = proofs::installed(g, &owners).map_err(|e| Stop::Refused(format!("{}: what is installed is not readable as the install ledger has it, so nothing was recorded: {e}", ctx.label())))?;
+        if files.is_empty() {
+            return Err(Stop::Refused(format!(
+                "{}: the install ledger holds no file for {} in {}, so there are no bytes to prove; install the mod (`magician install`), run its in-game pass, then prove it (or name released files with --pak). Nothing was recorded",
+                ctx.label(),
+                owners.join(", "),
+                g.display()
+            )));
+        }
+        files
     } else {
-        std::fs::write(&path, &new).map_err(|e| format!("{}: {e}", path.display()))?;
-        say!("{}: proven on {}", path.display(), patchday::proven_builds(&new).join(", "));
+        let mut v = Vec::new();
+        for n in &named {
+            let path = Path::new(n);
+            v.push(proofs::named(path, &ctx.owner_for(path, game.as_deref().ok())).map_err(|e| Stop::Usage(format!("--pak {e}")))?);
+        }
+        v
+    };
+    let evidence = match flag(args, "--evidence") {
+        None => None,
+        Some(e) => {
+            let path = std::path::absolute(Path::new(&e)).unwrap_or_else(|_| PathBuf::from(&e));
+            let index = if path.is_dir() { path.join("index.md") } else { path.clone() };
+            if !path.exists() {
+                return Err(Stop::Usage(format!("--evidence {}: not there (the folder the in-game pass wrote, with its index.md, or one file of it)", path.display())));
+            }
+            let sha = if index.is_file() { Some(grade::sha256::file(&index).map_err(|err| format!("{}: {err}", index.display()))?) } else { None };
+            Some((path.display().to_string(), sha))
+        }
+    };
+    let text = std::fs::read_to_string(&ctx.toml).map_err(|e| format!("{}: {e}", ctx.toml.display()))?;
+    // The summary first, so a mod.toml it cannot be written into refuses before anything changes.
+    let summary = patchday::add_proven(&text, &build)?;
+    let mut ledger = proofs::Ledger::for_toml(&ctx.toml)?;
+    let before = ledger.text();
+    let id = ledger.add(&build, &date, &files, evidence.as_ref().map(|(p, s)| (p.as_str(), s.as_deref()))).map_err(Stop::Refused)?;
+    let lpath = ctx.toml.with_file_name(proofs::FILE);
+    let fresh = ledger.text() != before;
+    if fresh {
+        install::write_atomic(&lpath, ledger.text().as_bytes()).map_err(|e| format!("{}: {e}", lpath.display()))?;
+    }
+    if summary != text {
+        install::write_atomic(&ctx.toml, summary.as_bytes()).map_err(|e| format!("{}: {e}", ctx.toml.display()))?;
+    }
+    let claimed = patchday::proven_builds(&summary);
+    let binding = proofs::Binding::of(&ledger, &claimed, &proofs::shas(&files));
+    say!("{}: proof {id} of build {build} ({date}) {} {}", ctx.label(), if fresh { "recorded in" } else { "was already in" }, lpath.display());
+    for f in &files {
+        say!("  {:<20} {:<32} crc {}  sha256 {}", f.owner, f.file, f.crc, f.sha256);
+    }
+    if named.is_empty() {
+        for o in ctx.owners().iter().filter(|o| !files.iter().any(|f| &f.owner == *o)) {
+            say!("  note: nothing is installed for {o}, so this proof says nothing about its files");
+        }
+    }
+    match &evidence {
+        Some((p, Some(s))) if Path::new(p).is_dir() => say!("  evidence {p} (index.md sha256 {s})"),
+        Some((p, Some(s))) => say!("  evidence {p} (sha256 {s})"),
+        Some((p, None)) => say!("  evidence {p} (no index.md in it: only the path is recorded)"),
+        None => say!("  no evidence folder named (--evidence DIR records the session the pass was written into)"),
+    }
+    if let Some(i) = installed.as_ref().filter(|i| **i != build) {
+        say!("  note: build {build} is not the installed build {i}: recorded as given");
+    }
+    say!("  these bytes are proven on {}; [proven] builds lists {}{}", binding.bound_text(), claimed.join(", "), if binding.unbound().is_empty() { String::new() } else { format!("; {}", binding.unbound_note()) });
+    if json_mode() {
+        let rows = files.iter().map(|f| jsonout::Obj::new().str("owner", &f.owner).str("file", &f.file).str("crc", &f.crc).str("sha256", &f.sha256).build());
+        let doc = jsonout::Obj::new()
+            .str("schema", "magician.prove/1")
+            .str("mod", &ctx.label())
+            .str("build", &build)
+            .str("date", &date)
+            .str("proof", &id)
+            .bool("recorded", fresh)
+            .str("ledger", &lpath.display().to_string())
+            .raw("files", jsonout::arr(rows))
+            .opt_str("evidence", evidence.as_ref().map(|(p, _)| p.as_str()))
+            .opt_str("evidence_sha256", evidence.as_ref().and_then(|(_, s)| s.as_deref()))
+            .strs("proven", &binding.bound)
+            .strs("unbound", &binding.unbound())
+            .build();
+        outln!("{doc}");
     }
     Ok(ExitCode::SUCCESS)
 }

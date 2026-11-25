@@ -56,20 +56,40 @@ impl Rights {
     }
 }
 
-/// Is the mod proven on the build it is judged for?
+/// Is the mod proven on the build it is judged for? Asked of the bytes graded: `proven` holds the builds a recorded
+/// proof holds these paks on (the CLI reads the mod's proof ledger); `unbound` the builds its `[proven] builds` claims,
+/// or its ledger records, for other bytes or without a record, which count for nothing here and are said.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Freshness {
     pub proven: Vec<u64>,
     pub last_proven: Option<u64>,
     pub target: u64,
+    pub unbound: Vec<u64>,
+}
+
+fn builds(v: &[String]) -> Vec<u64> {
+    let mut p: Vec<u64> = v.iter().filter_map(|b| b.parse().ok()).collect();
+    p.sort();
+    p.dedup();
+    p
 }
 
 impl Freshness {
     pub fn new(proven: &[String], target: &str) -> Freshness {
-        let mut p: Vec<u64> = proven.iter().filter_map(|b| b.parse().ok()).collect();
-        p.sort();
-        p.dedup();
-        Freshness { last_proven: p.last().copied(), proven: p, target: target.parse().unwrap_or(0) }
+        Freshness::bound(proven, &[], target)
+    }
+    /// `proven` bound to the bytes, `unbound` claimed for other bytes or never recorded.
+    pub fn bound(proven: &[String], unbound: &[String], target: &str) -> Freshness {
+        let p = builds(proven);
+        let u: Vec<u64> = builds(unbound).into_iter().filter(|b| !p.contains(b)).collect();
+        Freshness { last_proven: p.last().copied(), proven: p, target: target.parse().unwrap_or(0), unbound: u }
+    }
+    fn unbound_note(&self) -> String {
+        if self.unbound.is_empty() {
+            String::new()
+        } else {
+            format!("; {} claimed for other bytes or never recorded", self.unbound.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(", "))
+        }
     }
     pub fn current(&self) -> bool {
         self.proven.contains(&self.target)
@@ -185,8 +205,8 @@ pub fn build(i: Inputs) -> Record {
     }
     if !i.freshness.current() {
         blockers.push(match i.freshness.last_proven {
-            Some(b) => format!("freshness: not proven on {} (last proven on {b})", i.freshness.target),
-            None => format!("freshness: not proven on {} (no proven build on record)", i.freshness.target),
+            Some(b) => format!("freshness: not proven on {} (last proven on {b}{})", i.freshness.target, i.freshness.unbound_note()),
+            None => format!("freshness: not proven on {} (no proven build on record for these bytes{})", i.freshness.target, i.freshness.unbound_note()),
         });
     }
     match i.rights {
@@ -308,6 +328,7 @@ impl<'a> Record<'a> {
             .raw("last_proven", f.last_proven.map_or("null".into(), |b| b.to_string()))
             .int("target", f.target as i64)
             .bool("current", f.current())
+            .raw("unbound", arr(f.unbound.iter().map(|b| b.to_string())))
             .build();
         let next = arr(self.next_steps().into_iter().map(|(g, id, _, items)| Obj::new().raw("gain", tenth(g)).str("criterion", id).strs("items", &items).build()));
         Obj::new()
@@ -386,10 +407,11 @@ impl<'a> Record<'a> {
         }
         let f = &i.freshness;
         line(format!(
-            "freshness: proven on {}; target {}{}",
+            "freshness: these bytes proven on {}; target {}{}{}",
             if f.proven.is_empty() { "no build".to_string() } else { f.proven.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(", ") },
             f.target,
-            if f.current() { " (current)" } else { "" }
+            if f.current() { " (current)" } else { "" },
+            f.unbound_note()
         ));
         line(format!("rights: {}{}", i.rights.id(), if i.rights_notes.is_empty() { String::new() } else { format!(" ({})", i.rights_notes) }));
         line(format!("lint: {} ({}), {} error(s) not fair play, {} warning(s), {} allowed", i.lint.depth.label(), i.lint_source, i.lint.errors, i.lint.warnings, i.lint.allowed_by_code.values().sum::<usize>()));
@@ -458,6 +480,7 @@ mod tests {
         depth: Depth,
         signals: Signals,
         proven: Vec<String>,
+        unbound: Vec<String>,
         target: &'static str,
         rights: Rights,
         valve_files: Vec<String>,
@@ -474,6 +497,7 @@ mod tests {
                 depth: Depth::Deep,
                 signals: Signals { model_replaced: true, portrait: (1, 1), ..Default::default() },
                 proven: vec!["6864".into()],
+                unbound: vec![],
                 target: "6864",
                 rights: Rights::Cleared,
                 valve_files: vec![],
@@ -505,7 +529,7 @@ mod tests {
                 identity,
                 valve_files: self.valve_files,
                 shadowed: vec![],
-                freshness: Freshness::new(&self.proven, self.target),
+                freshness: Freshness::bound(&self.proven, &self.unbound, self.target),
                 rights: self.rights,
                 rights_notes: String::new(),
                 allowance_files: vec![],
@@ -591,7 +615,7 @@ mod tests {
         c.run(|r| {
             assert_eq!(r.label, "S Costume · stale(6864)");
             assert!(r.blockers.contains(&"freshness: not proven on 6865 (last proven on 6864)".to_string()), "{:?}", r.blockers);
-            assert!(r.json().contains("\"freshness\":{\"proven\":[6864],\"last_proven\":6864,\"target\":6865,\"current\":false}"), "{}", r.json());
+            assert!(r.json().contains("\"freshness\":{\"proven\":[6864],\"last_proven\":6864,\"target\":6865,\"current\":false,\"unbound\":[]}"), "{}", r.json());
         });
         let mut c = Case::complete();
         c.proven = vec![];

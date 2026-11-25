@@ -4,7 +4,8 @@
 //!   - `Rig`: the rig sidecar (`<build>/rig.tsv`) captured beside the baseline: every skeleton's bone names and every
 //!     AnimGraph's control parameters. A baseline's CRCs say a rig file changed; the sidecar says what changed in it.
 //!   - `compute`: what changed under a mod between two baselines (the core of `magician drift`).
-//!   - `proven_builds` / `add_proven`: the `[proven] builds = [...]` ledger in a mod's `mod.toml`.
+//!   - `proven_builds` / `add_proven`: the `[proven] builds = [...]` summary in a mod's `mod.toml` (which bytes were
+//!     proven is in its proof ledger, proofs.rs).
 //!
 //! `cmd_patchday` in main.rs strings them together with the install state into the one "check everything" entry.
 
@@ -269,8 +270,9 @@ pub fn default_from(builds: &[String], installed: &str) -> String {
     builds.iter().rfind(|b| b.parse::<u64>().is_ok_and(|n| n < inst)).cloned().unwrap_or_else(|| installed.to_string())
 }
 
-/// The build a mod is compared from on patch day: its last proven build at or before `installed` (a mod proven on the
-/// installed build is current), when that build's baseline is on record. Otherwise the newest older baseline, with the
+/// The build a mod is compared from on patch day: the last build its installed bytes are proven on (`proven`, bound by
+/// the proof ledger) at or before `installed` (a mod proven on the installed build is current), when that build's
+/// baseline is on record. Otherwise the newest older baseline, with the
 /// reason, because a drift needs both eras.
 pub fn era_for(proven: &[String], builds: &[String], installed: &str) -> (String, Option<String>) {
     let inst = installed.parse::<u64>().unwrap_or(0);
@@ -280,7 +282,7 @@ pub fn era_for(proven: &[String], builds: &[String], installed: &str) -> (String
         Some(b) if b == installed => (b.clone(), None),
         Some(b) if builds.contains(b) => (b.clone(), None),
         Some(b) => (fallback.clone(), Some(format!("last proven on {b}, which has no baseline on record; compared from {fallback}"))),
-        None => (fallback.clone(), Some(format!("no proven build on record; compared from {fallback}"))),
+        None => (fallback.clone(), Some(format!("no proven build on record for these bytes; compared from {fallback}"))),
     }
 }
 

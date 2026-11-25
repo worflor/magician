@@ -163,26 +163,112 @@ fn patchday_compares_each_mod_from_its_last_proven_build() {
     let game = g("6865", b"valve clip v2");
     assert_eq!(magician(&d, &["baseline", "--game", &game]).status.code(), Some(0));
     let toml = d.join("mod.toml");
-    let check = |proven: &str| {
-        std::fs::write(&toml, format!("[mod]\nslug = \"mod-a\"\n[proven]\nbuilds = [{proven}]\n")).unwrap();
-        magician(&d, &["patchday", "--game", &game, "--mod", &toml.to_string_lossy(), "--json"])
-    };
-    // proven on 6864 only: the clip changed under it since, so it loads and must be re-proven (exit 4)
-    let o = check("6864");
+    let ts = toml.to_string_lossy().into_owned();
+    std::fs::write(&toml, "[mod]\nslug = \"mod-a\"\n[proven]\nbuilds = []\n").unwrap();
+    let patchday = || magician(&d, &["patchday", "--game", &game, "--mod", &ts, "--json"]);
+    // the installed pak proven on 6864 (it was installed then too): the clip changed under it since, so it loads and
+    // must be re-proven (exit 4)
+    let o = magician(&d, &["prove", &ts, "--game", &game, "--build", "6864", "--date", "2026-11-20"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(text(&o).contains("proof ") && text(&o).contains("of build 6864 (2026-11-20) recorded in"), "{}", text(&o));
+    let o = patchday();
     let out = String::from_utf8_lossy(&o.stdout).into_owned();
     assert_eq!(o.status.code(), Some(4), "{}", text(&o));
     assert!(out.starts_with("{\"schema\":\"magician.patchday/1\"") && out.contains("\"state\":\"re-prove\""), "{out}");
     assert!(out.contains("\"owner\":\"mod_a\",\"state\":\"re-prove\",\"from\":\"6864\""), "{out}");
     assert_eq!(out.trim_end().lines().count(), 1, "one JSON document and nothing else on stdout");
     // proven on the installed build: current, so clear (exit 0), even though the clip changed since 6864
-    let o = check("6864, 6865");
+    assert_eq!(magician(&d, &["prove", &ts, "--game", &game]).status.code(), Some(0));
+    let o = patchday();
     assert_eq!(o.status.code(), Some(0), "{}", text(&o));
     assert!(String::from_utf8_lossy(&o.stdout).contains("\"verdict\":{\"state\":\"clear\""));
+    assert!(std::fs::read_to_string(&toml).unwrap().contains("builds = [6864, 6865]"), "the summary follows the proofs");
     // the human report says which build each mod was compared from
-    std::fs::write(&toml, "[mod]\nslug = \"mod-a\"\n[proven]\nbuilds = [6865]\n").unwrap();
-    let o = magician(&d, &["patchday", "--game", &game, "--mod", &toml.to_string_lossy()]);
+    let o = magician(&d, &["patchday", "--game", &game, "--mod", &ts]);
     assert!(String::from_utf8_lossy(&o.stdout).contains("mod_a: ok (proven on 6865)"), "{}", text(&o));
+
+    // A rebuilt pak inherits nothing: the summary still lists 6864 and 6865, the new bytes are proven on neither.
+    let pak = PathBuf::from(&game).join("citadel").join("addons").join("pak10_dir.vpk");
+    vpk::write(&pak, &[(CLIP.to_string(), b"our clip, rebuilt".to_vec())]).unwrap();
+    let crc = vpk::crc32(&std::fs::read(&pak).unwrap());
+    std::fs::write(pak.with_file_name(".magician-installed.tsv"), format!("pak10_dir.vpk\t{crc:08x}\tmod_a\n")).unwrap();
+    let o = magician(&d, &["patchday", "--game", &game, "--mod", &ts]);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert_eq!(o.status.code(), Some(4), "{}", text(&o));
+    assert!(out.contains("mod-a: its installed bytes proven on 0 of") && out.contains("6864, 6865 (claimed for other bytes or never recorded); build 6865: NOT proven"), "{out}");
+    assert!(out.contains(&format!("pak10_dir.vpk (mod_a): crc {crc:08x} is not the bytes proven on 6865")), "{out}");
+    assert!(out.contains("mod_a: RE-PROVE (compared from 6864): no proven build on record for these bytes"), "{out}");
+
+    // A legacy list with no ledger at all reads the same way: the claim counts for nothing bound.
+    std::fs::remove_file(d.join("proofs.tsv")).unwrap();
+    let o = patchday();
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert_eq!(o.status.code(), Some(4), "{}", text(&o));
+    assert!(out.contains("\"proven\":[],\"claimed\":[\"6864\",\"6865\"],\"unbound\":[\"6864\",\"6865\"]"), "{out}");
+    assert!(std::fs::read_to_string(&toml).unwrap().contains("builds = [6864, 6865]"), "nothing dropped from the mod.toml");
+
+    // prove refuses what is not the ledger's bytes, and a mod with nothing installed, writing nothing
+    std::fs::write(&pak, b"not what was installed").unwrap();
+    let o = magician(&d, &["prove", &ts, "--game", &game]);
+    assert_eq!(o.status.code(), Some(3), "{}", text(&o));
+    assert!(text(&o).contains("not readable as the install ledger has it") && !d.join("proofs.tsv").exists(), "{}", text(&o));
+    std::fs::write(&toml, "[mod]\nslug = \"mod-b\"\n[proven]\nbuilds = []\n").unwrap();
+    let o = magician(&d, &["prove", &ts, "--game", &game]);
+    assert_eq!(o.status.code(), Some(3), "{}", text(&o));
+    assert!(text(&o).contains("holds no file for mod_b") && std::fs::read_to_string(&toml).unwrap().contains("builds = []"), "{}", text(&o));
     let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn prove_records_the_installed_bytes_and_the_evidence_and_release_copies_with_pak() {
+    let d = scratch("prove");
+    let game = fake_install(&d, "6865", b"valve clip").to_string_lossy().into_owned();
+    let toml = d.join("mod.toml");
+    let ts = toml.to_string_lossy().into_owned();
+    std::fs::write(&toml, "[mod]\nslug = \"mod-a\"\n[proven]\nbuilds = [6861]  # filled by the harness\n").unwrap();
+    let pass = d.join("pass");
+    std::fs::create_dir_all(&pass).unwrap();
+    std::fs::write(pass.join("index.md"), "# pass\n").unwrap();
+    let o = magician(&d, &["prove", &ts, "--game", &game, "--evidence", &pass.to_string_lossy(), "--json"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    let index_sha = sha256_hex(b"# pass\n");
+    assert!(out.starts_with("{\"schema\":\"magician.prove/1\",\"mod\":\"mod-a\",\"build\":\"6865\"") && out.contains(&format!("\"evidence_sha256\":\"{index_sha}\"")), "{out}");
+    assert!(out.contains("\"proven\":[\"6865\"],\"unbound\":[\"6861\"]"), "{out}");
+    let ledger = std::fs::read_to_string(d.join("proofs.tsv")).unwrap();
+    let pak = PathBuf::from(&game).join("citadel").join("addons").join("pak10_dir.vpk");
+    let bytes = std::fs::read(&pak).unwrap();
+    let row = ledger.lines().find(|l| l.starts_with("6865\t")).unwrap_or_else(|| panic!("{ledger}"));
+    let c: Vec<&str> = row.split('\t').collect();
+    assert_eq!((c[3], c[4], c[5], c[6], c[8]), ("mod_a", "pak10_dir.vpk", format!("{:08x}", vpk::crc32(&bytes)).as_str(), sha256_hex(&bytes).as_str(), index_sha.as_str()), "{row}");
+    assert!(c[7].ends_with("pass"), "{row}");
+    assert!(std::fs::read_to_string(&toml).unwrap().contains("builds = [6861, 6865]  # filled by the harness"));
+    // proving the same bytes again records nothing new
+    let o = magician(&d, &["prove", &ts, "--game", &game, "--evidence", &pass.to_string_lossy(), "--date", "2026-11-24"]);
+    assert!(text(&o).contains("of build 6865 (2026-11-24) recorded in"), "a new date is a new row of the same proof: {}", text(&o));
+    let again = magician(&d, &["prove", &ts, "--game", &game, "--evidence", &pass.to_string_lossy(), "--date", "2026-11-24"]);
+    assert!(text(&again).contains("was already in"), "{}", text(&again));
+    // a release copy proven earlier, by its bytes: the installed pak is not that one
+    let old = d.join("release").join("pak10_dir.vpk");
+    std::fs::create_dir_all(old.parent().unwrap()).unwrap();
+    vpk::write(&old, &[(CLIP.to_string(), b"the earlier clip".to_vec())]).unwrap();
+    let o = magician(&d, &["prove", &ts, "--game", &game, "--build", "6861", "--date", "2026-11-18", "--pak", &old.to_string_lossy()]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(text(&o).contains("note: build 6861 is not the installed build 6865") && text(&o).contains("these bytes are proven on 6861"), "{}", text(&o));
+    // the installed bytes are not proven on 6861 by it
+    assert_eq!(magician(&d, &["baseline", "--game", &game]).status.code(), Some(0));
+    let o = magician(&d, &["patchday", "--game", &game, "--mod", &ts]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("its installed bytes proven on 1 of 1 builds on record (6865); 6861 (claimed for other bytes or never recorded)"), "{}", text(&o));
+    // an evidence folder that is not there is a usage error, nothing written
+    let before = std::fs::read_to_string(d.join("proofs.tsv")).unwrap();
+    let o = magician(&d, &["prove", &ts, "--game", &game, "--evidence", &d.join("nope").to_string_lossy()]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert_eq!(std::fs::read_to_string(d.join("proofs.tsv")).unwrap(), before);
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+fn sha256_hex(b: &[u8]) -> String {
+    grade::sha256::hex(b)
 }
 
 #[test]
@@ -414,11 +500,12 @@ fn patchday_follows_a_pak_a_mod_manager_renamed() {
     let d = scratch("patchday-renamed");
     let game = fake_install(&d, "6864", b"valve clip");
     assert_eq!(magician(&d, &["baseline", "--game", &game.to_string_lossy()]).status.code(), Some(0));
-    // Deadlock Mod Manager renumbers the addons folder: our pak10 is pak03 now, same bytes
+    let toml = d.join("mod.toml");
+    std::fs::write(&toml, "[mod]\nslug = \"mod-a\"\n[proven]\nbuilds = []\n").unwrap();
+    assert_eq!(magician(&d, &["prove", &toml.to_string_lossy(), "--game", &game.to_string_lossy()]).status.code(), Some(0));
+    // Deadlock Mod Manager renumbers the addons folder: our pak10 is pak03 now, same bytes, so the same proof
     let addons = game.join("citadel").join("addons");
     std::fs::rename(addons.join("pak10_dir.vpk"), addons.join("pak03_dir.vpk")).unwrap();
-    let toml = d.join("mod.toml");
-    std::fs::write(&toml, "[mod]\nslug = \"mod-a\"\n[proven]\nbuilds = [6864]\n").unwrap();
     let o = magician(&d, &["patchday", "--game", &game.to_string_lossy(), "--mod", &toml.to_string_lossy(), "--json"]);
     let out = String::from_utf8_lossy(&o.stdout).into_owned();
     assert_eq!(o.status.code(), Some(0), "the pak is there, under another name: {}", text(&o));
@@ -599,9 +686,15 @@ fn a_mod_folder_needs_nothing_after_the_verb() {
     vpk::write(&other, &[("materials/x/y.vmat_c".to_string(), b"m".to_vec())]).unwrap();
     let o = magician_in(&d, &m, &["lint", &other.to_string_lossy()]);
     assert!(String::from_utf8_lossy(&o.stdout).contains("pak40_dir.vpk") && !String::from_utf8_lossy(&o.stderr).contains("pak33"), "{}", text(&o));
-    // drift compares from the last proven build, which the mod.toml names
+    // a build the summary claims, with no proof of these bytes: check says so, and drift has no older era to use
     std::fs::write(m.join("mod.toml"), toml.replace("builds = []", "builds = [6864]")).unwrap();
     assert_eq!(magician(&d, &["baseline", "--game", &game.to_string_lossy()]).status.code(), Some(0));
+    let o = magician_in(&d, &m, &["check", "--light"]);
+    assert_eq!(o.status.code(), Some(4), "{}", text(&o));
+    assert!(String::from_utf8_lossy(&o.stdout).contains("these bytes proven on none; 6864 (claimed for other bytes or never recorded)"), "{}", text(&o));
+    // drift compares from the last build a proof holds these paks on
+    let o = magician_in(&d, &m, &["prove", "--pak", &m.join("pak33_dir.vpk").to_string_lossy()]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
     let o = magician_in(&d, &m, &["drift", "--json"]);
     assert_eq!(o.status.code(), Some(0), "{}", text(&o));
     assert!(String::from_utf8_lossy(&o.stdout).starts_with("{\"schema\":\"magician.drift/1\",\"from\":\"6864\""), "{}", text(&o));

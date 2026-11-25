@@ -300,18 +300,61 @@ class Source(unittest.TestCase):
         self.assertIn("<title>Test Skin 1.0.0</title>", feed)
         self.assertIn("https://example.github.io/skins/test-skin/#" + listing["release"]["id"], feed)
 
-    def test_the_builds_a_mod_was_proven_on_are_said_without_a_new_release(self):
+    def proofs(self, *proofs):
+        """A proof ledger beside the mod.toml, as `magician prove` writes it: (build, [(owner, bytes)]) per proof."""
+        rows = ["# magician proofs/1", "build\tdate\tproof\towner\tfile\tcrc32\tsha256\tevidence\tevidence_sha256"]
+        for build, files in proofs:
+            pairs = sorted({(o, hashlib.sha256(b).hexdigest()) for o, b in files})
+            h = hashlib.sha256(build.encode())
+            for o, s in pairs:
+                h.update(f"\n{o}\t{s}".encode())
+            for o, s in pairs:
+                rows.append(f"{build}\t2026-11-24\t{h.hexdigest()[:16]}\t{o}\tpak.vpk\t00000000\t{s}\t-\t-")
+        with open(os.path.join(self.d, "proofs.tsv"), "w", encoding="utf-8") as f:
+            f.write("\n".join(rows) + "\n")
+
+    def test_the_proof_id_is_magicians(self):
+        sys.path.insert(0, TOOLS)
+        import source
+        self.assertEqual(source.proof_id("6866", [("voice", "b" * 64), ("skin", "a" * 64)]), "7b1c92d29e5922d8",
+                         "the value crates/magician/src/proofs.rs pins")
+
+    def test_the_builds_the_zips_own_paks_were_proven_on_are_said_without_a_new_release(self):
         z = self.bundle()
         self.ok(self.source(z))
         before = self.doc("mods", "test-skin.json")
         self.assertNotIn("Proven in game", before["description"])
+        # the summary alone names no bytes: it says nothing
         with open(os.path.join(self.d, "mod.toml"), "w", encoding="utf-8") as f:
             f.write('[mod]\nslug = "test-skin"\n\n[proven]\n# filled by prove\nbuilds = [6864, 6866, 6865]\n\n[other]\nbuilds = [1]\n')
         self.ok(self.source(z))
+        self.assertNotIn("Proven in game", self.doc("mods", "test-skin.json")["description"])
+        # proofs of these bytes (both paks, one proof each build), of other bytes (6864), and one of the skin alone
+        old = b"the pak before this release"
+        self.proofs(("6864", [("test_skin", old), ("test_voice", self.voice)]),
+                    ("6865", [("test_skin", self.skin), ("test_voice", self.voice)]),
+                    ("6866", [("test_skin", self.skin), ("test_voice", self.voice)]),
+                    ("6867", [("test_skin", self.skin)]))
+        self.ok(self.source(z))
         after = self.doc("mods", "test-skin.json")
-        self.assertIn("Proven in game on builds 6864, 6865 and 6866.", after["description"])
+        self.assertIn("Proven in game on builds 6865 and 6866.", after["description"])
+        self.assertNotIn("6864", after["description"].split("Proven in game")[1], "6864 was proven for other bytes")
         self.assertEqual(after["release"]["id"], before["release"]["id"], "a re-prove is not an update")
         self.assertIn("proven on Deadlock build 6866", self.text("test-skin", "index.html"))
+        # a proof that lost a row in a merge counts for nothing
+        with open(os.path.join(self.d, "proofs.tsv"), encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        drop = next(i for i, l in enumerate(lines) if l.startswith("6866\t") and "\ttest_voice\t" in l)
+        with open(os.path.join(self.d, "proofs.tsv"), "w", encoding="utf-8") as f:
+            f.write("\n".join(lines[:drop] + lines[drop + 1:] + ["<<<<<<< HEAD"]) + "\n")
+        self.ok(self.source(z))
+        self.assertIn("Proven in game on build 6865.", self.doc("mods", "test-skin.json")["description"])
+        # a rebuilt release: its paks have no proof, so the listing says nothing about proofs
+        self.skin = b"skin pak bytes, rebuilt"
+        z = self.bundle(release="1.0.1")
+        self.ok(self.source(z))
+        self.assertNotIn("Proven in game", self.doc("mods", "test-skin.json")["description"])
+        self.assertNotIn("proven on Deadlock build", self.text("test-skin", "index.html"))
         r = self.run_source(self.source(z, mods=[{"bundle": "package/bundle.json", "zip": z, "mod_toml": "nope.toml"}]))
         self.assertNotEqual(r.returncode, 0)
 
