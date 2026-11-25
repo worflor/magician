@@ -27,6 +27,27 @@ struct Item {
     json: String,
 }
 
+/// Why a mod with no hero is not graded, in terms of what it is: `a prop mod (models/props/crate.vmdl)`.
+pub(crate) fn no_hero_why(paks: &[PathBuf]) -> String {
+    let files: Vec<String> = paks.iter().filter_map(|p| vpk::Vpk::open(p).ok()).flat_map(|v| v.entries.into_iter().map(|e| e.path)).collect();
+    format!("{}; grades are for hero mods (`[mod] hero` names one if it is for a hero)", what_it_is(&files))
+}
+
+/// What a mod that is for no hero is, from its files: its kind, and for a prop the models it replaces.
+pub(crate) fn what_it_is(files: &[String]) -> String {
+    let kind = grade::identity::other_kind(files.iter());
+    let models = grade::identity::models_of(files.iter());
+    let indefinite = if kind.starts_with("effects") { "an" } else { "a" };
+    if kind == "prop mod" && !models.is_empty() {
+        let more = if models.len() > 3 { format!(" and {} more", models.len() - 3) } else { String::new() };
+        format!("{indefinite} {kind} ({}{more})", models.iter().take(3).cloned().collect::<Vec<_>>().join(", "))
+    } else if kind == "not a hero mod" {
+        kind
+    } else {
+        format!("{indefinite} {kind}")
+    }
+}
+
 pub fn cmd_check(args: &[String]) -> R {
     let pos = positional(args);
     let ctx = match pos.first().map(|p| p.as_str()).or(flag(args, "--mod").as_deref().map(|_| "")) {
@@ -114,7 +135,7 @@ pub fn cmd_check(args: &[String]) -> R {
             // No grade (no hero named, or the grade could not run: most often no Source 2 Viewer): lint each pak.
             let why = match other {
                 Some(Err(e)) => e.text().to_string(),
-                _ => "the mod.toml names no hero ([mod] hero)".to_string(),
+                _ => no_hero_why(&paks.iter().map(|p| p.path.clone()).collect::<Vec<_>>()),
             };
             let (mut errors, mut warnings, mut allowed) = (0, 0, 0);
             for p in &paks {

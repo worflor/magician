@@ -182,9 +182,11 @@ pub fn decide(s: &Signals, p: &Policy) -> Identity {
     Identity { kind, signals, score, required: ip.new_character_signals, evidence, not_graded }
 }
 
-/// What a mod that touches nothing of the hero is, from its paths: a map, HUD or music mod, or something else.
+/// What a mod that touches nothing of the hero is, from its paths: a map, HUD, music, prop, effects or sound mod, or
+/// something else. A model leads: a prop's materials and textures outnumber it, and they are its, not the kind.
 pub fn other_kind<'a>(paths: impl Iterator<Item = &'a String>) -> String {
-    let (mut maps, mut hud, mut music, mut n) = (0, 0, 0, 0);
+    let (mut maps, mut hud, mut music, mut fx, mut sound, mut n) = (0, 0, 0, 0, 0, 0);
+    let mut models = 0;
     for p in paths {
         n += 1;
         if p.starts_with("maps/") {
@@ -193,18 +195,41 @@ pub fn other_kind<'a>(paths: impl Iterator<Item = &'a String>) -> String {
             hud += 1;
         } else if p.starts_with("sounds/music/") || p.starts_with("soundevents/music") {
             music += 1;
+        } else if p.starts_with("particles/") {
+            fx += 1;
+        } else if p.starts_with("sounds/") || p.starts_with("soundevents/") {
+            sound += 1;
+        }
+        if p.starts_with("models/") && p.ends_with(".vmdl_c") {
+            models += 1;
         }
     }
-    let most = maps.max(hud).max(music);
-    if n == 0 || most * 2 < n {
+    let most = maps.max(hud).max(music).max(fx).max(sound);
+    if n == 0 {
+        "not a hero mod".into()
+    } else if models > 0 && most * 2 < n {
+        "prop mod".into()
+    } else if most * 2 < n {
         "not a hero mod".into()
     } else if most == maps {
         "map mod".into()
     } else if most == hud {
         "HUD mod".into()
-    } else {
+    } else if most == music {
         "music mod".into()
+    } else if most == fx {
+        "effects mod".into()
+    } else {
+        "sound mod".into()
     }
+}
+
+/// The models a mod ships, as the game names them (`models/props/crate.vmdl`), sorted: what a prop mod replaces.
+pub fn models_of<'a>(paths: impl Iterator<Item = &'a String>) -> Vec<String> {
+    let mut v: Vec<String> = paths.filter(|p| p.starts_with("models/") && p.ends_with(".vmdl_c")).map(|p| p.trim_end_matches("_c").to_string()).collect();
+    v.sort();
+    v.dedup();
+    v
 }
 
 #[cfg(test)]
@@ -291,6 +316,13 @@ mod tests {
         assert_eq!(other_kind(v(&["panorama/layout/hud.vxml_c", "panorama/styles/hud.vcss_c"]).iter()), "HUD mod");
         assert_eq!(other_kind(v(&["maps/dl_midtown.vpk"]).iter()), "map mod");
         assert_eq!(other_kind(v(&["sounds/music/menu.vsnd_c"]).iter()), "music mod");
-        assert_eq!(other_kind(v(&["models/props/crate.vmdl_c"]).iter()), "not a hero mod");
+        assert_eq!(other_kind(v(&["models/props/crate.vmdl_c"]).iter()), "prop mod");
+        // a prop's materials and textures outnumber its model, and it is still a prop
+        let prop = v(&["models/props_gameplay/soul_container/soul_container.vmdl_c", "materials/x/a.vmat_c", "materials/x/a_color.vtex_c", "skillobj_mat.vmat_c"]);
+        assert_eq!(other_kind(prop.iter()), "prop mod");
+        assert_eq!(models_of(prop.iter()), vec!["models/props_gameplay/soul_container/soul_container.vmdl"]);
+        assert_eq!(other_kind(v(&["particles/world/shrine.vpcf_c", "particles/world/shrine_glow.vpcf_c"]).iter()), "effects mod");
+        assert_eq!(other_kind(v(&["sounds/ambient/rain.vsnd_c", "soundevents/ambient.vsndevts_c"]).iter()), "sound mod");
+        assert_eq!(other_kind(v(&["scripts/x.vdata_c", "cfg/y.cfg"]).iter()), "not a hero mod");
     }
 }
