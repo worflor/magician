@@ -4,22 +4,22 @@ Magician's CLI as structured tools for AI agents: call a function, get JSON, ins
 
 ## Register it
 
-Add this to the `.mcp.json` of the project (or to the `mcpServers` object of your user MCP settings), with the path to your checkout:
+Add this to the `.mcp.json` of the project (or to the `mcpServers` object of your user MCP settings), with the path to your checkout (on Windows, a path such as `C:/path/to/magician/mcp/server.py` works as written, and `python3` is the command on most Linux systems):
 
 ```json
 {
   "mcpServers": {
     "magician": {
       "command": "python",
-      "args": ["C:\\path\\to\\magician\\mcp\\server.py"]
+      "args": ["/path/to/magician/mcp/server.py"]
     }
   }
 }
 ```
 
-From a terminal the same server is `python C:\path\to\magician\mcp\server.py`; any MCP client that speaks stdio can run it. Nothing in the repository edits a settings file: registering it is yours to do.
+From a terminal the same server is `python <magician>/mcp/server.py`; any MCP client that speaks stdio can run it. Nothing in the repository edits a settings file: registering it is yours to do.
 
-The server runs `target\release\magician.exe`, or `target\mcp-build\release\magician.exe` when that one is newer; `MAGICIAN_BIN` in the entry's `"env"` pins another binary. Build it with `cargo build --release`. Each call's output goes to a log file under `mcp\logs` (`MAGICIAN_MCP_LOGS` moves them).
+The server runs `target/release/magician` (`magician.exe` on Windows), or the one in `target/mcp-build/release/` when that one is newer; `MAGICIAN_BIN` in the entry's `"env"` pins another binary. Build it with `cargo build --release`. Each call's output goes to a log file under `mcp/logs` (`MAGICIAN_MCP_LOGS` moves them).
 
 ## Tools
 
@@ -62,7 +62,7 @@ No tool installs, uninstalls or launches the game, and the server refuses any su
 ## Test
 
 ```
-python mcp\test_server.py [path\to\small\pakNN_dir.vpk]
+python mcp/test_server.py [path/to/small/pakNN_dir.vpk]
 ```
 
 Starts the server, lists the tools, calls `rules`, `doctor`, `policy` (a good one and a bad file), `lint` (light and deep), `grade` (a pak with nothing of the hero: not graded, the gate blocked), `check`, `patchday` and `ls`, and checks the JSON shape, the error paths and that no install tool exists. Without an argument (or `MAGICIAN_TEST_PAK`) it packs a one-file pak of its own; the lint, grade, check and patchday calls need the game (grade the Source 2 Viewer CLI too) and are skipped, with a line saying so, when it isn't found.

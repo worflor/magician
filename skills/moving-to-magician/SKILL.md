@@ -132,13 +132,13 @@ magician session qa --mod <folder> --out <dir> angles motion
 One block per run, verdict first:
 
 ```
-Deadlock build 6868. 3 mods moved to D:\mods, 1 not moved.
+Deadlock build 6868. 3 mods moved to ~/mods, 1 not moved.
 - cool-lash-skin: moved as it is (sha256 matches the original). RE-PROVE: loads, 0 errors, 350 warnings, Costume (look, some effects) · NSFR (M140 on the hat). Installed as pak11 (pak10 is another mod's). Needs: a look in game.
-- menu-music: moved as it is. No hero, so not graded. 0 errors. Your own copy is in addons\pak31_dir.vpk; not installed until you say which copy stays.
+- menu-music: moved as it is. No hero, so not graded. 0 errors. Your own copy is in addons/pak31_dir.vpk; not installed until you say which copy stays.
 - fabric-test: moved as it is. BROKEN: 2 x M143 (sheen with detail: the detail layer never shows). Not installed.
 - old-skin.vpk: not moved: Magician could not read it as a VPK ("...").
-Wrote: three folders under D:\mods, each with a mod.toml; one pak installed. Changed nothing else.
-From now on: run `magician check` in a mod's folder, and `magician patchday` from D:\mods after a game update.
+Wrote: three folders under ~/mods, each with a mod.toml; one pak installed. Changed nothing else.
+From now on: run `magician check` in a mod's folder, and `magician patchday` from ~/mods after a game update.
 ```
 
 Always say: what was copied where; for each mod whether the bytes match, the verdict, the error and warning counts with the rule codes that matter, and what it still needs from a person; every install and every refusal; what you did not move and why. If they have many mods in one place, mention that setting it as the mods folder (`magician paths` shows how it is resolved) lets `patchday` and `reprove` find them from anywhere.

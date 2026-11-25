@@ -13,7 +13,7 @@ Magician treats a Deadlock mod as a program and each game build as a compiler ta
 
 ## Orient first
 
-One program does everything: `magician` (`target\release\magician.exe` in a checkout; if it is missing or older than the source, `cargo build --release`, no network needed). The parts written in Python run through it too (`magician session`, `reprove`, `bundle`, `source`), so you never need to know which is which. Commands here are written for Windows.
+One program does everything: `magician` (`target/release/magician` in a checkout, `magician.exe` on Windows; if it is missing or older than the source, `cargo build --release`, no network needed). The parts written in Python run through it too (`magician session`, `reprove`, `bundle`, `source`), so you never need to know which is which. Commands here read the same on Windows and Linux: paths use `/`, and `python` is the Python 3 on PATH (`python3` on most Linux systems).
 
 ```
 magician                  # the game it found, the mod of this folder, and what to run next
@@ -29,13 +29,13 @@ A mod is a folder with a `mod.toml`. Run from inside it (or name it: `magician c
 
 Several mods: `patchday` and `reprove` take the ones `--mod` names, else every mod under the folder `magician paths` shows as `mods`, else the nearest folder, from the working one upward, that has mods one or two levels below it. Run them from the folder that holds the mods, or from inside any one of them.
 
-The installed build number is `ClientVersion` in `<game>\citadel\steam.inf`; every report names it.
+The installed build number is `ClientVersion` in `<game>/citadel/steam.inf`; every report names it.
 
 ## Rules that are never bent
 
 1. **Read the usage, don't guess.** `magician help <command>` prints that command's usage and runs nothing; an option no command knows is refused (exit 2). Never probe a command by trying flags on it.
 2. **Only `magician install`, `uninstall`, `scene install` and the sessions they run inside write into the game folder.** Never copy, edit or delete anything under the Deadlock install yourself, `gameinfo.gi` included. Never pass `--force` or `--ignore-game` unless the user asked for it on that specific install. Writes to the reference folder (a new build's baseline and sidecars, indexes, caches, in-game passes) are fine; list them in your report. `magician new` and `magician init` write a mod folder or a `mod.toml`: only when the task is to set a mod up.
-3. **One user of the game at a time.** The game seat is a lock: `python -I ingame\gamelock.py status` (exit 0 free, 3 held). If someone holds it, wait or report; never take it from them. If `deadlock.exe` is running and the seat isn't yours, install refuses: ask the person to close the game, don't override. Drive the game only through `magician session` or `magician reprove`: they take the seat under a name, bind the game they launch to it, and nothing in the harness will type into or stop a game that is not bound to you. A refused step is a stop: never fall back to killing `deadlock.exe` or forcing the lock.
+3. **One user of the game at a time.** The game seat is a lock: `python -I ingame/gamelock.py status` (exit 0 free, 3 held). If someone holds it, wait or report; never take it from them. If `deadlock.exe` is running and the seat isn't yours, install refuses: ask the person to close the game, don't override. Drive the game only through `magician session` or `magician reprove`: they take the seat under a name, bind the game they launch to it, and nothing in the harness will type into or stop a game that is not bound to you. A refused step is a stop: never fall back to killing `deadlock.exe` or forcing the lock.
 4. **Don't launch the game unless the task asks for in-game proof**, the machine has an interactive desktop, and the seat is free.
 5. **Never weaken a check to make a mod pass.** No editing rules, no blanket allowances. A finding is accepted only per site, in the addon's `magician.allow`, with a written reason, and only when the user agrees.
 6. **Never record a proof (`magician prove`, `magician reprove accept`) unless the frames for that build were actually looked at**, by the user, or by you if you can see images and did. A green lint is not proof, and neither is a pass that ran. A proof belongs to the bytes installed when it is recorded (`proofs.tsv` beside the `mod.toml`), so record it with the same paks installed that the pass ran on, never after a reinstall or rebuild. A rebuilt pak is unproven whatever `[proven] builds` lists. Never edit `proofs.tsv` or `[proven] builds` by hand.
@@ -82,7 +82,7 @@ magician reprove --plan                  # what would run for each mod, and what
 magician reprove                         # every mod to re-prove: a vanilla pass when the build has no baseline, the mod's pass, one report
 magician reprove accept <pass folder>    # only after the contact sheets were looked at (rule 6)
 ```
-It holds the seat only while it plays, puts back any pak it took out, and gives each mod `ready`, `look` or `failed` (exit 0, 4, 1) in a report under `<reference>\work\passes\`. None of the three is proof: it judges warnings, not pictures. Open the contact sheets and say what you saw, or say that you could not look. `accept` refuses a pass that is not whole, not on the installed build, or not of the installed paks, then records the proof with the pass as evidence. One mod by hand: `magician session qa --mod <folder> --out <dir>`.
+It holds the seat only while it plays, puts back any pak it took out, and gives each mod `ready`, `look` or `failed` (exit 0, 4, 1) in a report under `<reference>/work/passes/`. None of the three is proof: it judges warnings, not pictures. Open the contact sheets and say what you saw, or say that you could not look. `accept` refuses a pass that is not whole, not on the installed build, or not of the installed paks, then records the proof with the pass as evidence. One mod by hand: `magician session qa --mod <folder> --out <dir>`.
 
 **Build, release, install** (only when asked to ship or test in game; check the seat first, rule 3):
 ```
@@ -117,7 +117,7 @@ Deadlock build 6865 (was 6864), data only. 3 mods checked.
 - maid-lash: RE-PROVE. Loads; 45 of Lash's clips and his anim graph changed since 6864. Pass run: ready, no warnings over vanilla; sheets read, cloth follows the new clips. Proof recorded. Grade: Costume (look, effects, sound).
 - example-skin: BROKEN. Valve renamed bone `spine_1` -> `spine_1_renamed` in the hero's skeleton; 95 files reference it. Still installed: the rig needs rebuilding by the author.
 - another-skin: ok.
-Wrote: baseline and sidecars for 6865, two passes under work\passes (reference folder); maid-lash proofs.tsv and mod.toml (uncommitted).
+Wrote: baseline and sidecars for 6865, two passes under work/passes (reference folder); maid-lash proofs.tsv and mod.toml (uncommitted).
 ```
 
 Always say: the build number; each mod's patch-day label and grade label (`Echo (look, some effects) · NSFR`, quoted as printed); the release-gate blockers if a release was asked about; error counts with rule codes (`M062`, not "a model problem"); what you saw in the frames, or that nobody looked; every write you made (a baseline captured, a pak installed or removed, a proof recorded, files created) and every refusal you hit; what you did not do and why. Quote Magician's own words for findings rather than paraphrasing them. When a command exits 2, give its `magician:` line verbatim.

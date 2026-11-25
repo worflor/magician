@@ -1,6 +1,6 @@
 # Magician loops in full
 
-Load the section you need. `magician` is `target\release\magician.exe` in a checkout. Run a mod's commands from its folder, and `patchday` and `reprove` from the folder that holds the mods (or from inside any one of them).
+Load the section you need. `magician` is `target/release/magician` in a checkout (`magician.exe` on Windows). Run a mod's commands from its folder, and `patchday` and `reprove` from the folder that holds the mods (or from inside any one of them).
 
 ## Contents
 
@@ -91,17 +91,17 @@ A pak whose owner no `mod.toml` claims (a voice pak, a showcase scene installed 
 
 ## Build and release
 
-Needs the CSDK (`magician paths` shows `csdk`). Addon sources live in `<csdk>\content\citadel_addons\<addon>\`.
+Needs the CSDK (`magician paths` shows `csdk`). Addon sources live in `<csdk>/content/citadel_addons/<addon>/`.
 
 ```
-magician build <addon> <out\pakNN_dir.vpk>        compile real sources, pack outputs that map to live sources, lint
+magician build <addon> <out/pakNN_dir.vpk>        compile real sources, pack outputs that map to live sources, lint
 magician release <addon> --hero <hero> [--with <addon>]... [--out FILE]
 ```
 
 - One build per addon at a time: a second waits for the lock; `--no-wait` fails at once instead (use it when unattended).
 - A text source with a UTF-8 BOM is refused by name; the fix is to rewrite the file without one, not to bypass the check.
 - `magician.exclude` in the addon keeps listed paths out of the pak (when another pak owns them).
-- `release` writes `release-report.txt`, `lint.json` and `grade.json` beside the pak (lint, grade, mark; `--mod <mod.toml>` gives the grade its proof and rights) and exits 1 if lint failed. `--json` prints the whole release as one document. Default output is `<reference>\work\release\<addon>\pak10_dir.vpk`.
+- `release` writes `release-report.txt`, `lint.json` and `grade.json` beside the pak (lint, grade, mark; `--mod <mod.toml>` gives the grade its proof and rights) and exits 1 if lint failed. `--json` prints the whole release as one document. Default output is `<reference>/work/release/<addon>/pak10_dir.vpk`.
 
 ## Install and roll back
 
@@ -114,9 +114,9 @@ magician uninstall <file> | --mod NAME | --all
 - Install lints first and refuses (exit 3) on lint errors.
 - It refuses while `deadlock.exe` runs unless you hold the game lock (`--holder NAME` or `MAGICIAN_GAME_HOLDER` equal to the lock's holder).
 - It never replaces another mod's file, a file it didn't install, or one changed since; the message names the owner and a free slot for `--as`. Don't reach for `--force`.
-- It backs up `gameinfo.gi` once per build and adds the addons line idempotently. Uninstall removes only ledger files; a pak someone else put in `addons\` stays.
+- It backs up `gameinfo.gi` once per build and adds the addons line idempotently. Uninstall removes only ledger files; a pak someone else put in `addons/` stays.
 - After installing, `install --status` should show the crc you meant. Deadlock Mod Manager renumbers paks it didn't install; Magician follows a moved pak by its crc and `install --status` says `(the ledger says pakNN_dir.vpk: renamed by another tool)`. Report the move. An update of a moved pak is refused with the `--as` that replaces it in place: use that rather than installing a second copy.
-- A running Source 2 Viewer MCP session keeps the addon paks mapped and install fails with `os error 1224`; stop the viewer (`tools\s2v_mcp.ps1 stop`) first.
+- A running Source 2 Viewer MCP session keeps the addon paks mapped and install fails with `os error 1224`; stop the viewer (`tools/s2v_mcp.ps1 stop`) first.
 
 ## Install a pak for someone to look at
 
@@ -124,7 +124,7 @@ The person says "I rebuilt my pak, check it and put it in the game so I can look
 
 1. Lint it (light, and `--deep` if it replaces a model). Errors: report them and stop; install would refuse anyway.
 2. `magician install --status`: is a version of this mod installed, under which owner and file name?
-3. `python -I ingame\gamelock.py status` and whether `deadlock.exe` is running. A running game you don't hold: ask them to close it (a running game holds the paks and install refuses).
+3. `python -I ingame/gamelock.py status` and whether `deadlock.exe` is running. A running game you don't hold: ask them to close it (a running game holds the paks and install refuses).
 4. `magician install <pak> --mod <the owner from step 2>` (same file name, so it replaces their previous build of the same mod). If it refuses because another mod owns that slot, report the free slot it suggests and ask before using `--as`.
 5. `magician install --status` again: the crc should be the new pak's.
 6. Tell them it is installed and that they can launch. Don't launch for them unless asked; if asked, follow [In-game proof](#in-game-proof) and give the seat back when they're done looking.
@@ -151,7 +151,7 @@ magician source <source.json> [--out <dir>]
 
 ## In-game proof
 
-Only when the task asks for it, the machine has an interactive Windows desktop, and you can look at the frames (or a person will). The harness types into the game like a player and captures its window; `ingame/README.md` has the details.
+Only when the task asks for it, the machine has a desktop the game is shown on (an interactive Windows session, or an X display on Linux; `python ingame/gameos.py` says whether this one has what the harness needs), and you can look at the frames (or a person will). The harness types into the game like a player and captures its window; `ingame/README.md` has the details.
 
 After a game update, for every mod that needs it:
 
@@ -163,7 +163,7 @@ magician reprove accept <pass folder>    record a pass that was looked at
 
 - It takes the game seat under each mod's name only while that mod plays (`MAGICIAN_GAME_HOLDER` names one holder for the whole run), and exits 3 at once if someone else holds it.
 - A mod's first pass on a build is two: a vanilla pass (the mod's paks out, the same scenarios, the paks put back exactly) gives the console log every later pass on that build is read against. A vanilla pass that cannot put the install back stops the whole run.
-- The report (`reprove-<build>-<date>-<time>.md` under `<reference>\work\passes\`, and `--json`) gives each mod `ready` (every scenario ran, no warning over vanilla), `look` (it adds warnings, or they could not be compared: listed) or `failed` (a scenario failed, a crash dump, no `[ingame] pass` in its `mod.toml`). Exit 0, 4, 1.
+- The report (`reprove-<build>-<date>-<time>.md` under `<reference>/work/passes/`, and `--json`) gives each mod `ready` (every scenario ran, no warning over vanilla), `look` (it adds warnings, or they could not be compared: listed) or `failed` (a scenario failed, a crash dump, no `[ingame] pass` in its `mod.toml`). Exit 0, 4, 1.
 - None of those is proof. Open the pass's contact sheets (`*_sheet.png`, listed in its `index.md`). Say what you saw (a T-pose, a pink material, cloth snapping, an ability that reads wrong), not that the run exited 0. If you cannot see images, stop here and report the pass folders for a person.
 - `accept` refuses a vanilla pass, a pass with a failed scenario, a pass on another build, and a pass whose paks are not the ones installed now. Otherwise it records the proof (`magician prove <mod.toml> --evidence <pass folder>`). The mod's `mod.toml` and `proofs.tsv` change: say so, and commit them only if that is the task.
 
@@ -176,4 +176,4 @@ magician session up | run | film | down --out <dir> ...                    the s
 ```
 
 - A session exits 5 when a game it did not start is running (it may carry other paks): don't adopt it, report. It exits 9 when the seat or the game stopped being its own: nothing was done.
-- `python -I ingame\gamelock.py status` says whether the seat is free (0) or held (3). Check it before saying the game is free.
+- `python -I ingame/gamelock.py status` says whether the seat is free (0) or held (3). Check it before saying the game is free.

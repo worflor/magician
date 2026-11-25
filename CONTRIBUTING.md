@@ -1,6 +1,17 @@
 # Contributing to Magician
 
-Magician is a headless toolchain for creating, validating, and maintaining Deadlock mods through automation, scripts, and AI agents. It is a Rust workspace with zero external crates, plus Python and PowerShell around the game. [README.md](README.md) says what it is and how to start using it; this file is for changing it: how the repository is laid out, the rules every change follows, the gotchas the code already handles, and how to verify your work.
+Magician is a headless toolchain for creating, validating, and maintaining Deadlock mods through automation, scripts, and AI agents. It is a Rust workspace with zero external crates, plus standard-library Python around the game, and it runs on Windows and Linux alike. [README.md](README.md) says what it is and how to start using it; this file is for changing it: what you need, how the repository is laid out, the rules every change follows, the gotchas the code already handles, how to verify your work, and how to send it.
+
+## What you need
+
+On either system:
+
+- A stable Rust toolchain with clippy (`rustup component add clippy`). The workspace has no external crates, so a build downloads nothing.
+- Python 3.11 or newer on PATH, standard library only. The bundler's and the mod-source writer's tests make preview images with Pillow (`python -m pip install pillow`, or `python3-pil` on Debian and Ubuntu); `cinema/test_scene.py` needs ffmpeg.
+- git (the commit `--version` names), and `curl` and `tar` for `crates/magician/tests/update.rs`.
+- On Linux, to test the harness's X11 side: `xvfb`, `libx11-6` and `libxtst6` (the Debian and Ubuntu names).
+
+Nothing needs the game, Valve's CSDK, Source 2 Viewer or Blender: every test makes its own fixtures. Commands below are written once for both systems: paths with `/`, `python` for the Python 3 on PATH (`python3` on most Linux distributions), and an environment variable the way bash sets it, `NAME=value command` (in PowerShell: `$env:NAME = "value"; command`).
 
 ## Where knowledge lives
 
@@ -14,7 +25,7 @@ Each kind of knowledge has one home. Read it there, and put new knowledge there.
 - [ingame/README.md](ingame/README.md), [mcp/README.md](mcp/README.md), [cinema/README.md](cinema/README.md): their subsystems. The in-game harness's README is also the home of game facts learned by driving it.
 - [skills/using-magician/](skills/using-magician/SKILL.md): how an agent drives Magician on a mod. Keep it in step when a command, exit code or safety rule changes.
 - [skills/moving-to-magician/](skills/moving-to-magician/SKILL.md): how an agent brings a mod made without Magician under it. It quotes `init`, `check` and `install` messages word for word; keep them in step.
-- Briefs: an open plan or investigation is one file in a `briefs` folder under `docs/`, made when the first one is needed. A brief is a draft, not canonical truth; what proves durable moves into a core doc or a test, and the brief is deleted.
+- Plans in progress: an open plan or investigation is one file under `docs/briefs/` while it is open (there is none today). A brief is a draft, not canonical truth; what proves durable moves into a core doc or a test, and the brief is deleted.
 - Executable references: `magician --help` (every command and flag, the exit codes, how locations resolve; `magician <command> --help` for one), `magician rules` (the rule catalogue), `magician rubric` (the grading criteria in force), `magician policy` (every judgement number in force and where it came from), `magician paths` (where this machine's game, reference folder and tools are, and the mod of the working folder), `magician doctor` (what is missing on this machine, with each fix).
 
 ## Posture
@@ -28,6 +39,7 @@ Each kind of knowledge has one home. Read it there, and put new knowledge there.
 - **Write through `out.rs`.** `outln!`, `out!`, `say!` (the human report, silent under `--json`) and `errln!`, never `println!` or `eprintln!`: a closed pipe must end in the command's own exit code, not a panic. Colour (`style.rs`) and progress lines (`progress.rs`) only ever on a terminal, and the words must read without them.
 - **The network only on request.** `magician update ...` and `doctor --updates` are the only code that touches it, each step bounded to about 10 s and a failure said as "could not check". A new command that goes online needs the same explicit flag, never a check on the way past. Updating never fetches and runs new code unasked (`update.rs`, `updateapply.rs`).
 - **No machine in the code.** Outside locations go through `crates/magician/src/paths.rs` and `ingame/gamepaths.py` (flag, environment, config file, discovery). Never write a drive letter or a user folder into a default.
+- **Both systems, one implementation.** Windows and Linux run the same code. Where the system itself is asked something there is one seam for it: `paths.rs` for where things live (each platform's own folders), `install.rs` for whether the game runs and from where, `lock.rs` for whether a process is alive, `ingame/gameos.py` for everything the harness asks of the system (processes, the window, keys, mouse, capture, Steam). A new need from the system goes into its seam with a backend for each platform, or a refusal that says what is missing; never a second script for the other system, and never a quiet answer of "not running" or "free" because the question could not be asked. What runs on one system only says so once, in [README.md](README.md#platforms).
 
 ## Map
 
@@ -56,18 +68,19 @@ crates/magician   the CLI: main.rs, cli.rs (--help, --version, options, exit cod
                   one "is it proven here" question), gamefiles.rs, meshcmd.rs, clothcmd.rs, markcmd.rs, jsonout.rs
 mcp/              MCP server: the CLI as JSON tools for agents, Python stdlib only; no install or launch tool
 skills/           the Agent Skills: using-magician (driving the CLI on a mod), moving-to-magician (bringing a mod under it)
-ingame/           retail-game driver, Python stdlib and PowerShell: mod_session.py is the one driver of a mod's session
-                  and reprove.py patch day in game (`magician session`, `magician reprove`), takes.py the timed and
-                  staged takes, logdiff.py the warnings a mod adds over vanilla, gamelock.py the one-user-at-a-time
-                  game lock (the game bound to the seat), gamepaths.py the harness side of paths.rs; scenarios/ holds
-                  stock-hero examples
+ingame/           retail-game driver, Python stdlib: mod_session.py is the one driver of a mod's session and reprove.py
+                  patch day in game (`magician session`, `magician reprove`), takes.py the timed and staged takes,
+                  logdiff.py the warnings a mod adds over vanilla, gamelock.py the one-user-at-a-time game lock (the
+                  game bound to the seat), gamepaths.py the harness side of paths.rs, gameos.py everything the harness
+                  asks of the system (a Windows and an X11 backend), launch.py and stop_game.py the game's start and
+                  stop (launch.ps1 and stop_game.ps1 call them, for old callers); scenarios/ holds stock-hero examples
 qa/ harness/      offline visual QA and Blender render scripts; qa/heroes/haze.json is the example hero profile (a mod
                   keeps its own and passes its path)
 cinema/           the optional, dev-only film kit for trailers and stills (pak90, never installed during QA or play)
 tools/            bundle.py (player release bundles with mod-interchange.json) and source.py (a static mod source from
-                  bundles), behind `magician bundle` and `magician source`; make-release.ps1 (the release files: the asset for this platform, VERSION, SHA256SUMS), scene_install.ps1 / .py (the player-side
-                  scene installers bundles ship), scene_lump.py (re-dress a UI scene map), rip-heroes.ps1 (hero glbs
-                  for reference, never committed), s2v_mcp.ps1 (the Source 2 Viewer MCP launcher); test_bundle.py,
+                  bundles), behind `magician bundle` and `magician source`; make-release.ps1 (the release files: the asset for this platform, VERSION, SHA256SUMS; Windows PowerShell 5.1 or PowerShell 7), scene_install.ps1 / .py (the player-side
+                  scene installers bundles ship), scene_lump.py (re-dress a UI scene map), and two Windows dev tools:
+                  rip-heroes.ps1 (hero glbs for reference, never committed) and s2v_mcp.ps1 (the Source 2 Viewer MCP launcher); test_bundle.py,
                   test_source.py and test_scene_install.py hold their guards
 docs/             PDD.md, TDD.md, STATUS.md, PATCH-DAY.md, reference/
 ```
@@ -75,30 +88,34 @@ docs/             PDD.md, TDD.md, STATUS.md, PATCH-DAY.md, reference/
 ## Commands
 
 ```
-cargo build --release            # target\release\magician.exe
+cargo build --release            # target/release/magician (magician.exe on Windows)
 cargo test --workspace           # synthetic fixtures only; needs no game and no Valve file
 magician --help                  # every command and flag, the exit codes, how locations resolve
 magician paths                   # where the game, reference folder, CSDK and viewer resolved to on this machine
 magician rules                   # what each rule costs in game
 magician patchday                # the patch-day check (read-only without --capture)
-python mcp\test_server.py        # the MCP server end to end (packs its own pak; lints it when the game is found)
-python ingame\test_gamelock.py   # the game lock, the game bound to the seat
-python ingame\test_takes.py      # the timed-take plans and the frozen-hero check, offline
-python ingame\test_mod_session.py    # the session driver; its install and restore against a scratch game (release binary)
-python ingame\test_logdiff.py    # baselines by build and scene, and what is and is not compared
-python ingame\test_reprove.py    # patch day in game: the plan, the states and accept, on a fake session
-python cinema\test_replay.py     # the free-camera film's shot list and demo-end check, offline
-python -I tools\test_bundle.py   # the bundler's guards (needs the release binary, not the game)
-python -I tools\test_source.py   # the mod-source writer, offline
-python -I tools\test_scene_install.py  # both player installers and magician on good and malformed patches, offline
-python cinema\test_scene.py      # the film kit's language and encode, offline (needs ffmpeg)
-python cinema\test_session.py    # the film kit's seat hand-back, on a fake clock
+python mcp/test_server.py        # the MCP server end to end (packs its own pak; lints it when the game is found)
+python ingame/test_gamelock.py   # the game lock, the game bound to the seat
+python ingame/test_gameos.py     # the harness's seam to the system: processes everywhere, and on Linux an X11 window of
+                                 # its own (under Xvfb: xvfb-run -a python ingame/test_gameos.py)
+python ingame/test_takes.py      # the timed-take plans and the frozen-hero check, offline
+python ingame/test_mod_session.py    # the session driver; its install and restore against a scratch game (release binary)
+python ingame/test_logdiff.py    # baselines by build and scene, and what is and is not compared
+python ingame/test_reprove.py    # patch day in game: the plan, the states and accept, on a fake session
+python cinema/test_replay.py     # the free-camera film's shot list and demo-end check, offline
+python -I tools/test_bundle.py   # the bundler's guards (needs the release binary, not the game)
+python -I tools/test_source.py   # the mod-source writer, offline
+python -I tools/test_scene_install.py  # both player installers and magician on good and malformed patches, offline
+python cinema/test_scene.py      # the film kit's language and encode, offline (needs ffmpeg)
+python cinema/test_session.py    # the film kit's seat hand-back, on a fake clock
 ```
+
+The Python tests that run the program find it at `target/release/`; a build elsewhere (`CARGO_TARGET_DIR`) is named with `MAGICIAN_BIN=<the program>`.
 
 Before a change lands, run what CI would:
 
 ```
-set RUSTFLAGS=-D warnings && cargo test --workspace         # warnings are errors
+RUSTFLAGS="-D warnings" cargo test --workspace              # warnings are errors
 cargo clippy --workspace --all-targets -- -D warnings       # the lint set below, as errors
 ```
 
@@ -112,10 +129,10 @@ Every reader of bytes or text someone else made has a fuzz target in its crate's
 harness). `cargo test` runs a short, fixed set of cases; a long run is a time per target:
 
 ```
-set MAGICIAN_FUZZ=600 && cargo test --release --test fuzz -- --test-threads 1     # every target, 600 s each
-set MAGICIAN_FUZZ_GAME=D:\...\Deadlock\game                                     # also mutate real blocks, read only
-set MAGICIAN_FUZZ_SEED=7 && set MAGICIAN_FUZZ_CASE=1234                           # one case again
-set MAGICIAN_FUZZ_BACKTRACE=1                                                     # where an allocation over the cap came from
+MAGICIAN_FUZZ=600 cargo test --release --test fuzz -- --test-threads 1     # every target, 600 s each
+MAGICIAN_FUZZ_GAME=<.../Deadlock/game>                                     # with the line above: also mutate real blocks, read only
+MAGICIAN_FUZZ_SEED=7 MAGICIAN_FUZZ_CASE=1234                               # with the line above: one case again
+MAGICIAN_FUZZ_BACKTRACE=1                                                  # where an allocation over the cap came from
 ```
 
 A case that panics, hangs (10 s) or asks for one allocation over 256 MiB stops the run, names its seed and number, and
@@ -124,7 +141,7 @@ that says what it found, so every later run replays it first. Inputs there come 
 game file: a case found with `MAGICIAN_FUZZ_GAME` is a mutation of Valve's bytes, so it is not kept; write a test that
 builds the same shape from nothing instead (`typed_null_arrays` in `crates/resource/tests/fuzz.rs` is one).
 
-`--help` after any command prints its usage and runs nothing (`crates/magician/tests/update.rs` holds `magician update` (scratch toolkits and checkouts, a local folder or a server on this machine as the source; it needs `git`, `curl`, `tar` and `rustc`), and `crates/magician/tests/contract.rs` holds that and the exit codes to the built binary). `crates/magician/tests/real_mods.rs` grades real mods when this machine has them installed (Maid Lash from a `model-replacements/maid-lash/` folder above the repository, and any new-character mod with a voice pak named by `MAGICIAN_REAL_NEW_CHARACTER`), and skips otherwise. CI (`.github/workflows/ci.yml`) builds a fresh clone on a clean Windows runner and runs the workspace tests, clippy and the Python tests there, and the Rust tests and clippy again on Linux.
+`--help` after any command prints its usage and runs nothing (`crates/magician/tests/update.rs` holds `magician update` (scratch toolkits and checkouts, a local folder or a server on this machine as the source; it needs `git`, `curl`, `tar` and `rustc`), and `crates/magician/tests/contract.rs` holds that and the exit codes to the built binary). `crates/magician/tests/real_mods.rs` grades real mods when the machine has them (Maid Lash, from a `model-replacements/maid-lash/` folder in any folder above the repository, and a new-character mod with a voice pak, named by `MAGICIAN_REAL_NEW_CHARACTER`) and skips otherwise; without them nothing is lost but those two grades. CI (`.github/workflows/ci.yml`) builds a fresh clone on clean Windows and Linux runners and runs the workspace tests, clippy and the Python tests on both, the harness's X11 side under Xvfb.
 
 The `dev` profile runs at opt-level 1 because VPK trees are 150k+ entries and unoptimised parsing is needlessly slow.
 
@@ -133,8 +150,8 @@ The `dev` profile runs at opt-level 1 because VPK trees are 150k+ entries and un
 A release is its asset per platform (`magician-windows-x64.zip`, `magician-linux-x64.tar.gz`), `SHA256SUMS` and `VERSION`, which `magician update` reads ([README.md](README.md), "Staying current"). Nothing is generated by hand.
 
 1. Make the commit to release on `main`, with the change's entry in [CHANGELOG.md](CHANGELOG.md) under a heading named for the version. Say in that entry whether the lint rules, the grading rubric or the built-in policy changed: that is what `update --check` tells a user, and `magician update --describe` (the `rubric`, `policy`, `lint_rules` and `lint_fingerprint` lines) shows what the build says. Bump `version` in the workspace `Cargo.toml` when the release is a new version; two commits of one version are told apart by their dates.
-2. Prove the files locally, into a scratch folder: `tools\make-release.ps1 -Out <scratch>`. It builds the release executable (into `CARGO_TARGET_DIR` when set), writes `VERSION` from the built program, packs the tracked toolkit files, and writes `SHA256SUMS`. It refuses a tree with local changes and a program that was not built from HEAD, and uploads nothing. Then try it as a user would, on a scratch copy of a toolkit folder: `magician update --check --source <scratch>`, and an `update` into the copy.
-3. Tag the commit `vX.Y.Z` and push the tag. `.github/workflows/release.yml` runs the same script on Windows and Linux runners (`-Tag` refuses a tag that is not `v` and the program's version), gathers the assets, writes one `SHA256SUMS` over them and attaches the files to the release. Nobody uploads by hand. The workflow has not run on GitHub yet (nor has `ci.yml`), and the Linux asset has not been built or run anywhere: look at the first release's files before telling anyone.
+2. Prove the files locally, into a scratch folder: `tools/make-release.ps1 -Out <scratch>` (on Linux, `pwsh tools/make-release.ps1 -Out <scratch>`; each system builds its own asset). It builds the release executable (into `CARGO_TARGET_DIR` when set), writes `VERSION` from the built program, packs the tracked toolkit files, and writes `SHA256SUMS`. It refuses a tree with local changes and a program that was not built from HEAD, and uploads nothing. Then try it as a user would, on a scratch copy of a toolkit folder: `magician update --check --source <scratch>`, and an `update` into the copy.
+3. Tag the commit `vX.Y.Z` and push the tag. `.github/workflows/release.yml` runs the same script on Windows and Linux runners (`-Tag` refuses a tag that is not `v` and the program's version), gathers the assets, writes one `SHA256SUMS` over them and attaches the files to the release. Nobody uploads by hand. The workflow has not run on GitHub yet (nor has `ci.yml`); the script has made both assets locally, and each has updated a scratch install from a folder: look at the first release's files before telling anyone.
 4. `releases/latest/download` is the default update source, so the repository's latest published release is what every `update --check` sees. A draft or a pre-release is not "latest".
 
 ## Rules for changes
@@ -149,7 +166,7 @@ A release is its asset per platform (`magician-windows-x64.zip`, `magician-linux
 
 ## Content rules
 
-The repository is kept clean enough to be public.
+The repository is public, so it holds only what may be shared:
 
 - Nothing extracted from Valve's files is committed: no VPKs, compiled resources (`*_c`), decompiled sources, textures, glb exports, renders or captures. `.gitignore` enforces the extensions; tests and fixtures are synthetic.
 - Paths, CRCs, rule thresholds and numeric findings are facts about the game and may appear in docs and tests; bytes of its content may not.
@@ -166,9 +183,11 @@ What the engine, the compiler and the viewer do is in [docs/reference/engine.md]
 |---|---|---|
 | Compiler | A `DistanceFieldList` only allocates with the `distancefield` ModelDoc feature, which the CSDK's gameinfo lacks. | `build.rs`: `distance_field_game` writes `<csdk>/game/citadel_dstf/gameinfo.gi` (the CSDK's plus that feature, the original untouched) and those documents compile with `-game` pointing at it. |
 | Pack | A path shipped in two paks is won by the lower pak number, so a later release of the other pak can mask or regress it. | An addon's `magician.exclude` (path prefixes, `#` comments) leaves those compiled files out of `build` and `release` paks (listed as `left out N excluded by magician.exclude`). `tools/bundle.py` refuses a bundle where a path is in two paks or a file is byte-identical to Valve's. |
-| Build | Two builds of one addon at once (a release overlapping another pipeline's compile) corrupt each other's run in `game\citadel_addons\<addon>\`. | `lock.rs`: a `.magician-build.lock` (pid, start time, holder) in that folder; a second taker waits (`--lock-timeout`) or fails at once (`--no-wait`); a dead or reused pid is stale. |
-| Game | Several pipelines drive one retail game. A second `map` or `selecthero` mid-scenario wrecks the first one's shots, and a seat freed while `deadlock.exe` is still exiting lets the next holder launch beside a game that the first pipeline's fallback then kills. | `ingame/gamelock.py`: a lock file naming the holder (`MAGICIAN_GAME_HOLDER`); `launch.ps1` binds the pid and start time of the game it started to the seat; `console.py` and `stop_game.ps1` drive only that game (`may_drive`); a release is refused while it lives, and `stop_game.ps1` holds the seat until the process has exited. `test_gamelock.py` holds each. The rules are in [ingame/README.md](ingame/README.md), "One user of the game at a time". |
-| Locations | The CLI's seat check and the harness's game lock must read the same file, or install would swap paks under a running capture. | One resolution order in `paths.rs` and `gamepaths.py` (`MAGICIAN_GAME_LOCK`, config `game_lock`, else `<reference>\work\ingame-game.lock`). Change both or neither. |
+| Build | Two builds of one addon at once (a release overlapping another pipeline's compile) corrupt each other's run in `game/citadel_addons/<addon>/`. | `lock.rs`: a `.magician-build.lock` (pid, start time, holder) in that folder; a second taker waits (`--lock-timeout`) or fails at once (`--no-wait`); a dead or reused pid is stale. |
+| Game | Several pipelines drive one retail game. A second `map` or `selecthero` mid-scenario wrecks the first one's shots, and a seat freed while `deadlock.exe` is still exiting lets the next holder launch beside a game that the first pipeline's fallback then kills. | `ingame/gamelock.py`: a lock file naming the holder (`MAGICIAN_GAME_HOLDER`); `launch.py` binds the pid and start time of the game it started to the seat; `console.py` and `stop_game.py` drive only that game (`may_drive`); a release is refused while it lives, and `stop_game.py` holds the seat until the process has exited. `test_gamelock.py` holds each. The rules are in [ingame/README.md](ingame/README.md), "One user of the game at a time". |
+| Locations | The CLI's seat check and the harness's game lock must read the same file, or install would swap paks under a running capture. | One resolution order in `paths.rs` and `gamepaths.py` (`MAGICIAN_GAME_LOCK`, config `game_lock`, else `<reference>/work/ingame-game.lock`). Change both or neither. |
+| Platform | Off Windows the game lock listed processes with `tasklist`, found none, and called every lock stale and every pid dead: a pipeline would have cleared another's seat under a running game. A build lock took a reused pid for its holder, and the findings cache was off for want of `%LOCALAPPDATA%`. | `ingame/gameos.py` and `lock.rs` read `/proc` (start times too, so a reused pid is not the holder); `paths.rs` has each platform's folders; a question the system can't answer is refused, never answered "no". `test_gameos.py` and `lock.rs`'s tests hold them. |
+| Line ends | A checkout's line ends follow the system and its git settings, so a bundle made on Linux differed from one made on Windows in its two scene installers. | `bundle.py` writes `install-scene.ps1` with CRLF and `install-scene.py` with LF, whatever the checkout has; `test_bundle.py` holds it. |
 | Install | Two installs or uninstalls at once each rewrite the ledger from what they read, and one row is lost. | `install.rs`: the ledger is read, changed and written under `.magician-installed.lock` in `addons`; the pak, `gameinfo.gi` and the ledger are written to a temporary name and renamed into place. |
 | Install | Deadlock Mod Manager renumbers every pak in `addons`, so a ledger row can name a file that moved. | `install::reconcile`: a row whose file is missing or changed follows its crc to the one unclaimed pak with those bytes; uninstall never removes bytes that are not the ones it installed. |
 | Locks | A lock file created empty and written after can be read, by a taker that has waited, as a stale lock to clear: two holders, or a lock put back after its holder left. | `lock.rs`: a lock is written under its own name and hard-linked into place, whole or not at all, and carries a token so threads of one process tell their locks apart. |
@@ -194,3 +213,14 @@ What the engine, the compiler and the viewer do is in [docs/reference/engine.md]
 - A new or changed rule: its fixture, plus `magician mesh ... --glb` or `lint` against a real mod when behaviour on Valve's data matters; report the numbers.
 - Anything the game or Blender renders: look at the picture. Quote what you saw, not just the exit code.
 - A change to `tools/bundle.py` or the scene installers: build a bundle into a scratch folder before and after and diff them; live releases depend on byte-identical output.
+- A change to how the harness meets the system (`ingame/gameos.py`, `launch.py`, `stop_game.py`): `test_gameos.py` on Linux under Xvfb, and a real session on Windows (`magician session qa` on a stock scenario), with the seat taken and given back.
+- Anything with a platform branch: build and test on both systems, or say which one you could not run.
+
+## Sending a change
+
+Changes are welcome, from anyone, as pull requests against `main`.
+
+- For a new lint rule, a new crate or a new command, open an issue first and say what it would catch or do, and on which real mod or build you saw the need. A rule is judged on Valve's own heroes before it is written (rule 5 above), so the issue is where its limit gets agreed.
+- A change comes with its test: a fixture that breaks a new rule, a synthetic case for a reader, a scratch folder for anything that writes. `cargo test` and `cargo clippy -D warnings` pass on your system, and the pull request says which system you ran them on.
+- Keep a change to one thing, with the docs it touches updated in the same change (each fact in its one home, above).
+- The owner reviews every pull request and may ask for changes or take the idea in another shape. Contributions are under the repository's MIT licence.

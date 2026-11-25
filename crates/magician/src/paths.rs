@@ -211,9 +211,9 @@ pub fn mods() -> Option<Found> {
     explicit(None, "", "MAGICIAN_MODS", "mods")
 }
 
-/// The toolkit folder, the one holding `ingame\mod_session.py` and `tools\` (the Python the front-door verbs run):
+/// The toolkit folder, the one holding `ingame/mod_session.py` and `tools/` (the Python the front-door verbs run):
 /// `MAGICIAN_HOME`, the config's `home`, else the nearest folder above this executable that holds
-/// `ingame/mod_session.py` (a checkout's `target\release\magician.exe` finds its own checkout). `Err` says what was
+/// `ingame/mod_session.py` (a checkout's `target/release/magician` finds its own checkout). `Err` says what was
 /// looked for and how to point at it.
 pub fn toolkit() -> Result<Found, String> {
     let marker = |d: &Path| d.join("ingame").join("mod_session.py").is_file();

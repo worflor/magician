@@ -448,7 +448,8 @@ KEYSYM = {"esc": "Escape", "-": "minus", "=": "equal", "backspace": "BackSpace",
           "alt": "Alt_L", "space": "space", "scrolllock": "Scroll_Lock", "rshift": "Shift_R",
           **{f"f{n}": f"F{n}" for n in range(1, 13)}}
 
-# Proton names the game's window class after the app (steam_app_<id>); plain Wine names it after the program
+# Proton names a game's window class after the app (steam_app_<id>); plain Wine names it after the program. Both are
+# what the harness looks for; neither has been seen with Deadlock itself (README.md, Platforms)
 GAME_WINDOW_CLASSES = (f"steam_app_{APP_ID}", GAME_EXE)
 
 

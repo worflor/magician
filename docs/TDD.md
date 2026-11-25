@@ -6,7 +6,7 @@ How Magician is built and why. What it is for is in [PDD.md](PDD.md); facts abou
 
 | Compiler idea | In Magician |
 |---|---|
-| Target | A game build, identified by `ClientVersion` in `game\citadel\steam.inf` |
+| Target | A game build, identified by `ClientVersion` in `game/citadel/steam.inf` |
 | Target description | The build's **baseline** (`baseline.tsv`: every path, CRC and size in `citadel` and `core` `pak01_dir.vpk`) and two sidecars: the **rig** (`rig.tsv`: every skeleton's bone list and every anim graph's control parameters) and the **engine** (`engine.tsv`: every executable, library and shader archive) |
 | Program | A mod: one or more VPKs built from an addon's sources, described by a `mod.toml` (`[target]` model and skeleton, `[proven] builds`) |
 | Link | Every reference a mod's compiled files make (the RERL of each resource), resolved against the mod plus the build |
@@ -39,20 +39,21 @@ Magician works against things it doesn't own: the game install, Valve's CSDK, th
 
 | Location | Flag | Environment | Config key | Otherwise |
 |---|---|---|---|---|
-| Game (`...\Deadlock\game`) | `--game` | `DEADLOCK_GAME` | `game` | Steam's `libraryfolders.vdf`, from the registry's `SteamPath` and Program Files (native, Flatpak and Snap homes off Windows) |
-| Reference folder | `--reference` | `MAGICIAN_REFERENCE` | `reference` | `%LOCALAPPDATA%\magician\reference` |
+| Game (`.../Deadlock/game`) | `--game` | `DEADLOCK_GAME` | `game` | Steam's `libraryfolders.vdf`, from the registry's `SteamPath` and Program Files on Windows, the native, Flatpak and Snap homes elsewhere |
+| Reference folder | `--reference` | `MAGICIAN_REFERENCE` | `reference` | `magician/reference` in the data folder: `%LOCALAPPDATA%` on Windows, `$XDG_DATA_HOME` (`~/.local/share`) elsewhere |
+| Findings cache | `--no-cache` turns it off | `MAGICIAN_CACHE` | | `%LOCALAPPDATA%\magician\cache` on Windows, `$XDG_CACHE_HOME/magician` (`~/.cache/magician`) elsewhere |
 | CSDK | `--csdk` | `MAGICIAN_CSDK` | `csdk` | an error naming all three, from the commands that need it |
 | Source 2 Viewer CLI | `--vrf` | `MAGICIAN_VRF` | `vrf` | `Source2Viewer-CLI` on PATH |
-| Game lock | | `MAGICIAN_GAME_LOCK` | `game_lock` | `<reference>\work\ingame-game.lock` |
+| Game lock | | `MAGICIAN_GAME_LOCK` | `game_lock` | `<reference>/work/ingame-game.lock` |
 | Policy | `--policy` | `MAGICIAN_POLICY` | `policy` | none: the built-in defaults |
 | Mods (`patchday`, `reprove`) | `--mod`, each | `MAGICIAN_MODS` | `mods` | the nearest folder, from the working one upward, with `mod.toml` files one or two levels below it (`patchday::mod_tomls_under`) |
-| Toolkit folder | | `MAGICIAN_HOME` | `home` | the folder above `magician.exe` that holds `ingame\mod_session.py` |
-| Python | | `MAGICIAN_PYTHON` | `python` | `python`, `python3` or `py -3` on PATH |
+| Toolkit folder | | `MAGICIAN_HOME` | `home` | the folder above the program that holds `ingame/mod_session.py` |
+| Python | | `MAGICIAN_PYTHON` | `python` | `python` or `python3` on PATH (and `py -3` on Windows) |
 | Update source | `--source` | `MAGICIAN_UPDATE_SOURCE` | `update_source` | `<repository>/releases/latest/download`, the `repository` of the workspace `Cargo.toml` read at build time |
 
-The config file is `MAGICIAN_CONFIG`, else `%APPDATA%\magician\config.txt` (`$XDG_CONFIG_HOME/magician/config.txt` elsewhere): one `key = value` per line, `#` comments, the last line for a key wins. It is read on every run, so a running pipeline picks up a change at its next command. `magician paths` prints every answer with its source.
+The config file is `MAGICIAN_CONFIG`, else `%APPDATA%\magician\config.txt` on Windows, `$XDG_CONFIG_HOME/magician/config.txt` (`~/.config/magician/config.txt`) elsewhere: one `key = value` per line, `#` comments, the last line for a key wins. It is read on every run, so a running pipeline picks up a change at its next command. `magician paths` prints every answer with its source.
 
-`crates/magician/src/paths.rs` is the CLI's resolver and `ingame/gamepaths.py` the harness's, line for line the same order. They must agree: install's seat check reads the game lock the harness writes, and a disagreement would let an install swap paks under a running capture. The Python side adds keys only it uses (`blender`, `blender_45`, `cinema_venv`) and treats `<reference>\work\` as the output root for QA runs, harness baselines and films.
+`crates/magician/src/paths.rs` is the CLI's resolver and `ingame/gamepaths.py` the harness's, line for line the same order. They must agree: install's seat check reads the game lock the harness writes, and a disagreement would let an install swap paks under a running capture. The Python side adds keys only it uses (`blender`, `blender_45`, `cinema_venv`, and `steam` with `MAGICIAN_STEAM` for the harness's launch) and treats `<reference>/work/` as the output root for QA runs, harness baselines and films.
 
 ### The mod of the working folder
 
@@ -81,20 +82,20 @@ Plain text, tab-separated where tabular.
 
 | File | Where | What |
 |---|---|---|
-| `baseline.tsv`, `rig.tsv`, `engine.tsv` | `<reference>\<build>\` | The target description, each written whole (a temporary name, then a rename). Never overwritten by `patchday`; `baseline` rewrites on request; the first command on a new build captures them for this machine's own game |
-| `users.tsv` | `<reference>\<build>\` | Which heroes, abilities and items reach each game file (`magician index`); feeds the shared-file rule M090 |
-| `decompiled\`, `particle_classes.tsv` | `<reference>\<build>\` | Derived reference data for footprints and deep rules |
-| `.magician-installed.tsv` | `game\citadel\addons\` | The install ledger: file, CRC, the mod it was installed for |
-| `.magician-installed.lock` | `game\citadel\addons\` | Held while one install or uninstall reads, changes and rewrites the ledger; gone when it ends |
-| `gameinfo.gi.magician-backup-<build>` | `game\citadel\` | Stock `gameinfo.gi`, taken once per build before the first edit |
-| `.magician-build.lock`, `magician_build.stamp` | `game\citadel_addons\<addon>\` | One build per addon at a time; skip the compiler when nothing changed |
+| `baseline.tsv`, `rig.tsv`, `engine.tsv` | `<reference>/<build>/` | The target description, each written whole (a temporary name, then a rename). Never overwritten by `patchday`; `baseline` rewrites on request; the first command on a new build captures them for this machine's own game |
+| `users.tsv` | `<reference>/<build>/` | Which heroes, abilities and items reach each game file (`magician index`); feeds the shared-file rule M090 |
+| `decompiled/`, `particle_classes.tsv` | `<reference>/<build>/` | Derived reference data for footprints and deep rules |
+| `.magician-installed.tsv` | `game/citadel/addons/` | The install ledger: file, CRC, the mod it was installed for |
+| `.magician-installed.lock` | `game/citadel/addons/` | Held while one install or uninstall reads, changes and rewrites the ledger; gone when it ends |
+| `gameinfo.gi.magician-backup-<build>` | `game/citadel/` | Stock `gameinfo.gi`, taken once per build before the first edit |
+| `.magician-build.lock`, `magician_build.stamp` | `game/citadel_addons/<addon>/` | One build per addon at a time; skip the compiler when nothing changed |
 | `magician.allow`, `magician.exclude`, `.magician-compiler`, `magician.signed` | addon root | Accepted findings with reasons; paths left out of the pak; the compiler bin to use; the mark manifest |
-| `model\<key>.tsv` | `%LOCALAPPDATA%\magician\cache\` | The findings cache |
+| `model/<key>.tsv` | the findings cache (Locations) | The findings cache |
 | `mod.toml` | a mod's folder | Written once by `init` (never over an existing one without `--force`) or by `new` with the rest of a new mod's folder (`newcmd.rs`: the scaffold, from the hero table and the hero's compiled model, never into a folder that exists); after that the author's |
 | `proofs.tsv` | beside the mod's `mod.toml` | The proof ledger (`proofs.rs`): per proof the build, the date, every file seen in game (ledger owner, name, crc32, sha256) and the evidence folder with its `index.md`'s sha256. One row per file per proof, sorted, written whole by `prove`; rows stand alone so a union of two copies is the merge, and the proof id (a hash of the build and its owner and sha256 pairs) makes a proof that lost a row count for nothing |
 | `[proven] builds` | the mod's `mod.toml` | The summary a person reads and older tools take, appended by `prove`; it names no bytes, so nothing judges by it |
 | `release-report.txt`, `lint.json`, `grade.json`, `lint-findings.tsv` | beside a release pak | What `release` judged: the report, the lint run, the grade record, the run the grade read |
-| `scene-patch.txt`, `files\` | a scene patch folder (a skin's `package\scene\`) | A hero-page scene as only our files plus the CRCs of Valve's files it keeps (below) |
+| `scene-patch.txt`, `files/` | a scene patch folder (a skin's `package/scene/`) | A hero-page scene as only our files plus the CRCs of Valve's files it keeps (below) |
 
 `<reference>` is the reference folder above.
 
@@ -209,8 +210,8 @@ The decode is proven, not trusted: `magician mesh ... --glb <Source 2 Viewer exp
 
 ## Outside the Rust workspace
 
-- `ingame/`: Python stdlib (3.11 or newer for the session driver and `reprove`, which read `mod.toml` with `tomllib`) and PowerShell; drives the retail game with scancode input and PrintWindow capture. `magician session` and `magician reprove` run `mod_session.py` and `reprove.py`.
-- `qa/`, `harness/`: Blender 5.2 headless plus Python; Source 2 Viewer exports the glb files they read. `qa\run_qa.ps1` runs every visual check on a compiled character mod against Valve's model into a dated report under `<reference>\work\<mod>\qa\`, with exports cached by content hash. The mod's model and its clips are packed into one VPK for the export, so what is checked is our mesh on Valve's skeleton playing our clips (Valve's for the rest), and every check runs on both models, so Valve's own counts sit beside ours. Findings are triaged as `valve-own` (Valve's model shows the same thing there), `clip` (only on a replaced clip, not on our mesh with Valve's clip) or `mesh`, and weighed by the area a camera sees. A hero's profile is `qa/heroes/<hero>.json` (`haze.json` is the example; a mod keeps its own). It does not prove the cloth solver, LOD switching or shaders (Blender's renderers stand in for the game's): only the game shows those.
+- `ingame/`: Python stdlib (3.11 or newer for the session driver and `reprove`, which read `mod.toml` with `tomllib`); drives the retail game as a player would, with hardware keys and a capture of its window. Everything it asks of the system goes through `gameos.py`: processes from tasklist and kernel32 on Windows and `/proc` on Linux, and the display through user32 and gdi32 (SendInput scancodes, PrintWindow) or X11 (libX11 and libXtst through `ctypes`: XTest keys and mouse, XGetImage). A machine without a display backend refuses before the seat is taken. `magician session` and `magician reprove` run `mod_session.py` and `reprove.py`; the PowerShell `launch.ps1` and `stop_game.ps1` are thin callers of `launch.py` and `stop_game.py`.
+- `qa/`, `harness/`: Blender 5.2 headless plus Python; Source 2 Viewer exports the glb files they read. `qa/run_qa.py` (with `qa/run_qa.ps1` as its PowerShell spelling) runs every visual check on a compiled character mod against Valve's model into a dated report under `<reference>/work/<mod>/qa/`, with exports cached by content hash. The mod's model and its clips are packed into one VPK for the export, so what is checked is our mesh on Valve's skeleton playing our clips (Valve's for the rest), and every check runs on both models, so Valve's own counts sit beside ours. Findings are triaged as `valve-own` (Valve's model shows the same thing there), `clip` (only on a replaced clip, not on our mesh with Valve's clip) or `mesh`, and weighed by the area a camera sees. A hero's profile is `qa/heroes/<hero>.json` (`haze.json` is the example; a mod keeps its own). It does not prove the cloth solver, LOD switching or shaders (Blender's renderers stand in for the game's): only the game shows those.
 - `mcp/`: Python stdlib.
 - `tools/`: `bundle.py` (player release bundles with `mod-interchange.json`; Pillow for previews) and `source.py` (a static Deadlock Mod Manager mod source from bundles), behind `magician bundle` and `magician source`; `scene_lump.py` (re-dress a UI scene map's entity lump through `magician dump` and back), `scene_install.ps1` and `scene_install.py` (the player-side scene installers bundles carry: Windows PowerShell 5.1 or Python 3 stdlib, no Magician), `s2v_mcp.ps1` (the Source 2 Viewer MCP server), `rip-heroes.ps1` (hero models to glb for reference work, keyed by build, never committed).
 - `cinema/`: the dev-only film kit, with its own README.

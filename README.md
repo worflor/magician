@@ -17,18 +17,20 @@ Most Deadlock modding tools are built for a person at a desk: a GUI, a Blender e
 
 ## Getting started
 
-You need Windows 10 or 11 and Deadlock installed through Steam. Then either unpack a release or build from source.
+You need Windows 10 or 11, or Linux on x86-64, and Deadlock installed through Steam (on Linux it runs under Proton, and the files Magician reads and writes are the same). [Platforms](#platforms) says what runs where. Then either unpack a release or build from source.
 
-**From a release.** A release carries the toolkit folder as one archive per platform: `magician-windows-x64.zip` for Windows (proven), and `magician-linux-x64.tar.gz` for Linux (built by the release workflow, not yet proven on a real machine). Unpack the one for your system anywhere you like. It holds `magician.exe` (`magician` on Linux), `ingame\`, `tools\`, `mcp\`, `skills\`, `docs\`, this README, the changelog and the licence, and `magician.exe` finds the rest of the folder from where it sits. Put the folder on PATH, or call the exe by its path. Nothing else is installed, so there is nothing to uninstall: delete the folder. Any other platform builds from source.
+**From a release.** A release carries the toolkit folder as one archive per platform: `magician-windows-x64.zip` and `magician-linux-x64.tar.gz`. Unpack the one for your system anywhere you like. It holds the program (`magician.exe` on Windows, `magician` on Linux), `ingame/`, `tools/`, `mcp/`, `skills/`, `docs/`, this README, the changelog and the licence, and the program finds the rest of the folder from where it sits. Put the folder on PATH, or call the program by its path. Nothing else is installed, so there is nothing to uninstall: delete the folder. Any other platform builds from source.
 
 **From source.** You need a stable Rust toolchain. The workspace has no external crates, so the build downloads nothing.
 
 ```
 git clone https://github.com/worflor/magician
 cd magician
-cargo build --release              # target\release\magician.exe
+cargo build --release              # target/release/magician (magician.exe on Windows)
 cargo test --workspace             # synthetic fixtures only: needs no game and no Valve file
 ```
+
+Commands here are written once for both systems: `magician` is the program, paths use `/` (Windows takes it too), and `python` is the Python 3 on PATH, which most Linux distributions call `python3`.
 
 Then let it tell you where you stand:
 
@@ -39,10 +41,10 @@ magician doctor                    # every part of the setup, one line each, wit
 
 ### A mod is a folder with a `mod.toml`
 
-To start a skin from nothing, `magician new <hero>` writes that folder from the installed game's own data: a `mod.toml` whose `[target]` is the hero's real model and skeleton, an `addon\` laid out at the game's paths with `.gitignore` files that keep Valve-derived work (a model document made from Valve's, meshes on Valve's skeleton, renders on Valve's body, mixes over Valve's audio) out of git, a `package\` that `magician bundle` takes once there is a pak, two in-game scenarios for the hero, and a README with the next commands. It copies no Valve file and never writes into a folder that exists.
+To start a skin from nothing, `magician new <hero>` writes that folder from the installed game's own data: a `mod.toml` whose `[target]` is the hero's real model and skeleton, an `addon/` laid out at the game's paths with `.gitignore` files that keep Valve-derived work (a model document made from Valve's, meshes on Valve's skeleton, renders on Valve's body, mixes over Valve's audio) out of git, a `package/` that `magician bundle` takes once there is a pak, two in-game scenarios for the hero, and a README with the next commands. It copies no Valve file and never writes into a folder that exists.
 
 ```
-magician new lash --author you     # .\lash-skin\: mod.toml, addon\, package\, source\ingame\scenarios\, README.md
+magician new lash --author you     # lash-skin/: mod.toml, addon/, package/, source/ingame/scenarios/, README.md
 cd lash-skin
 magician                           # "no pak yet", and the command that builds the first one
 magician release --out pak10_dir.vpk
@@ -63,7 +65,7 @@ my-lash-skin: RE-PROVE  Costume (look, some effects) · NSFR · unproven  (build
   grade  warn   Costume (look, some effects) · NSFR · unproven for Lash; release gate blocked: freshness: not proven on 6865 (no proven build on record for these bytes)
   proof  warn   these bytes proven on none
   drift  warn   these bytes are proven on no build yet: nothing to compare from
-next: the in-game pass on build 6865 (`magician session qa --mod C:\mods\my-lash-skin --out <dir>`), look at the frames, then `magician prove --evidence <dir>`
+next: the in-game pass on build 6865 (`magician session qa --mod /home/you/mods/my-lash-skin --out <dir>`), look at the frames, then `magician prove --evidence <dir>`
 ```
 
 `check` exits 1 when something is broken, 4 when the mod loads but is not proven on the installed build, 0 when it is proven here and clean. The same bare verbs work for `lint`, `grade`, `drift` (from the mod's last proven build), `release` (its addon), `uninstall`, `prove`, `footprint` and `scene check`; whatever you pass explicitly wins. `magician help` lists every command and option, `magician help <command>` shows one, and a mistyped command, option or hero is answered with what it most likely meant. A hero can be named the way you would say it: `lash`, `Lash`, `hero_lash`, `"Lady Geist"`, or its model's path.
@@ -97,20 +99,31 @@ Magician finds Deadlock through Steam's own library list. Everything it derives 
 | Location | Flag | Variable | Config key | Otherwise |
 |---|---|---|---|---|
 | Deadlock's `game` folder | `--game` | `DEADLOCK_GAME` | `game` | found through Steam |
-| Reference folder | `--reference` | `MAGICIAN_REFERENCE` | `reference` | `%LOCALAPPDATA%\magician\reference` |
+| Reference folder | `--reference` | `MAGICIAN_REFERENCE` | `reference` | `magician/reference` in the data folder (below) |
+| Findings cache | `--no-cache` turns it off | `MAGICIAN_CACHE` | | the cache folder (below) |
 | Valve's CSDK | `--csdk` | `MAGICIAN_CSDK` | `csdk` | none: `build`, `release` and `sign` ask for it |
 | Source 2 Viewer CLI | `--vrf` | `MAGICIAN_VRF` | `vrf` | `Source2Viewer-CLI` on PATH |
 | The mods `patchday` checks | `--mod` (each one) | `MAGICIAN_MODS` | `mods` | the nearest folder, from the working one upward, with mods one or two levels below it |
-| Game lock | | `MAGICIAN_GAME_LOCK` | `game_lock` | `<reference>\work\ingame-game.lock` |
+| Game lock | | `MAGICIAN_GAME_LOCK` | `game_lock` | `<reference>/work/ingame-game.lock` |
 | Policy (the judgement numbers, below) | `--policy` | `MAGICIAN_POLICY` | `policy` | the built-in defaults |
-| The toolkit folder | | `MAGICIAN_HOME` | `home` | the folder above `magician.exe` that holds `ingame\mod_session.py` |
-| Python | | `MAGICIAN_PYTHON` | `python` | `python`, `python3` or `py -3` on PATH |
+| The toolkit folder | | `MAGICIAN_HOME` | `home` | the folder above the program that holds `ingame/mod_session.py` |
+| Python | | `MAGICIAN_PYTHON` | `python` | `python` or `python3` on PATH (or `py -3` on Windows) |
 | Update source (a release's files) | `--source` | `MAGICIAN_UPDATE_SOURCE` | `update_source` | the latest release of this build's repository |
+| Steam, for the in-game harness to launch the game | | `MAGICIAN_STEAM` | `steam` | Windows: the `SteamExe` Steam records; Linux: `steam` on PATH, else the Flatpak's |
 
-The config file is `%APPDATA%\magician\config.txt` (or wherever `MAGICIAN_CONFIG` points), one `key = value` per line:
+Each system's own folders are the defaults:
+
+| | Windows | Linux |
+|---|---|---|
+| Config file (`MAGICIAN_CONFIG` overrides) | `%APPDATA%\magician\config.txt` | `$XDG_CONFIG_HOME/magician/config.txt` (`~/.config/...`) |
+| Data folder (the reference folder lives in it) | `%LOCALAPPDATA%` | `$XDG_DATA_HOME` (`~/.local/share`) |
+| Cache folder | `%LOCALAPPDATA%\magician\cache` | `$XDG_CACHE_HOME/magician` (`~/.cache/magician`) |
+| Steam's library list | the registry's `SteamPath`, then Program Files | `~/.steam/steam`, `~/.local/share/Steam`, the Flatpak's and the Snap's |
+
+The config file is one `key = value` per line, written as the machine writes paths:
 
 ```
-# where Magician finds things on this machine
+# where Magician finds things on this machine (Windows)
 game      = E:\Games\SteamLibrary\steamapps\common\Deadlock\game
 reference = E:\deadlock-reference
 csdk      = E:\Tools\Reduced_CSDK_13
@@ -118,7 +131,15 @@ vrf       = E:\Tools\Source2Viewer-21.1\cli\Source2Viewer-CLI.exe
 mods      = E:\mods
 ```
 
-`magician paths` prints every location and where the answer came from. The Python and PowerShell around the game read the same file through `ingame/gamepaths.py`, so the harness and the CLI always agree on where the game and the game lock are.
+```
+# the same on a Linux box
+game      = /srv/steam/steamapps/common/Deadlock/game
+reference = /srv/deadlock-reference
+vrf       = /opt/Source2Viewer/Source2Viewer-CLI
+mods      = /srv/mods
+```
+
+`magician paths` prints every location and where the answer came from, except Steam, which only the in-game harness uses (`python ingame/gameos.py` prints it, with what the harness can and cannot drive on this machine). The Python tools around the game read the same file through `ingame/gamepaths.py`, so the harness and the CLI always agree on where the game and the game lock are.
 
 The first command run on a new build captures that build's baseline into the reference folder, as `magician baseline` would, so later drift checks have it. It does that only for this machine's own game (found through Steam or named in the config file), never for one a flag or `DEADLOCK_GAME` points at, which is often a drill's copy.
 
@@ -128,12 +149,12 @@ Everything goes through `magician`. The parts written in Python run through it t
 
 | Verb | Runs | For |
 |---|---|---|
-| `magician session qa --mod <folder> --out <dir>` | `ingame\mod_session.py` | a mod's in-game session: seat, install, launch, scenarios, takes, stop, contact sheets (`up`, `run`, `film`, `down`, `all`, `qa`) |
-| `magician reprove [--plan]`, `magician reprove accept <pass>` | `ingame\reprove.py` | patch day in game: every mod that needs a re-prove gets its pass, one report says where to look; `accept` records a pass that was looked at |
-| `magician bundle <bundle.json> [--zip]` | `tools\bundle.py` | a player release bundle with `mod-interchange.json` and the scene installers |
-| `magician source <source.json>` | `tools\source.py` | a static Deadlock Mod Manager mod source, with its pages, from bundles |
+| `magician session qa --mod <folder> --out <dir>` | `ingame/mod_session.py` | a mod's in-game session: seat, install, launch, scenarios, takes, stop, contact sheets (`up`, `run`, `film`, `down`, `all`, `qa`) |
+| `magician reprove [--plan]`, `magician reprove accept <pass>` | `ingame/reprove.py` | patch day in game: every mod that needs a re-prove gets its pass, one report says where to look; `accept` records a pass that was looked at |
+| `magician bundle <bundle.json> [--zip]` | `tools/bundle.py` | a player release bundle with `mod-interchange.json` and the scene installers |
+| `magician source <source.json>` | `tools/source.py` | a static Deadlock Mod Manager mod source, with its pages, from bundles |
 
-Everything after the verb belongs to the tool (`magician bundle --help` is the bundler's help). When the toolkit folder or Python is missing the verb says which and how to point at it, and exits 2; `magician doctor` has a line for both.
+Everything after the verb belongs to the tool (`magician bundle --help` is the bundler's help), and the tool's own calls to `magician` go to the same program that ran it. When the toolkit folder or Python is missing the verb says which and how to point at it, and exits 2; `magician doctor` has a line for both.
 
 ### What each part needs
 
@@ -142,15 +163,34 @@ Everything after the verb belongs to the tool (`magician bundle --help` is the b
 | Inspect a pak (`ls`, `refs`, `dump`, `kv`, `textures`, `verify`), prove an expression (`expr`) | nothing else |
 | Lint, mesh and cloth reports, `pack` (it lints what it packs), drift, `patchday`, `install`, `scene`, `new` | Deadlock installed |
 | `footprint`, `grade`, `index` | Deadlock and the [Source 2 Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat) CLI (21.1; flags change between versions, so pin it). The decompiled files are cached per build in the reference folder |
-| `build`, `release`, `sign` | Valve's CSDK 13, the community-distributed build that carries `resourcecompiler.exe` (setup notes in [docs/reference/engine.md](docs/reference/engine.md#the-compiler-csdk-13)) |
-| `session`, `reprove` | Python 3.11 or newer, standard library only |
+| `build`, `release`, `sign` | Valve's CSDK 13, the community-distributed build that carries `resourcecompiler.exe` (setup notes in [docs/reference/engine.md](docs/reference/engine.md#the-compiler-csdk-13)); compiling needs Windows ([Platforms](#platforms)) |
+| `session`, `reprove` | Python 3.11 or newer, standard library only, and the desktop the game is shown on |
 | `bundle`, `source`, the MCP server | Python 3.8 or newer, standard library only; `bundle` and `source` use Pillow for preview images |
 | Offline visual QA (`qa/`, `harness/`) | Blender 5.2 and the Source 2 Viewer CLI; some scripts use Pillow, numpy and scipy |
 | The film kit (`cinema/`) | ffmpeg, a Python venv with Boon, and the CSDK; see its README |
 
 ### Platforms
 
-The CLI is built and tested on Windows. On Linux the workspace builds and its tests pass; it finds Steam's libraries, sees a game running under Proton (its seat check reads `/proc`), and refuses to swap paks when it cannot tell whether the game is running. The in-game harness is Windows only: it types with SendInput and captures the game's window. Players don't need Magician at all: a release bundle installs its hero-page scene with `install-scene.ps1` (Windows PowerShell) or `install-scene.py` (Python 3, proven on Ubuntu and meant for the Steam Deck).
+Magician is the same program on Windows and Linux. Deadlock is a Windows game that Linux runs through Proton, and a mod is the same thing on both: a VPK in the game's `citadel/addons` and one search-path line in `gameinfo.gi`. So everything that reads or writes files works on either, and the differences are where the system itself is involved: where things live (the defaults above), how a running game is seen, and how the in-game harness types and looks. Each of those has one home in the code: `crates/magician/src/paths.rs` and `install.rs` for the CLI, `ingame/gameos.py` for the harness.
+
+| | Windows | Linux |
+|---|---|---|
+| Build, `cargo test`, clippy, the Python suites | proven | proven (Ubuntu 24.04) |
+| `doctor`, `paths`, `check`, `lint`, `drift`, `patchday`, `rules`, the MCP server, on a real game and reference folder | proven | proven, read-only against a real install |
+| Finding Deadlock through Steam | registry and Program Files | native, Flatpak and Snap homes and every library `libraryfolders.vdf` lists, proven on scratch homes laid out like Steam's |
+| `install`, `uninstall`, `install --status`, `prove`, `scene install` | proven | proven on scratch game folders |
+| The seat check (no pak swapped under a running game) | `tasklist` | `/proc`: the game under Proton is `deadlock.exe`, placed by its Wine path, so a game running from another folder does not block a scratch install; proven with stand-in processes, not with Proton |
+| `bundle`, `source`, the front door (`magician session`, `reprove`, `bundle`, `source`) | proven | proven: a Linux bundle of a real release is byte for byte the Windows one, except preview images, which Pillow encodes (the pixels are the same) |
+| A release asset and `magician update` from a folder | proven | proven: `tools/make-release.ps1` under PowerShell 7 writes `magician-linux-x64.tar.gz`, and an unpacked install updates itself from a folder |
+| `grade`, `footprint`, `index` | proven | built, not run: they need the Source 2 Viewer CLI, and Magician finds a Linux build of it as it finds the Windows one (`--vrf`, `MAGICIAN_VRF`, `vrf =`, else `Source2Viewer-CLI` on PATH) |
+| `build`, `release` (compiling) | proven | not possible: Valve's compiler, `resourcecompiler.exe`, is a Windows program. They say so and stop; `--no-compile` packages what was already compiled, and `sign` works |
+| The in-game harness: processes, the game lock, launch and stop | proven | built: processes and the game lock through `/proc`, proven with stand-in processes; launching goes through `steam -applaunch` and is not proven |
+| The in-game harness: window, focus, keys, mouse, capture | proven (SendInput, PrintWindow) | built on X11 (libX11 and libXtst, through `ctypes`), proven against a test window under Xvfb (keys, buttons, wheel and mouse moves arrive, the capture is the pixels drawn) and under WSLg's XWayland (all but mouse buttons, which XWayland gives to the window under its own pointer). Not proven with the game under Proton or gamescope |
+| The film kit (`cinema/`) | proven | not ported: it records with Windows' own capture |
+
+On Linux the harness needs an X display the game is shown on (`DISPLAY`; under a Wayland desktop that is XWayland, where Proton puts the game's window) and the libX11 and libXtst libraries (`libx11-6`, `libxtst6` on Debian and Ubuntu). `python ingame/gameos.py` says what this machine has. Without a piece, every harness tool refuses before it takes the game seat or launches anything, and names the piece.
+
+Players don't need Magician at all: a release bundle installs its hero-page scene with `install-scene.ps1` (Windows PowerShell) or `install-scene.py` (Python 3, proven on Ubuntu and meant for the Steam Deck).
 
 ## Staying current
 
@@ -177,9 +217,9 @@ It is refused (exit 3, nothing changed) while a game session holds the seat. Exi
 
 ## Patch day on an always-on machine
 
-The case Magician is shaped around: a spare Windows box that is on anyway, with Deadlock installed and your mods in its game folder.
+The case Magician is shaped around: a spare machine that is on anyway, Windows or Linux, with Deadlock installed and your mods in its game folder.
 
-1. Valve ships a build. Steam on that box downloads it. Magician doesn't watch Steam; your scheduler does (a changed `ClientVersion` in `game\citadel\steam.inf` is the signal).
+1. Valve ships a build. Steam on that box downloads it. Magician doesn't watch Steam; your scheduler does (a changed `ClientVersion` in `game/citadel/steam.inf` is the signal).
 2. A script runs one command, offline, in a few seconds:
 
    ```
@@ -230,7 +270,7 @@ For agents there is an MCP server, [mcp/](mcp/README.md): seventeen tools (`chec
 What it leaves to the host:
 
 - **Noticing the update.** Magician reads the installed build. Watching Steam, scheduling the check and sending the message are the scheduler's.
-- **A desktop for the game.** The in-game pass types into the retail game and captures its window, so it needs an interactive Windows session with the game in front. It can't run as a service with nobody logged in.
+- **A desktop for the game.** The in-game pass types into the retail game and captures its window, so it needs a logged-in desktop with the game in front: an interactive Windows session, or on Linux an X display (XWayland under a Wayland desktop). It can't run as a service with nobody logged in, and on Linux it is not yet proven with the game itself ([Platforms](#platforms)).
 - **The look.** A pass ends in contact sheets, and something that can see has to read them before a proof is recorded.
 
 ## Lint
@@ -303,15 +343,15 @@ Three full hero skins are made with this toolchain. One is public: [Maid Lash](h
 ```
 magician prove --evidence <pass folder>                                    in the mod's folder, after the pass was looked at
 magician prove mod.toml --build 6865 --date 2026-11-24 --evidence <file>  a pass on an earlier build, the same files installed
-magician prove mod.toml --build 6864 --pak <release copy>\pak10_dir.vpk    bytes that are no longer installed
+magician prove mod.toml --build 6864 --pak <release copy>/pak10_dir.vpk    bytes that are no longer installed
 ```
 
 The ledger is plain text, one row per file per proof, sorted, and deterministic:
 
 ```
 build  date        proof             owner          file                           crc32     sha256       evidence                       evidence_sha256
-6866   2026-11-24  03abbf6e4c9a86a3  lash_showcase  maps/ui/hero_prefabs/lash.vpk  d287ca64  81f9345a...  ...\work\passes\maid-lash\...  c0314ba1...
-6866   2026-11-24  03abbf6e4c9a86a3  maid_lash      pak10_dir.vpk                  24994007  8fdb0ea4...  ...\work\passes\maid-lash\...  c0314ba1...
+6866   2026-11-24  03abbf6e4c9a86a3  lash_showcase  maps/ui/hero_prefabs/lash.vpk  d287ca64  81f9345a...  .../work/passes/maid-lash/...  c0314ba1...
+6866   2026-11-24  03abbf6e4c9a86a3  maid_lash      pak10_dir.vpk                  24994007  8fdb0ea4...  .../work/passes/maid-lash/...  c0314ba1...
 ```
 
 A row stands on its own, so two machines' copies merge as a union of their lines (`merge=union` in git does it; so does keeping both sides of a conflict). The `proof` id is a hash of the build and the proof's (owner, sha256) pairs: the same bytes proven on one build from two machines are one proof with two dates, and a proof that lost a row in a merge no longer adds up to its id and counts for nothing. A line that does not read is reported, never dropped, and `prove` will not rewrite the file until it is fixed.
@@ -331,7 +371,7 @@ magician scene install <patch dir> [--mod NAME] [--force]        compose, then i
 
 `make` is for the author. Every file of the scene that is byte-identical to Valve's at that path becomes a `keep` line (a CRC and a size, no bytes); every other file is copied into `files/`. Nothing Valve-made is ever written into a patch, and `magician bundle` checks that again when it assembles a release.
 
-`compose`, `check` and `install` are for the player. They read the stock `game\citadel\maps\ui\hero_prefabs\<hero>.vpk`, not the addons copy, and they refuse, writing nothing, when it is not what the patch expects: after a game update the message lists the files that changed or went missing and says the patch needs a new release. That is on purpose. A scene built on a changed Valve map could light a room that no longer exists. They also refuse a patch whose own files do not match the manifest's CRCs, and a composed scene whose CRC is not the `result` the author proved (`--force` writes it anyway), as the player installers do. The result is deterministic (the entries are sorted), so composing the same patch on any machine gives the same bytes, and the patch records the CRC of the scene its author proved so `compose` can say "identical to the one the author proved".
+`compose`, `check` and `install` are for the player. They read the stock `game/citadel/maps/ui/hero_prefabs/<hero>.vpk`, not the addons copy, and they refuse, writing nothing, when it is not what the patch expects: after a game update the message lists the files that changed or went missing and says the patch needs a new release. That is on purpose. A scene built on a changed Valve map could light a room that no longer exists. They also refuse a patch whose own files do not match the manifest's CRCs, and a composed scene whose CRC is not the `result` the author proved (`--force` writes it anyway), as the player installers do. The result is deterministic (the entries are sorted), so composing the same patch on any machine gives the same bytes, and the patch records the CRC of the scene its author proved so `compose` can say "identical to the one the author proved".
 
 `install` goes through the same code as `magician install`: the seat check while the game runs, the ledger, the `gameinfo.gi` backup, and one slot per hero, so it will not overwrite another mod's scene without `--force`. Run `magician uninstall maps/ui/hero_prefabs/<hero>.vpk` to take it out.
 
@@ -350,7 +390,7 @@ Everything Magician knows about a build it reads itself, with zero external crat
 | `magician init [<pak> \| <addon dir>]` | Write a `mod.toml` for a pak or an addon's sources (the hero from the files it replaces) |
 | `magician check [<folder> \| <mod.toml>]` | One mod's verdict on the installed build: lint and grade together, drift since its last proven build, its scene patches (exit 1 broken, 4 re-prove) |
 | `magician patchday [--capture] [--from BUILD] [--mod mod.toml]...` | The patch-day check: baseline, install state, each mod's drift from its last proven build, whether the engine changed, a verdict (exit 1 broken, 4 re-prove) |
-| `magician baseline` | Snapshot the installed build to `<reference>\<build>\baseline.tsv`, with `rig.tsv` and `engine.tsv` beside it |
+| `magician baseline` | Snapshot the installed build to `<reference>/<build>/baseline.tsv`, with `rig.tsv` and `engine.tsv` beside it |
 | `magician drift <mod.vpk>... --from BUILD [--to BUILD]` | What a patch changed under a mod, down to bones and anim graph parameters (exit 1 broken, 4 re-prove) |
 | `magician reprove [--mod FOLDER]... [--plan]` / `reprove accept <pass>` | Patch day in game: a pass for every mod that needs one and one report; `accept` records a pass that was looked at |
 | `magician session up \| run \| film \| down \| all \| qa` | One in-game session for a mod: seat, pak, launch, scenarios, takes, stop, contact sheets |
@@ -359,7 +399,7 @@ Everything Magician knows about a build it reads itself, with zero external crat
 | `magician mesh <vpk> <model>` / `cloth <vpk> <model>` | One compiled model's mesh verdict, or its cloth, beside Valve's model at the same path |
 | `magician grade <pak>... --hero HERO \| --mod mod.toml` / `rubric` / `footprint HERO` | Grade a hero mod (what it makes its own, identity, fair play, freshness, release gate); the rubric in force; everything a hero is made of |
 | `magician policy` | Every judgement value in force, where it came from, and its fingerprint |
-| `magician build <addon> <out.vpk>` | Compile an addon's real sources with Valve's resourcecompiler, pack deterministically, lint |
+| `magician build <addon> <out.vpk>` | Compile an addon's real sources with Valve's resourcecompiler (on Windows), pack deterministically, lint |
 | `magician release <addon> --hero HERO [--mod mod.toml]` | One VPK from every department, linted and graded, with a release report and the grade record |
 | `magician install <pak>` / `install --status` / `uninstall <pak> \| --mod NAME \| --all` | The only write into the game install: lint first, back up `gameinfo.gi`, ledger every file (under a lock, written atomically, following a pak a mod manager renamed by its crc), roll back from the ledger, never removing bytes it did not install |
 | `magician scene make \| check \| compose \| install` | Ship a hero-page scene as a patch of only our files and build it from the player's own game |
@@ -375,7 +415,8 @@ Everything Magician knows about a build it reads itself, with zero external crat
 crates/   vpk, resource, mesh, geom, lint, grade, expr, mark, magician (the CLI)
 mcp/      the MCP server: the CLI as JSON tools for agents
 skills/   Agent Skills: using-magician (driving the CLI on a mod), moving-to-magician (bringing an existing mod under it)
-ingame/   drive the retail game: sessions, patch-day passes, console, capture, log diff, crash dumps, example scenarios
+ingame/   drive the retail game: sessions, patch-day passes, console, capture, log diff, crash dumps, example scenarios;
+          gameos.py is everything it asks of the operating system
 qa/       offline visual QA and detectors (Blender, glb)
 harness/  Blender render scripts: x-ray, lookdev, contact sheets
 cinema/   the optional film kit for trailers and stills
@@ -393,6 +434,12 @@ docs/     design, status, the patch-day runbook, engine and mod-source reference
 - [docs/STATUS.md](docs/STATUS.md): current state and loose ends. [CHANGELOG.md](CHANGELOG.md): history.
 - [CONTRIBUTING.md](CONTRIBUTING.md): working inside the repository.
 
+## Credits
+
+Magician's readers are checked against [Source 2 Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat) (ValveResourceFormat, MIT licence), and `grade`, `footprint` and `index` run its CLI to decompile the game's files. No part of it ships with Magician.
+
 ## Licence
 
-See [LICENSE](LICENSE).
+MIT: see [LICENSE](LICENSE).
+
+Deadlock and Source 2 are Valve's. Magician is a fan-made tool, not affiliated with or endorsed by Valve.

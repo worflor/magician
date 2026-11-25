@@ -5,10 +5,10 @@ moves, timing, cuts, slow motion, cues), see it at once as an animatic, then hav
 takes of the retail game with your mods installed, frame by frame and exactly, into an edit-ready video. The whole
 city is the stage (`dl_midtown`), the heroes in the takes are the actors, and one scene can cut between several takes.
 
-Nothing else in Magician depends on it, and it depends on more than the rest: Python 3.11 or newer (scene files are
+It runs on Windows only: it records the game with Windows' own capture and drives its pak with PowerShell, and has not been ported to the harness's Linux side ([README.md](../README.md#platforms)). Nothing else in Magician depends on it, and it depends on more than the rest: Python 3.11 or newer (scene files are
 TOML), ffmpeg on PATH, a Python venv with [Boon](https://pypi.org/project/boon-deadlock/) for actor tracks
 (`CINEMA_VENV_PY`, or `cinema_venv = <dir>` in the config file), the CSDK to build its pak, and the in-game harness.
-Output goes to `<reference>\work\cinema\` (`CINEMA_WORK` moves it). The commands below run from this folder.
+Output goes to `<reference>/work/cinema/` (`CINEMA_WORK` moves it). The commands below run from this folder.
 
 **Dev only.** The `cinema_dev` pak (pak90) is installed for a session and uninstalled before the seat is handed back;
 it never ships with a mod and is never installed while anyone plays a real match or runs a mod's QA pass. Every
@@ -17,12 +17,12 @@ session takes the game seat as `cinema` (`ingame/gamelock.py`), runs `exec cinem
 
 Everything marked proven was tried in the retail game on build 6864.
 
-**Films** made with it, each a lossless `master.mkv`, a `preview.mp4` and edit files under `films\<scene>\`. A mod's
+**Films** made with it, each a lossless `master.mkv`, a `preview.mp4` and edit files under `films/<scene>/`. A mod's
 scenes live with the mod they are for; this repository carries the neutral example:
 
 | Film | Length | What it shows |
 |---|---|---|
-| `example_run` | about 10 s | A stock-hero example (`scenes\example_run.toml`): Haze runs the Hero Sandbox street, a bullet-time orbit, then slow motion away |
+| `example_run` | about 10 s | A stock-hero example (`scenes/example_run.toml`): Haze runs the Hero Sandbox street, a bullet-time orbit, then slow motion away |
 | The Maid Lash trailer | 56 s | Six cuts, from a `[blocking]` animatic to the final cut: the tempo map, sound design, grades, cards, layers and the splice below were all built for it. Its scenes and production notes live with the skin |
 
 ## Scene guide
@@ -373,7 +373,7 @@ the same cuts. 30 s of film in about 20 s. It cannot show the map (the take has 
 ## The stage
 
 `python -I stage.py list <map>` reads a map's landmarks from its compiled entity lump (KV3, zstd-compressed:
-magician's own zstd decoder, `crates/resource/src/zstd.rs`), cached in `work\cinema\maps\` (Valve's data: not
+magician's own zstd decoder, `crates/resource/src/zstd.rs`), cached in `work/cinema/maps/` (Valve's data: not
 committed). `stage.py camera <map> <name>` prints one of Valve's cameras as a `spec_goto` line.
 
 | Map | Take and free camera | What is there |
