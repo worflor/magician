@@ -38,6 +38,14 @@ class Classify(unittest.TestCase):
         self.assertIn("no vanilla baseline", R.classify(self.good(base=None, new_warnings=None))[1][0])
 
 
+class Holder(unittest.TestCase):
+    def test_each_mod_sits_in_the_seat_under_its_own_name_unless_the_run_has_one(self):
+        a = {"slug": "first-skin", "holder": "first"}
+        b = {"slug": "second-skin", "holder": None}
+        self.assertEqual((R.holder_for(a, None), R.holder_for(b, None)), ("first", "second-skin"))
+        self.assertEqual((R.holder_for(a, "patchday"), R.holder_for(b, "patchday")), ("patchday", "patchday"))
+
+
 class Passes(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.mkdtemp()

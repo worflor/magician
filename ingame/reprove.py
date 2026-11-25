@@ -76,6 +76,13 @@ def mods_to_reprove(cwd=None):
     return [m["path"] for m in doc.get("manifests", []) if m.get("slug") in want and m.get("installed")]
 
 
+def holder_for(mod, pipeline):
+    """Whose name a mod's sessions take the seat under: the pipeline's when the caller named one for the whole run
+    (MAGICIAN_GAME_HOLDER), else the mod's own. Each session is told it outright: mod_session.py leaves its holder
+    in the environment, and the next mod's sessions would otherwise sit in the seat under the last mod's name."""
+    return pipeline or mod["holder"] or mod["slug"]
+
+
 def classify(f):
     """One mod's findings as (state, reasons). `f`: session_rc, runs [(name, rc)], dumps, base (None | exact bool),
     new_warnings (int | None)."""
@@ -178,10 +185,12 @@ def run(o):
         say(f"nothing to re-prove on build {build}")
         return 0
     stamp = time.strftime("%Y%m%d-%H%M")
+    pipeline = os.environ.get("MAGICIAN_GAME_HOLDER")
     results = []
     for toml in tomls:
         mod = S.read_mod(toml)
         slug = mod["slug"]
+        holder = holder_for(mod, pipeline)
         scene = logdiff.scene_name(mod["hero"], mod["map"] or "new_player_basics")
         base = logdiff.pick_base(build, scene)
         need_vanilla = not (base and base[2]) and not o.get("skip-vanilla")
@@ -200,7 +209,7 @@ def run(o):
         if need_vanilla:
             vdir = pass_dir(root, slug, build, stamp, vanilla=True)
             say(f"{slug}: no vanilla log for {scene} on build {build}: taking one into {vdir}")
-            rc = S.main(["qa", "--vanilla", "--restore", "--mod", mod["dir"], "--out", vdir])
+            rc = S.main(["qa", "--vanilla", "--restore", "--holder", holder, "--mod", mod["dir"], "--out", vdir])
             if rc == 3:
                 raise S.Stop(3, "the game seat is someone else's")
             if rc != 0:
@@ -210,7 +219,7 @@ def run(o):
                 break
         pdir = pass_dir(root, slug, build, stamp)
         say(f"{slug}: the mod's pass into {pdir}")
-        rc = S.main(["qa", "--mod", mod["dir"], "--out", pdir])
+        rc = S.main(["qa", "--holder", holder, "--mod", mod["dir"], "--out", pdir])
         if rc == 3:
             raise S.Stop(3, "the game seat is someone else's")
         f = findings(pdir, build, slug) if os.path.isfile(S.state_path(pdir)) else {"pass": pdir, "slug": slug, "runs": [], "sheets": []}
