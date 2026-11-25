@@ -589,7 +589,7 @@ mod tests {
             assert_eq!(r.label, "Costume (look, effects, sound)");
             assert!(r.gate_passes(), "{:?}", r.blockers);
             let j = r.json();
-            assert!(j.starts_with("{\"schema\":\"magician.grade/3\",\"rules_version\":\"3.0.0\",\"toolchain\":\"magician test\",\"deadlock_build\":6864,"), "{j}");
+            assert!(j.starts_with("{\"schema\":\"magician.grade/3\",\"rules_version\":\"3.1.0\",\"toolchain\":\"magician test\",\"deadlock_build\":6864,"), "{j}");
             assert!(j.contains("\"label\":\"Costume (look, effects, sound)\"}") && j.contains("\"release_gate\":{\"pass\":true,\"blockers\":[],\"warnings\":[]}"), "{j}");
             assert!(j.contains("\"broken\":false,\"description\":{\"kind\":\"Costume\",\"rubric\":\"character\",\"says\":\"look, effects, sound\",\"groups\":[{\"id\":\"look\",\"state\":\"covered\",\"coverage\":1,\"criteria\":[\"model\",\"materials\",\"ui\",\"scenes\"],\"counted\":\"model, materials, UI art, scenes\"}"), "{j}");
             assert!(!j.contains("\"letter\"") && !j.contains("\"score\":9") && !j.contains("\"caps\""), "no letter, no overall score: {j}");

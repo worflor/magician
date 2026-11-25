@@ -90,7 +90,7 @@ macro_rules! need {
 /// A new-character mod with two paks (a skin and a voice pak), named by `MAGICIAN_REAL_NEW_CHARACTER` (its folder,
 /// holding its `mod.toml` with `[mod] owners` naming the voice pak's ledger owner): judged together it is an Echo
 /// whose sound is its own, a new character by its head, name and hero art, fair play passing, and both paks recorded
-/// lowest slot first; the skin pak alone is still a new character, its voice Valve's; and with only `--mod` the grade
+/// lowest slot first; the skin pak alone is still a new character, its voice Valve's and said so; and with only `--mod` the grade
 /// finds the same allowance file and gives the same label.
 #[test]
 fn a_new_character_with_its_voice_pak_is_an_echo_and_its_skin_pak_alone_still_new() {
@@ -117,8 +117,8 @@ fn a_new_character_with_its_voice_pak_is_an_echo_and_its_skin_pak_alone_still_ne
     assert!(matches!((a, b), (Some(x), Some(y)) if x < y), "both paks, lowest slot first: {both}");
     // the skin pak alone has no voice pak: still a new character
     let alone = record(std::slice::from_ref(&skin), &toml, Some(&allow), None);
-    assert!(alone.contains("\"identity\":{\"kind\":\"new\"") && label(&alone).starts_with("Echo (") && !label(&alone).contains(", sound)"), "{alone}");
-    assert!(alone.contains("Valve's voice"), "the voice is in the other pak: {alone}");
+    assert!(alone.contains("\"identity\":{\"kind\":\"new\"") && label(&alone).starts_with("Echo (look, "), "{alone}");
+    assert!(alone.contains("Valve's voice") && alone.contains("{\"id\":\"voice\",\"group\":\"sound\",\"weight\":5,\"counted\":false"), "the voice is in the other pak, shown and not counted: {alone}");
     assert!(alone.contains(&format!("{{\"name\":\"{}\",\"sha256\":\"", name(&skin))) && !alone.contains(&format!("{{\"name\":\"{}\"", name(&voice))), "{alone}");
     // with only --mod the grade finds the same allowance file and gives the same grade
     let found = record(&[skin, voice], &toml, None, None);

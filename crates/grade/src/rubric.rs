@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// The version of the grading rules a record was judged by. Raise it when a rule's meaning changes, so an old record
 /// is never read as if today's rules made it.
-pub const RULES_VERSION: &str = "3.0.0";
+pub const RULES_VERSION: &str = "3.1.0";
 
 // ---------------------------------------------------------------------------------------------------- groups
 
@@ -97,10 +97,11 @@ impl Archetype {
         [Archetype::Character, Archetype::Variant, Archetype::Kit]
     }
     /// Criteria that always count, and criteria that count once the mod touches them (a sound kit is not described
-    /// by the UI it never claimed). A character counts every criterion.
+    /// by the UI it never claimed). A character counts every criterion but its voice, which is extra: a costume's
+    /// sound is its kit sound, and a voice counts once the mod treats one.
     pub fn surfaces(self) -> (&'static [&'static str], &'static [&'static str]) {
         match self {
-            Archetype::Character => (&["model", "materials", "ui", "scenes", "vfx", "animation", "sound", "voice"], &[]),
+            Archetype::Character => (&["model", "materials", "ui", "scenes", "vfx", "animation", "sound"], &["voice"]),
             Archetype::Variant => (&["materials"], &["ui", "scenes", "vfx", "animation", "sound", "voice"]),
             Archetype::Kit => (&[], &["ui", "vfx", "animation", "sound", "voice"]),
         }
@@ -547,9 +548,11 @@ fn protected<'a>(fp: &Footprint, m: &'a ModFacts) -> Vec<&'a String> {
     m.paths.iter().filter(|q| fp.cat_of(q).is_some_and(|c| c.protected()) || q.ends_with(".vnmskel_c") || q.ends_with(".vnmgraph_c") || q.ends_with(".vdata_c")).collect()
 }
 
-/// A group's weighted coverage, its state under the policy's lines, and what was counted.
+/// A group's weighted coverage, its state under the policy's lines, and what was counted. The line names every
+/// criterion of the group in the rubric's scope, a part not yet counted as Valve's (`kit sound, Valve's voice`).
 fn group_line(group: Group, lines: &[Line], p: &Policy) -> GroupLine {
     let parts: Vec<&Line> = lines.iter().filter(|l| l.group == group && l.counted).collect();
+    let scope: Vec<&Line> = lines.iter().filter(|l| l.group == group).collect();
     let total: f64 = parts.iter().map(|l| l.weight).sum();
     let coverage = if total > 0.0 { parts.iter().map(|l| l.weight * l.coverage).sum::<f64>() / total } else { 0.0 };
     let state = if coverage <= 0.0 {
@@ -564,7 +567,7 @@ fn group_line(group: Group, lines: &[Line], p: &Policy) -> GroupLine {
     let counted = if coverage <= 0.0 {
         "Valve's".to_string()
     } else {
-        let said: Vec<String> = parts.iter().map(|l| l.phrase()).collect();
+        let said: Vec<String> = scope.iter().map(|l| l.phrase()).collect();
         said.join(if said.iter().any(|s| s.contains(',')) { "; " } else { ", " })
     };
     GroupLine { group, coverage, state, counted }
@@ -721,6 +724,20 @@ mod tests {
     }
 
     #[test]
+    fn a_character_s_voice_counts_once_touched_and_shows_either_way() {
+        let (fpx, mut f) = everything();
+        f.paths.retain(|p| !p.contains("/vo/"));
+        let r = grade(&fpx, &f, Archetype::Character, &policy());
+        assert_eq!(r.description(), "look, effects, sound", "an untouched voice does not hold sound back");
+        assert_eq!(group(&r, Group::Sound).counted, "kit sound, Valve's voice");
+        assert!(!line(&r, "voice").counted);
+        // a voice begun counts: a quarter of the lines treated
+        f.paths.extend((0..10).map(|i| format!("sounds/vo/lash/lash_kill_{i}.vsnd_c")));
+        let r = grade(&fpx, &f, Archetype::Character, &policy());
+        assert_eq!((r.description().as_str(), group(&r, Group::Sound).counted.as_str()), ("look, effects, some sound", "kit sound, voice 10 of 40 lines"));
+    }
+
+    #[test]
     fn the_two_lines_are_the_policy_s() {
         let (fpx, mut f) = everything();
         f.paths.retain(|p| !p.contains("flog_") && !p.contains("extra_") && !p.contains("ability_"));
@@ -780,7 +797,7 @@ mod tests {
         // one replaced sound: some sound, nothing else
         let r = grade(&fp(), &facts(&["sounds/abilities/lash/strike_0.vsnd_c"]), Archetype::Kit, &policy());
         assert_eq!(r.description(), "some sound");
-        assert_eq!(group(&r, Group::Sound).counted, "sound for 1 of 1 ability (1 in part)");
+        assert_eq!(group(&r, Group::Sound).counted, "sound for 1 of 1 ability (1 in part), Valve's voice");
         assert!(!line(&r, "vfx").counted && !line(&r, "voice").counted, "a kit is not described by what it never touched");
         // every particle and sound of the kit
         let fpx = fp();
@@ -808,7 +825,7 @@ mod tests {
         assert!(!line(&r, "ui").counted && !line(&r, "scenes").counted, "a variant is not described by UI it never claimed");
         f.material_slots = slots(&["lash_body"], &["lash_bg", "lash_glove"]);
         let r = grade(&fp(), &f, Archetype::Variant, &policy());
-        assert_eq!((r.description().as_str(), group(&r, Group::Look).counted.as_str()), ("some look", "materials on 1 of 3 visible slots"));
+        assert_eq!((r.description().as_str(), group(&r, Group::Look).counted.as_str()), ("some look", "materials on 1 of 3 visible slots, Valve's UI art, Valve's scenes"));
         // a recolour that also reskins an ability's particles says so
         f.paths.extend((0..2).map(|i| format!("particles/abilities/lash/strike_{i}.vpcf_c")));
         assert_eq!(grade(&fp(), &f, Archetype::Variant, &policy()).description(), "some look, some effects");

@@ -58,7 +58,7 @@ magician grade <pak> --hero <hero> [--light | --findings <file from lint --findi
 Give every pak of the mod at once (a skin pak and its voice pak grade as one; alone, the skin pak lacks the voice). The label reads `<Kind> (<groups>)[ · broken][ · NSFR | · FP?][ · stale(N) | · unproven]`:
 
 - the kind is identity: Echo (a new character), Costume (the same character, a new model), Variant (Valve's mesh, new materials), Kit (no model);
-- the groups are what the mod makes its own: look (model, materials, UI art, scenes), effects (ability VFX, animation), sound (kit sound, voice); `some <group>` when begun, left out while Valve's. It describes the mod, it does not rank it: don't present it as a quality verdict or a score. The report's three lines under the label say what was counted;
+- the groups are what the mod makes its own: look (model, materials, UI art, scenes), effects (ability VFX, animation), sound (kit sound, and voice once treated); `some <group>` when begun, left out while Valve's. It describes the mod, it does not rank it: don't present it as a quality verdict or a score. The report's three lines under the label say what was counted;
 - `broken` is lint errors that are not fair play, the same word `check` uses;
 - `NSFR` is a confirmed fair-play violation, `FP?` a fair-play check that could not run (a `--light` lint over a model reads `FP?`: grade lints deep by default), and neither ever changes the description;
 - `stale(N)` means these paks are not proven on this build, last proven on N; `unproven`, no proof holds these bytes (a rebuilt pak, whatever `[proven] builds` lists; the record's `freshness.unbound` names the builds claimed for other bytes).
