@@ -57,7 +57,7 @@ class Client:
 
 
 def binary():
-    return os.environ.get("MAGICIAN_BIN") or os.path.join(HERE, "..", "target", "release", "magician.exe")
+    return os.environ.get("MAGICIAN_BIN") or os.path.join(HERE, "..", "target", "release", "magician.exe" if os.name == "nt" else "magician")
 
 
 def game_found():

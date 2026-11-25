@@ -52,12 +52,12 @@ class FakeWorld:
 
     def run(self, cmd, capture_output=True, text=True, timeout=None):
         exe = os.path.basename(cmd[0]).lower()
-        if exe == "magician.exe" and cmd[1] == "install" and cmd[2] == "--status":
+        if exe in ("magician.exe", "magician") and cmd[1] == "install" and cmd[2] == "--status":
             out = "build 6864: addons search path present\n  pak10_dir.vpk  crc 1  for maid_lash  installed\n"
             if self.installed:
                 out += "  pak90_dir.vpk  crc 2  for cinema  installed\n"
             return types.SimpleNamespace(returncode=0, stdout=out, stderr="")
-        if exe == "magician.exe" and cmd[1] == "uninstall":
+        if exe in ("magician.exe", "magician") and cmd[1] == "uninstall":
             if self.uninstall_fails > 0:
                 self.uninstall_fails -= 1
                 self.events.append("uninstall failed (files busy)")

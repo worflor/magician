@@ -34,7 +34,7 @@ import gamepaths  # noqa: E402
 GAME = gamepaths.try_game()
 CITADEL = os.path.join(GAME, "citadel")
 REPLAYS = os.path.join(CITADEL, "replays")
-MAGICIAN = os.path.join(TOOLKIT, "target", "release", "magician.exe")
+MAGICIAN = os.path.join(TOOLKIT, "target", "release", "magician.exe" if os.name == "nt" else "magician")
 PAK = os.path.join(os.environ.get("CINEMA_WORK") or gamepaths.work("cinema"), "pak90_dir.vpk")
 HOLDER = "cinema"
 KEY = console.console_key()   # the player's own console bind (console.py)

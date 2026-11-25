@@ -41,16 +41,17 @@ EXIT_MEANING = {0: "clean", 1: "broken", 2: "usage error", 3: "refused", 4: "re-
 TAIL_LINES = 30
 
 
+EXE = "magician.exe" if os.name == "nt" else "magician"
+
+
 def find_binary():
     env = os.environ.get("MAGICIAN_BIN")
     if env:
         return env
-    cands = [os.path.join(REPO, "target", "release", "magician.exe"),
-             os.path.join(REPO, "target", "mcp-build", "release", "magician.exe"),
-             os.path.join(REPO, "target", "release", "magician")]
+    cands = [os.path.join(REPO, "target", "release", EXE), os.path.join(REPO, "target", "mcp-build", "release", EXE)]
     cands = [c for c in cands if os.path.isfile(c)]
     if not cands:
-        return os.path.join(REPO, "target", "release", "magician.exe")
+        return os.path.join(REPO, "target", "release", EXE)
     return max(cands, key=os.path.getmtime)  # the newest build wins
 
 
@@ -59,11 +60,13 @@ class ToolError(Exception):
 
 
 def _kill_tree(proc):
+    """End the command and whatever it started (the Source 2 Viewer a grade runs, the compiler a build runs)."""
     try:
         if os.name == "nt":
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=15)
         else:
-            proc.kill()
+            import signal
+            os.killpg(proc.pid, signal.SIGKILL)   # its own process group, from start_new_session
     except Exception:
         pass
     try:
@@ -92,7 +95,8 @@ def run_magician(tool, args, timeout=None, json_out=False):
         fh.write(("$ %s %s\n" % (exe, " ".join(args))).encode("utf-8", "replace"))
         fh.flush()
         proc = subprocess.Popen([exe] + args, stdin=subprocess.DEVNULL, stdout=out if json_out else fh,
-                                stderr=fh if json_out else subprocess.STDOUT, cwd=REPO)
+                                stderr=fh if json_out else subprocess.STDOUT, cwd=REPO,
+                                start_new_session=os.name != "nt")
         try:
             code = proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:

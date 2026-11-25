@@ -22,7 +22,7 @@ Numbers keep their KV3 kind: a JSON int is an int, a JSON float a double; lists 
 import json, os, re, shutil, struct, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MAGICIAN = os.path.join(HERE, "..", "target", "release", "magician.exe")
+MAGICIAN = os.path.join(HERE, "..", "target", "release", "magician.exe" if os.name == "nt" else "magician")
 sys.path.insert(0, os.path.join(HERE, "..", "ingame"))
 import gamepaths  # noqa: E402
 VRF = gamepaths.vrf()

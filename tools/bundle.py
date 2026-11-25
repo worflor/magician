@@ -15,7 +15,7 @@ https://docs.deadlockmods.app/developer-docs/mod-interchange) or copy by hand:
 Spec keys: name, slug, author, hero, category, description, version, game_build, out, readme (copied as README.md),
 mods [{slug, name, description, order, files [{name, src}], gamebanana_id, optional, category, hero}],
 previews [{src, out, crop [l,t,r,b]}], allowed_overlap [paths that may live in two paks; the lower-order mod wins],
-warnings [strings], scenes [{src, hero}], bundle_magician (true copies magician.exe into tools/).
+warnings [strings], scenes [{src, hero}], bundle_magician (true copies the magician binary into tools/).
 A mod's own `category` or `hero` overrides the spec's: give an add-on pak (a voice pak beside a skin) its own category,
 e.g. "Voice Lines", or Deadlock Mod Manager sees two skins for one hero and offers to swap one out.
 Community metadata (all optional): release (the public semver, e.g. "1.0.0"; `version` stays the internal build),
@@ -29,7 +29,7 @@ Relative paths resolve against the spec's folder; `~/` means the folder that hol
 
 Scenes: `src` is a scene-patch folder (`magician scene make`: scene-patch.txt and files/, only our bytes). It goes to
 `scene/<hero>/`, beside two installers that build the hero-page scene from the player's own Valve files, byte-identical
-to `magician scene install`, so players never need magician.exe: `install-scene.ps1` (tools/scene_install.ps1, Windows
+to `magician scene install`, so players never need Magician: `install-scene.ps1` (tools/scene_install.ps1, Windows
 PowerShell, run by install-scene.cmd / uninstall-scene.cmd) and `install-scene.py` (tools/scene_install.py, Python 3
 stdlib, for Linux and the Steam Deck, run by install-scene.sh / uninstall-scene.sh). The bundler checks that no file
 in the patch is byte-identical to Valve's file at that path and that the patch fits the installed game.
@@ -47,7 +47,7 @@ import datetime, hashlib, json, os, re, shutil, subprocess, sys, zipfile, zlib
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ingame"))
-import gamepaths  # noqa: E402  (the game as magician.exe finds it)
+import gamepaths  # noqa: E402  (the game as magician finds it)
 
 GAME_PAK = os.path.join(gamepaths.try_game(), "citadel", "pak01_dir.vpk")
 TOOLS = os.path.dirname(os.path.abspath(__file__))
@@ -188,7 +188,7 @@ def main():
         return args[i + 1]
 
     check_spec(spec, base, args)
-    exe = flag("--magician") or os.path.join(TOOLS, "..", "target", "release", "magician.exe")
+    exe = flag("--magician") or gamepaths.magician()
     out = os.path.abspath(resolve(base, flag("--out") or spec["out"]))
     if spec.get("bundle_magician") and not os.path.isfile(exe):
         sys.exit(f"bundle_magician: no {exe}")
@@ -329,7 +329,7 @@ def main():
                     full = os.path.join(dp, f)
                     sums.append(f"{sha256(full)}  {os.path.relpath(full, out).replace(os.sep, '/')}")
             print("  scene", sc["hero"], "->", os.path.relpath(dst, out), f"(owner {man['mod']})")
-        # The installer is a self-contained PowerShell script (tools/scene_install.ps1): no magician.exe needed.
+        # The installer is a self-contained PowerShell script (tools/scene_install.ps1): no Magician needed.
         shutil.copyfile(SCENE_PS1, os.path.join(out, "install-scene.ps1"))
         sums.append(f"{sha256(os.path.join(out, 'install-scene.ps1'))}  install-scene.ps1")
         for name, verb, extra in (("install-scene.cmd", "Builds and installs", ""), ("uninstall-scene.cmd", "Removes", "-Uninstall ")):
@@ -345,8 +345,9 @@ def main():
             sums.append(f"{sha256(os.path.join(out, name))}  {name}")
         if spec.get("bundle_magician"):
             os.makedirs(os.path.join(out, "tools"))
-            shutil.copyfile(exe, os.path.join(out, "tools", "magician.exe"))
-            sums.append(f"{sha256(os.path.join(out, 'tools', 'magician.exe'))}  tools/magician.exe")
+            name = os.path.basename(exe)   # magician.exe from Windows, magician from Linux
+            shutil.copyfile(exe, os.path.join(out, "tools", name))
+            sums.append(f"{sha256(os.path.join(out, 'tools', name))}  tools/{name}")
 
     if spec.get("previews"):
         from PIL import Image

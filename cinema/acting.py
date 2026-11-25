@@ -52,7 +52,7 @@ import gamepaths  # noqa: E402  (locations as magician.exe resolves them)
 
 GAME = os.path.join(gamepaths.try_game(), "citadel")
 ADDONS = os.path.join(GAME, "addons")
-MAGICIAN = os.path.join(os.path.dirname(HERE), "target", "release", "magician.exe")
+MAGICIAN = os.path.join(os.path.dirname(HERE), "target", "release", "magician.exe" if os.name == "nt" else "magician")
 WORK = os.environ.get("CINEMA_WORK") or gamepaths.work("cinema")
 PAK90 = os.path.join(WORK, "pak90_dir.vpk")
 

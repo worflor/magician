@@ -35,7 +35,7 @@ BLENDER_45 = os.environ.get("BLENDER_45") or gamepaths.config("blender_45") or B
 GAME = "steam:1422450/game/citadel"
 GAME_PAK = GAME + "/pak01_dir.vpk"
 GAMEINFO = os.path.join(gamepaths.try_game(), "citadel", "gameinfo.gi")
-MAGICIAN = os.path.join(HERE, "..", "target", "release", "magician.exe")
+MAGICIAN = os.path.join(HERE, "..", "target", "release", "magician.exe" if os.name == "nt" else "magician")
 REFROOT = gamepaths.work()
 ALL_STEPS = ["stage", "export", "cache", "index", "geo", "motion", "holes", "sequences", "views", "profile", "cloth", "report"]
 

@@ -13,7 +13,7 @@ is block-compressed below 256 px on a side), T03 a different size (warn). Exit 1
 """
 import argparse, json, os, re, subprocess, sys
 
-MAGICIAN = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "target", "release", "magician.exe"))
+MAGICIAN = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "target", "release", "magician.exe" if os.name == "nt" else "magician"))
 HDR = re.compile(r": (\d+)x(\d+)x(\d+) (\S+) \(format (\d+), (\d+) mips")
 UNCOMPRESSED = {"BGRA8888", "RGBA8888"}
 

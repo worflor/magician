@@ -32,7 +32,7 @@ Exit 1 on any error-level finding.
 """
 import argparse, json, os, re, subprocess, sys
 
-MAGICIAN = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "target", "release", "magician.exe"))
+MAGICIAN = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "target", "release", "magician.exe" if os.name == "nt" else "magician"))
 DEFAULT_AO = "materials/default/default_ao"
 DEFAULT_MASK = "materials/default/default_mask"
 

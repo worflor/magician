@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import gamepaths  # noqa: E402  (locations as magician.exe resolves them)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MAGICIAN = os.path.join(os.path.dirname(HERE), "target", "release", "magician.exe")
+MAGICIAN = os.path.join(os.path.dirname(HERE), "target", "release", "magician.exe" if os.name == "nt" else "magician")
 MAPS = os.path.join(gamepaths.try_game(), "citadel", "maps")
 WORK = os.environ.get("CINEMA_WORK") or gamepaths.work("cinema")
 
