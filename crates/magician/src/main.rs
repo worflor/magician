@@ -990,10 +990,53 @@ fn print_lint(o: &LintOut) -> R {
     for a in &r.stale {
         say!("stale allowance (line {}): {} {} '{}' matched nothing; remove it", a.line, a.code, a.path, a.needle);
     }
+    // A long run ends with the same findings by rule, so the reader at the bottom of the list sees its shape.
+    let tally = rule_tally(&r.kept);
+    if r.kept.len() > 10 && tally.len() > 1 {
+        say!("by rule (`magician rules` says what each one costs in game):");
+        for t in &tally {
+            say!("  {} {} {:<26} {:>5} in {} file(s)", sev_label(t.severity), t.code, t.name, t.count, t.files);
+        }
+    }
     let errors = r.kept.iter().filter(|x| x.severity == Severity::Error).count();
     let warns = r.kept.iter().filter(|x| x.severity == Severity::Warn).count();
     say!("{errors} error(s), {warns} warning(s), {} note(s), {} allowed, {} stale", r.kept.len() - errors - warns, r.allowed.len(), r.stale.len());
     Ok(if errors > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS })
+}
+
+/// Findings counted by rule: the rule, its severity in this run, how many and in how many files. Errors first, then
+/// warnings, then notes; the most frequent rule first within each.
+pub(crate) struct Tally {
+    pub code: &'static str,
+    pub name: &'static str,
+    pub severity: Severity,
+    pub count: usize,
+    pub files: usize,
+}
+
+pub(crate) fn rule_tally(findings: &[lint::Finding]) -> Vec<Tally> {
+    let mut by: std::collections::BTreeMap<(&'static str, u8), (Tally, std::collections::BTreeSet<&str>)> = Default::default();
+    for f in findings {
+        let rank = match f.severity {
+            Severity::Error => 0,
+            Severity::Warn => 1,
+            Severity::Info => 2,
+        };
+        let e = by.entry((f.code, rank)).or_insert_with(|| (Tally { code: f.code, name: f.name, severity: f.severity, count: 0, files: 0 }, Default::default()));
+        e.0.count += 1;
+        e.1.insert(f.path.as_deref().unwrap_or("(vpk)"));
+    }
+    let mut v: Vec<(u8, Tally)> = by.into_iter().map(|((_, rank), (mut t, files))| {
+        t.files = files.len();
+        (rank, t)
+    }).collect();
+    v.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.count.cmp(&a.1.count)).then(a.1.code.cmp(b.1.code)));
+    v.into_iter().map(|(_, t)| t).collect()
+}
+
+/// One line of a tally: `M030 dangling-ref x53, M062 model-contract x10`.
+pub(crate) fn tally_line(t: &[&Tally]) -> String {
+    t.iter().map(|t| format!("{} {} x{}", t.code, t.name, t.count)).collect::<Vec<_>>().join(", ")
 }
 
 /// Write a file an output flag (`--json-out`, `--findings-out`, `--record-out`) names; a write that fails stops the
@@ -1472,6 +1515,8 @@ pub(crate) struct GradeOut {
     pub lint_warnings: usize,
     pub lint_allowed: usize,
     pub lint_depth: &'static str,
+    /// The run's findings that no allowance accepted, fair play's included, at the severity the policy gives them.
+    pub kept: Vec<lint::Finding>,
 }
 
 /// `grade`'s work, without printing the record (`--record-out` is still written).
@@ -1542,6 +1587,7 @@ pub(crate) fn grade_run(args: &[String]) -> Result<GradeOut, Stop> {
     };
     let (allowances, allow_names) = grade_allowances(args, toml_path.as_deref().zip(toml.as_deref()))?;
     let lf = grade::lintfacts::lint_facts(findings.clone(), &allowances, depth);
+    let kept = lint::allow::apply(findings.clone(), &allowances, matches!(depth, lint::report::Depth::Deep)).kept;
 
     // What the grade credits: every path, less files byte-identical to Valve's at the same path (they change nothing).
     let valve_files: Vec<String> = files.iter().filter(|f| base.get(&f.path).is_some_and(|b| b.crc == f.stored_crc && b.size == f.data.len() as u64)).map(|f| f.path.clone()).collect();
@@ -1660,6 +1706,7 @@ pub(crate) fn grade_run(args: &[String]) -> Result<GradeOut, Stop> {
         lint_warnings: record.i.lint.warnings,
         lint_allowed: record.i.lint.allowed_by_code.values().sum(),
         lint_depth: record.i.lint.depth.label(),
+        kept,
     })
 }
 
@@ -2478,6 +2525,20 @@ mod exclude_tests {
         for c in COMMANDS.iter().filter(|c| **c != "help") {
             assert!(USAGE.contains(&format!("\n  magician {c} ")) || USAGE.contains(&format!("\n  magician {c}\n")), "{c} is not in the usage text");
         }
+    }
+
+    #[test]
+    fn findings_by_rule_put_errors_first_and_the_most_frequent_rule_first() {
+        let f = |code: &str, path: &str| {
+            let r = lint::rule(code);
+            lint::Finding { code: r.code, name: r.name, severity: r.severity, path: Some(path.into()), message: "x".into() }
+        };
+        let run = vec![f("M064", "a"), f("M064", "b"), f("M064", "b"), f("M030", "c"), f("M031", "d"), f("M060", "e")];
+        let t = rule_tally(&run);
+        let order: Vec<(&str, usize, usize)> = t.iter().map(|t| (t.code, t.count, t.files)).collect();
+        assert_eq!(order, vec![("M030", 1, 1), ("M064", 3, 2), ("M031", 1, 1), ("M060", 1, 1)]);
+        assert_eq!(tally_line(&t.iter().take(2).collect::<Vec<_>>()), "M030 dangling-ref x1, M064 sound-louder x3");
+        assert_eq!(t.iter().map(|t| t.count).sum::<usize>(), run.len(), "every finding is counted once");
     }
 
     #[test]

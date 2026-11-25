@@ -22,6 +22,9 @@ use crate::policy::Policy;
 use crate::rubric::{self, Report};
 
 pub const SCHEMA: &str = "magician.grade/3";
+/// How many violations and advisories of one rule the text report shows before it counts the rest.
+const VIOLATIONS_SHOWN: usize = 5;
+use std::collections::BTreeMap;
 
 /// One pak of the mod, as judged.
 #[derive(Debug, Clone)]
@@ -432,15 +435,36 @@ impl<'a> Record<'a> {
         for u in &fp.unknown {
             line(format!("  not run: {} {}: {}", u.rules.join(", "), u.path.as_deref().unwrap_or(""), u.why));
         }
+        // Each violation with what was measured; past the first few of one rule, a count (the record has every one).
+        let mut shown: BTreeMap<&str, usize> = BTreeMap::new();
         for v in &fp.violations {
-            line(format!("  violation {} {}: {}", v.rule, v.path.as_deref().unwrap_or("(vpk)"), v.why));
+            let n = shown.entry(v.rule).or_default();
+            *n += 1;
+            if *n <= VIOLATIONS_SHOWN {
+                line(format!("  violation {} {}: {} ({})", v.rule, v.path.as_deref().unwrap_or("(vpk)"), v.message.chars().take(140).collect::<String>(), v.why));
+            }
+        }
+        for (rule, n) in &shown {
+            if *n > VIOLATIONS_SHOWN {
+                line(format!("  and {} more {rule} violation(s): `magician lint` lists every one, the --json record too", n - VIOLATIONS_SHOWN));
+            }
         }
         for a in &fp.allowances {
             let m: Vec<String> = a.measures.iter().map(|m| format!("{} {} (limit {})", m.name, num(m.value), num(m.limit))).collect();
             line(format!("  allowed {} {}: {} -- {}", a.rule, a.path.as_deref().unwrap_or("(vpk)"), if m.is_empty() { "by reason".to_string() } else { m.join(", ") }, a.reason.as_deref().unwrap_or("")));
         }
+        let mut shown: BTreeMap<&str, usize> = BTreeMap::new();
         for a in &fp.advisories {
-            line(format!("  advisory {} {}: {}", a.rule, a.path.as_deref().unwrap_or("(vpk)"), a.message.chars().take(140).collect::<String>()));
+            let n = shown.entry(a.rule).or_default();
+            *n += 1;
+            if *n <= VIOLATIONS_SHOWN {
+                line(format!("  advisory {} {}: {}", a.rule, a.path.as_deref().unwrap_or("(vpk)"), a.message.chars().take(140).collect::<String>()));
+            }
+        }
+        for (rule, n) in &shown {
+            if *n > VIOLATIONS_SHOWN {
+                line(format!("  and {} more {rule} advisory(ies): `magician lint` lists every one, the --json record too", n - VIOLATIONS_SHOWN));
+            }
         }
         let f = &i.freshness;
         line(format!(
@@ -669,6 +693,19 @@ mod tests {
                 assert!(r.json().contains(&format!("\"fair_play\":{{\"state\":\"{}\"", if mark == "NSFR" { "fail" } else { "unknown" })), "{}", r.json());
             });
         }
+    }
+
+    #[test]
+    fn violations_say_what_was_measured_and_a_long_run_of_one_rule_is_counted() {
+        let mut c = Case::complete();
+        c.findings = (0..8).map(|i| finding("M124", &format!("front view: our in-game silhouette is 9{i}.0% of Valve's"))).collect();
+        c.run(|r| {
+            let t = r.text(&|m| m.to_string());
+            assert!(t.contains("  violation M124 models/heroes_wip/lash/lash.vmdl_c: front view: our in-game silhouette is 90.0% of Valve's (never allowable)\n"), "{t}");
+            assert_eq!(t.matches("  violation M124").count(), VIOLATIONS_SHOWN, "{t}");
+            assert!(t.contains("  and 3 more M124 violation(s): `magician lint` lists every one, the --json record too\n"), "{t}");
+            assert_eq!(r.json().matches("\"rule\":\"M124\"").count(), 8, "the record keeps every one: {}", r.json());
+        });
     }
 
     /// Fair play and rights both enforced.

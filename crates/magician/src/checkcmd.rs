@@ -68,6 +68,8 @@ pub fn cmd_check(args: &[String]) -> R {
     let mut grade_json = "null".to_string();
     let mut grade_text = String::new();
     let mut gate: Option<(bool, Vec<String>)> = None;
+    // Every finding no allowance accepted, for the lint line's breakdown by rule.
+    let mut kept: Vec<lint::Finding> = Vec::new();
 
     // 1. Lint and grade, together: the grade lints (deep unless --light) and its record carries the counts.
     QUIET.store(true, Ordering::Relaxed);
@@ -106,6 +108,7 @@ pub fn cmd_check(args: &[String]) -> R {
             gate = Some((g.gate_passes, g.blockers.clone()));
             grade_json = g.json.trim().to_string();
             grade_text = g.text;
+            kept = g.kept;
         }
         other => {
             // No grade (no hero named, or the grade could not run: most often no Source 2 Viewer): lint each pak.
@@ -130,6 +133,7 @@ pub fn cmd_check(args: &[String]) -> R {
                 errors += o.errors();
                 warnings += o.warnings();
                 allowed += o.r.allowed.len();
+                kept.extend(o.r.kept);
             }
             broken |= errors > 0;
             let state = if errors > 0 { "broken" } else if warnings > 0 { "warn" } else { "ok" };
@@ -141,6 +145,27 @@ pub fn cmd_check(args: &[String]) -> R {
             });
             items.push(Item { what: "grade", state: "skip", text: format!("not graded: {why}"), json: jsonout::Obj::new().str("state", "skip").str("why", &why).build() });
         }
+    }
+
+    // The lint line's findings by rule: what is not fair play by severity, then fair play, which the policy judges apart.
+    let tally = rule_tally(&kept);
+    let fair = |t: &&Tally| kept.iter().any(|f| f.code == t.code && grade::rubric::is_compliance(f.code, &f.message));
+    let mut by_rule: Vec<(&str, String)> = Vec::new();
+    for (what, pick) in [("errors", Severity::Error), ("warnings", Severity::Warn)] {
+        let these: Vec<&Tally> = tally.iter().filter(|t| t.severity == pick && !fair(t)).collect();
+        if !these.is_empty() {
+            by_rule.push((what, tally_line(&these)));
+        }
+    }
+    let fp: Vec<&Tally> = tally.iter().filter(|t| t.severity != Severity::Info && fair(t)).collect();
+    if !fp.is_empty() {
+        by_rule.push(("fair play", tally_line(&fp)));
+    }
+    let by_rule_json = jsonout::arr(tally.iter().map(|t| {
+        jsonout::Obj::new().str("code", t.code).str("name", t.name).str("severity", sev_label(t.severity).trim()).bool("fair_play", fair(&t)).int("count", t.count as i64).int("files", t.files as i64).build()
+    }));
+    if let Some(i) = items.iter_mut().find(|i| i.what == "lint") {
+        i.json = format!("{},\"by_rule\":{by_rule_json}}}", &i.json[..i.json.len() - 1]);
     }
 
     // 2. Proof and drift, asked of the bytes judged: the mod's own paks, else every file installed for it (proofs.rs).
@@ -288,6 +313,11 @@ pub fn cmd_check(args: &[String]) -> R {
         say!("{}: {}  {}(build {build})", ctx.label(), style::paint(verdict, tone), label.as_deref().map(|l| format!("{}  ", style::label(l))).unwrap_or_default());
         for i in &items {
             say!("  {:<6} {} {}", i.what, style::word(i.state, 6), i.text);
+            if i.what == "lint" {
+                for (what, line) in &by_rule {
+                    say!("         {what:<9} {line}");
+                }
+            }
         }
         for n in &next {
             say!("next: {n}");
