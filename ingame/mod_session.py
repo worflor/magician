@@ -2,8 +2,8 @@
 select the hero, run scenarios and timed takes, film a SourceTV take from free cameras, stop the game, give the seat
 back, cut contact sheets. Standard library only; no Git Bash.
 
-    python -I mod_session.py up     --out DIR [--mod DIR|mod.toml] [--pak FILE [--as pakNN_dir.vpk]] [--vanilla] [--restore]
-                                [--holder NAME] [--map NAME | --menu] [--hero HERO | --no-hero] [--no-tv] [--wait SECS]
+    python -I mod_session.py up     --out DIR [--mod DIR|mod.toml] [--pak FILE [--as pakNN_dir.vpk] [--force]] [--vanilla]
+                                [--restore] [--holder NAME] [--map NAME | --menu] [--hero HERO | --no-hero] [--no-tv] [--wait SECS]
                                 [--size 1920x1080] [--timeout SECS] [--key KEY]
     python -I mod_session.py run    --out DIR <item>... [--no-probe]
     python -I mod_session.py film   --out DIR <shots.txt> [--take FILE.dem] [--marks marks.tsv] [--w0 SECS] [--load]
@@ -33,7 +33,9 @@ State between the verbs is <out>/session.json. Every verb after `up` first check
 session's and the running game the one its launch bound (gamelock.may_drive): if not, it does nothing and exits 9.
 `up --pak` installs the pak over the mod's slot (`magician install --as`), `--vanilla` uninstalls the mod's paks for a
 vanilla pass, and `--restore` puts back at `down` exactly the paks that were there (copies are kept in <out>/restore/;
-`down` compares `magician install --status` with the one taken before). Without --pak or --vanilla nothing is
+`down` compares `magician install --status` with the one taken before); a --pak put into a slot that was free is
+uninstalled again at `down`. `--force` (only with --pak and --restore) installs a pak that lint refuses, to look at
+what the game does with it; the session still takes it out at the end. Without --pak or --vanilla nothing is
 installed: what is in the addons folder is what is filmed (listed in <out>/installed_before.txt).
 
 Exit codes: 0 ok, 1 failed (said why), 2 usage or no mod, 3 the seat is someone else's, 4 install failed, 5 a game
@@ -169,13 +171,17 @@ def addons_dir():
     return os.path.join(gamepaths.citadel(), "addons")
 
 
-def install_for(st, pak, slot, holder, restore):
-    """Install `pak` as `slot` for the mod's owner; with `restore`, keep a copy of what that slot held first."""
+def install_for(st, pak, slot, holder, restore, force=False):
+    """Install `pak` as `slot` for the mod's owner; with `restore`, keep a copy of what that slot held first, or, for
+    a slot that was free, remember to take it out again at `down`. `force` installs past lint errors."""
     before = status_rows(st["installed_before"])
     if restore:
-        keep_copies(st, [r for r in before if r[0] == slot])
+        held = [r for r in before if r[0] == slot]
+        keep_copies(st, held)
+        if not held:
+            st.setdefault("added", []).append(slot)
     want = crc_of(pak)
-    rc, out = magician("install", pak, "--as", slot, "--mod", st["owner"], "--holder", holder)
+    rc, out = magician("install", pak, "--as", slot, "--mod", st["owner"], "--holder", holder, *(["--force"] if force else []))
     say(out.strip().splitlines()[-1] if out.strip() else f"install rc {rc}")
     now = status_rows(install_status())
     if not any(r[0] == slot and r[1] == want for r in now):
@@ -208,7 +214,11 @@ def uninstall_mod(st, holder, restore):
 
 
 def restore_installs(st, holder):
-    """Put back every pak kept at `up` (as the same slot, for the same owner), then compare the status with before."""
+    """Take out a --pak put into a free slot, put back every pak kept at `up` (as the same slot, for the same owner),
+    then compare the status with before."""
+    for slot in st.get("added", []):
+        rc, out = magician("uninstall", slot, "--holder", holder)
+        say("restore: " + (out.strip().splitlines()[-1] if out.strip() else f"uninstall rc {rc}"))
     for r in st.get("restore", []):
         rc, out = magician("install", r["copy"], "--as", r["name"], "--mod", r["owner"], "--holder", holder)
         say("restore: " + (out.strip().splitlines()[-1] if out.strip() else f"rc {rc}"))
@@ -322,7 +332,7 @@ def _up(st, o, mod):
         slot = o.get("as") or slot_of(rows, st["owner"])
         if not slot:
             raise Stop(2, f"{st['owner']} has no pak installed: say which slot with --as pakNN_dir.vpk")
-        install_for(st, os.path.abspath(o["pak"]), slot, holder, bool(o.get("restore")))
+        install_for(st, os.path.abspath(o["pak"]), slot, holder, bool(o.get("restore")), bool(o.get("force")))
     elif o.get("vanilla"):
         uninstall_mod(st, holder, bool(o.get("restore")))
         st["vanilla"] = True
@@ -477,8 +487,9 @@ def down_state(st):
     if lock is None or lock["holder"] != holder:
         st["held"] = False
         save(st)
-        if st.get("restore"):
-            raise Stop(9, f"the seat is no longer {holder}'s: the kept paks in {os.path.join(st['out'], 'restore')} were NOT put back")
+        if st.get("restore") or st.get("added"):
+            raise Stop(9, f"the seat is no longer {holder}'s: the kept paks in {os.path.join(st['out'], 'restore')} were NOT put back"
+                       + (f", and {', '.join(st['added'])} was NOT taken out" if st.get("added") else ""))
         say("the seat is not this session's any more; nothing to stop")
         return 0
     try:
@@ -498,7 +509,7 @@ def down_state(st):
         time.sleep(3)
     if gamelock.bound_alive(gamelock.read()):
         raise Stop(1, "GAME STILL RUNNING: the seat is kept; stop it with stop_game.py --holder " + holder)
-    if st.get("restore"):
+    if st.get("restore") or st.get("added"):
         restore_installs(st, holder)
     if not gamelock.release(holder, say=say):
         raise Stop(1, "the seat was not released (see above)")
@@ -638,7 +649,7 @@ def warning_lines(hits, vanilla, have_base, limit=40):
 
 VALUED = {"--out", "--mod", "--pak", "--as", "--holder", "--map", "--hero", "--wait", "--size", "--timeout", "--key",
           "--take", "--marks", "--w0", "--actor", "--fps"}
-FLAGS = {"--vanilla", "--restore", "--menu", "--no-hero", "--no-tv", "--load", "--no-probe"}
+FLAGS = {"--vanilla", "--restore", "--force", "--menu", "--no-hero", "--no-tv", "--load", "--no-probe"}
 VERBS = ("up", "run", "film", "down", "sheets", "all", "qa", "where")
 
 
@@ -668,6 +679,8 @@ def parse(argv):
         raise Stop(2, "--out DIR is required")
     if o.get("pak") and o.get("vanilla"):
         raise Stop(2, "--pak and --vanilla are two different passes: give one")
+    if o.get("force") and not (o.get("pak") and o.get("restore")):
+        raise Stop(2, "--force installs a pak lint refuses only for a look: give it with --pak and --restore")
     return argv[0], o, rest
 
 

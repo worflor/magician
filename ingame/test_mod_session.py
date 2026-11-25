@@ -159,6 +159,34 @@ class InstallAndRestore(unittest.TestCase):
         S.restore_installs(self.st, "drill")
         self.assertEqual(sorted(S.status_rows(S.install_status())), sorted(rows))
 
+    def test_a_pak_put_into_a_free_slot_is_taken_out_again(self):
+        rows = S.status_rows(self.st["installed_before"])
+        S.install_for(self.st, self.paks["new"], "pak40_dir.vpk", "drill", restore=True)
+        self.assertIn("pak40_dir.vpk", {r[0] for r in S.status_rows(S.install_status())})
+        S.restore_installs(self.st, "drill")
+        self.assertEqual(sorted(S.status_rows(S.install_status())), sorted(rows), "the free slot is free again")
+
+    def test_force_installs_a_pak_lint_refuses_and_restore_still_takes_it_out(self):
+        import scene_install
+        bad = os.path.join(self.d, "bad", "pak50_dir.vpk")
+        os.makedirs(os.path.dirname(bad))
+        scene_install.write_vpk(bad, {"sounds/Example/Loud.txt": b"capitals: a path-case error"})
+        rows = S.status_rows(self.st["installed_before"])
+        with self.assertRaises(S.Stop) as e:
+            S.install_for(dict(self.st), bad, "pak41_dir.vpk", "drill", restore=True)
+        self.assertEqual(e.exception.code, 4, "lint refuses it without --force")
+        S.install_for(self.st, bad, "pak41_dir.vpk", "drill", restore=True, force=True)
+        self.assertIn(("pak41_dir.vpk", S.crc_of(bad)), {(r[0], r[1]) for r in S.status_rows(S.install_status())})
+        S.restore_installs(self.st, "drill")
+        self.assertEqual(sorted(S.status_rows(S.install_status())), sorted(rows))
+
+    def test_force_is_only_for_a_look_that_is_put_back(self):
+        for argv in (["up", "--out", "x", "--force"], ["up", "--out", "x", "--pak", "a", "--force"]):
+            with self.assertRaises(S.Stop, msg=argv) as e:
+                S.parse(argv)
+            self.assertEqual(e.exception.code, 2)
+        self.assertTrue(S.parse(["up", "--out", "x", "--pak", "a", "--restore", "--force"])[1]["force"])
+
     def test_a_restore_that_does_not_match_says_so(self):
         S.install_for(self.st, self.paks["new"], "pak12_dir.vpk", "drill", restore=False)
         with self.assertRaises(S.Stop) as e:
