@@ -68,7 +68,7 @@ my-lash-skin: RE-PROVE  Costume (look, some effects) · NSFR · unproven  (build
 next: the in-game pass on build 6865 (`magician session qa --mod /home/you/mods/my-lash-skin --out <dir>`), look at the frames, then `magician prove --evidence <dir>`
 ```
 
-`check` exits 1 when something is broken, 4 when the mod loads but is not proven on the installed build, 0 when it is proven here and clean. The same bare verbs work for `lint`, `grade`, `drift` (from the mod's last proven build), `release` (its addon), `uninstall`, `prove`, `footprint` and `scene check`; whatever you pass explicitly wins. `magician help` lists every command and option, `magician help <command>` shows one, and a mistyped command, option or hero is answered with what it most likely meant. A hero can be named the way you would say it: `lash`, `Lash`, `hero_lash`, `"Lady Geist"`, or its model's path.
+`check` exits 1 when something is broken, 4 when the mod loads but is not proven on the installed build, 0 when it is proven here and clean. The same bare verbs work for `lint`, `ls`, `grade`, `drift` (from the mod's last proven build), `release` (its addon), `uninstall`, `prove`, `footprint` and `scene check`; whatever you pass explicitly wins. `magician help` lists every command and option, `magician help <command>` shows one, and a mistyped command, option or hero is answered with what it most likely meant. A hero can be named the way you would say it: `lash`, `Lash`, `hero_lash`, `"Lady Geist"`, or its model's path.
 
 A `mod.toml` is plain text, read line by line: flat tables of strings, numbers and lists, the shape `new` and `init` write. The keys a mod usually carries:
 

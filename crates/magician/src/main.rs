@@ -1544,7 +1544,14 @@ pub(crate) fn grade_run(args: &[String]) -> Result<GradeOut, Stop> {
         None => None,
     };
     let t = toml.as_deref().unwrap_or("");
-    let hero = flag(args, "--hero").or_else(|| grade::manifest::string(t, "mod", "hero")).ok_or("--hero <hero> is required (or a --mod whose [mod] hero names it)")?;
+    let hero = match flag(args, "--hero").or_else(|| grade::manifest::string(t, "mod", "hero")) {
+        Some(h) => h,
+        // A mod.toml with no hero is a mod for no hero: say what it is, and what does judge it.
+        None if toml.is_some() => {
+            return Err(Stop::Usage(format!("not graded: {}; `magician check` and `magician lint` judge it", checkcmd::no_hero_why(&paks))));
+        }
+        None => return Err("--hero <hero> is required (or a --mod whose [mod] hero names it)".into()),
+    };
     let hero = hero_key(&hero, args)?;
     let rights = grade::record::Rights::parse(grade::manifest::string(t, "rights", "state").as_deref())?;
 
@@ -2305,7 +2312,7 @@ fn drift_vpk(vp: &Path, eras: &Eras, gf: Option<&gamefiles::GameFiles>) -> Resul
 }
 
 fn print_drift(label: &str, nfiles: usize, eras: &Eras, d: &patchday::Drift) {
-    say!("drift {label} : proven on {}, checking {} ({nfiles} files)", eras.from, eras.to);
+    say!("drift {label} : from {} to {} ({nfiles} files)", eras.from, eras.to);
     let show = |title: &str, l: &[String]| {
         say!("  {title}: {}", l.len());
         for x in l.iter().take(25) {

@@ -939,6 +939,10 @@ fn init_takes_a_download_into_a_folder_of_its_own_and_diff_proves_a_copy() {
     assert!(out.contains("left out particles only.vpk: all 1 of its files are in Cool X Skin.vpk, byte for byte"), "{out}");
     assert!(out.contains(&format!("sha256 {}", sha256_hex(&wb))), "{out}");
     assert!(!m.join("particles only.vpk").exists() && !m.join("README.txt").exists(), "only the pak that adds something stays");
+    // from the mod's folder, a bare ls lists its paks
+    let o = magician_in(&d, &m, &["ls"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(String::from_utf8_lossy(&o.stdout).contains("models/heroes/x/x_fx.vpcf_c	") && text(&o).contains("Cool X Skin.vpk"), "{}", text(&o));
     // the copy is the original, file for file and byte for byte; a changed file is named, exit 1
     let o = magician_in(&d, &d, &["diff", &whole.to_string_lossy(), &m.join("Cool X Skin.vpk").to_string_lossy()]);
     assert_eq!(o.status.code(), Some(0), "{}", text(&o));
@@ -946,6 +950,14 @@ fn init_takes_a_download_into_a_folder_of_its_own_and_diff_proves_a_copy() {
     let o = magician_in(&d, &d, &["diff", &whole.to_string_lossy(), &part.to_string_lossy()]);
     assert_eq!(o.status.code(), Some(1), "{}", text(&o));
     assert!(text(&o).contains("only in whole.vpk (1):\n  models/heroes/x/materials/x_body.vmat_c\n"), "{}", text(&o));
+    // a mod for no hero is said for what it is, by init and by grade
+    let prop = built.join("pak05_dir.vpk");
+    vpk::write(&prop, &[("models/props/crate.vmdl_c".to_string(), b"crate".to_vec()), ("materials/props/crate.vmat_c".to_string(), b"m".to_vec())]).unwrap();
+    let o = magician_in(&d, &d, &["init", &prop.to_string_lossy(), "--out", &d.join("mods").join("crate").to_string_lossy()]);
+    assert!(o.status.code() == Some(0) && text(&o).contains("hero   none: no file is one of a hero's, so a prop mod (models/props/crate.vmdl)"), "{}", text(&o));
+    let o = magician_in(&d, &d.join("mods").join("crate"), &["grade"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("not graded: a prop mod (models/props/crate.vmdl); grades are for hero mods"), "{}", text(&o));
     // the same download again: the folder has a mod.toml, so nothing is written
     assert_eq!(magician_in(&d, &downloads, &["init", "Cool X Skin v2.zip"]).status.code(), Some(3));
     // a pak from elsewhere with --out is copied in, the same bytes

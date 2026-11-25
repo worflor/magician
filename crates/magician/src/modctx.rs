@@ -203,7 +203,7 @@ fn tell(what: &str, f: &Found) {
 }
 
 /// The commands a mod's folder can complete, and the one thing each needs that a bare verb lacks.
-const FILLS: &[&str] = &["lint", "grade", "drift", "release", "install", "uninstall", "prove", "footprint", "scene"];
+const FILLS: &[&str] = &["lint", "ls", "grade", "drift", "release", "install", "uninstall", "prove", "footprint", "scene"];
 
 /// Commands whose `--mod` names a `mod.toml` (for the rest it is a ledger owner).
 const TOML_MOD: &[&str] = &["grade", "release", "paths", "patchday", "check", "doctor"];
@@ -295,6 +295,21 @@ pub fn fill(args: &[String]) -> Result<Vec<Vec<String>>, Stop> {
                     let mut v = vec![a[0].clone(), s(&p.path)];
                     v.extend(a[1..].iter().cloned());
                     v.extend(extra.iter().cloned());
+                    v
+                })
+                .collect())
+        }
+        "ls" => {
+            let paks = ctx.paks(game.as_deref());
+            if paks.is_empty() {
+                return Err(no_pak(false));
+            }
+            Ok(paks
+                .iter()
+                .map(|p| {
+                    tell("pak", p);
+                    let mut v = vec![a[0].clone(), s(&p.path)];
+                    v.extend(a[1..].iter().cloned());
                     v
                 })
                 .collect())
