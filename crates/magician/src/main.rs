@@ -67,7 +67,10 @@ mod style;
 mod update;
 mod updateapply;
 
-const USAGE: &str = "\
+/// The usage text up to the section on the options several commands take. Each command's paragraphs name the options
+/// only it takes, and those are the options it accepts (cli.rs): an option the code reads belongs in its command's
+/// paragraphs, or in `SHARED` when several commands take it.
+const USAGE_HEAD: &str = "\
 Magician is a headless toolchain for creating, validating, and maintaining Deadlock mods through automation, scripts, and AI agents.
 
 Start here:
@@ -86,10 +89,11 @@ Start here:
   magician init [<pak> | <addon dir>] [--out DIR] [--hero HERO] [--slug SLUG] [--name NAME] [--force]
                                                 write a mod.toml for a pak (or the paks here) or an addon's sources: the
                                                 hero from the files it replaces, slug and name from the folder
-  magician check [<folder> | <mod.toml>] [--light] [--verbose] [--json]
+  magician check [<folder> | <mod.toml> | --mod <mod.toml>] [--light] [--verbose] [--baseline FILE] [--json]
                                                 the mod's one verdict on the installed build: its paks linted and graded
                                                 together, drift since its last proven build, its scene patches; exit 1
-                                                broken, 4 re-prove (not proven on this build), 0 clean
+                                                broken, 4 re-prove (not proven on this build), 0 clean; --baseline
+                                                judges against a baseline file instead of the installed build's
 
 The toolkit's Python, through the same door (everything after the verb is the tool's own, --help included, with its
 stdio and exit code; the toolkit folder is MAGICIAN_HOME, `home =`, else the one above this binary holding
@@ -125,14 +129,17 @@ Every command:
   magician refs <vpk> <path>                    what a compiled resource depends on, and whether each resolves
   magician dump <vpk> <path> [--block TAG]      a compiled file's KV3 (DATA by default) as text, or a texture header
   magician dump --text FILE                     re-print a KV3 text file (e.g. a decompile) in the same form, to diff
-  magician index [--game DIR]                   build the users index (who uses each game file) for shared-file lint
+  magician index [--game DIR] [--out FILE]      build the users index (who uses each game file) for shared-file lint
   magician kv <vpk> <prefix> <key> [--block TAG]  every scalar under a key containing <key>, across files (evidence)
   magician textures <vpk> [prefix] [--list]     texture formats and non-power-of-two sizes, per top folder
-  magician scan <vpk> [prefix]                  parse every compiled resource under a prefix: parse failures and
-                                                references that don't resolve
+  magician scan <vpk> [prefix] [--baseline FILE]
+                                                parse every compiled resource under a prefix: parse failures and
+                                                references that don't resolve in the build (the installed one, or the
+                                                one --baseline holds)
   magician mesh <vpk> <model path> [--against valve|none] [--with <vpk>]... [--out DIR] [--glb FILE] [--no-png]
-                                                a compiled model's mesh verdict against Valve's (mesh rules M100-M147),
-                                                silhouettes, x-ray sheet; --glb proves the native decode against an export
+                [--json-out FILE]               a compiled model's mesh verdict against Valve's (mesh rules M100-M147),
+                                                silhouettes, x-ray sheet; --glb proves the native decode against an
+                                                export; --json-out writes the verdict to a file as JSON
   magician cloth <vpk> <model path> [--against valve|none] [--shapes]
                                                 what the compiler made of a model's cloth, read from the compiled
                                                 FeModel (PHYS): per chain static/free counts, goal and vertex attraction,
@@ -140,54 +147,62 @@ Every command:
                                                 Valve's model at the same path
   magician cache [stats|clear]                  the findings cache (MAGICIAN_CACHE, else the platform's cache folder;
                                                 `magician paths` shows it); any command takes --no-cache
-  magician lint <mod.vpk> [--baseline FILE] [--built-against FILE] [--allow FILE]... [--deep] [--timings] [--findings-out FILE] [--json-out FILE]
-                [--sources DIR]... [--json]     addon content trees: referenced files with no source left are M032
+  magician lint <mod.vpk> [--baseline FILE] [--built-against FILE] [--allow FILE]... [--deep] [--timings]
+                [--findings-out FILE] [--json-out FILE] [--sources DIR]... [--addon-root DIR] [--users FILE] [--json]
                                                 check a mod against a game build (exit 1 on errors); --findings-out
-                                                writes the run down for `grade --findings`; --json prints the run as
-                                                one JSON document (magician.lint/1) instead of the report
-  magician pack <src_dir> <out/pakNN_dir.vpk>   deterministic single-file VPK, then lint it
+                                                writes the run down for a grade to judge (what release does); --json
+                                                prints the run as one JSON document (magician.lint/1) instead of the
+                                                report; --sources and --addon-root name addon content trees, and a
+                                                referenced file with no source left in them is M032 (an addon root's
+                                                magician.allow is read when no --allow is given); --users names the
+                                                users index (default: the build's, which `magician index` writes)
+  magician pack <src_dir> <out/pakNN_dir.vpk>   deterministic single-file VPK, then lint it (with lint's options)
   magician rules [--json]                       list lint rules and what each means in-game
   magician footprint <hero> [--list]            everything a hero is made of, from the game's own data
   magician grade <pak>... [--hero <hero> | --mod <mod.toml>] [--target BUILD] [--light | --findings FILE] [--allow FILE]...
-                [--addon-root DIR]... [--scene-root DIR]... [--gate] [--json] [--record-out FILE]
-                                                grade a hero mod (every pak it ships, together; the lower pak number wins
+                [--addon-root DIR]... [--scene-root DIR]... [--gate] [--json] [--record-out FILE] [--baseline FILE]
+                [--users FILE]                  grade a hero mod (every pak it ships, together; the lower pak number wins
                                                 a shared path): what kind of mod it is and which of the hero's look,
                                                 effects and sound it makes its own, broken (lint errors), fair play
                                                 (NSFR, FP?), freshness (stale(N): the builds a proof holds these paks on), rights and
                                                 the release gate, as a label (`Echo (look, some effects) · stale(6864)`) and,
                                                 with --json, the record (magician.grade/3; --record-out writes it to a file too);
-                                                lints deep unless --light, or judges a lint run written by
-                                                `lint --findings-out` (what release does); UI scene map VPKs count
-                                                when carried beside a pak or under a --scene-root; exit 0 whatever
-                                                the grade, or 1 with --gate when the release gate has a blocker
+                                                lints deep unless --light (against --baseline, with the --users index,
+                                                as lint does), or judges --findings, a lint run lint wrote down (what
+                                                release does); UI scene map VPKs count when carried beside a pak or
+                                                under a --scene-root; exit 0 whatever the grade, or 1 with --gate when
+                                                the release gate has a blocker
   magician rubric                               the grading criteria, their groups, weights per archetype, the lines that
                                                 name a group, and the fair-play classes of the policy in force
   magician policy [--policy FILE]               every judgement value in force (fair-play limits, allowance limits,
                                                 gate, weights, group lines, identity, coverage), where each came from, and
                                                 the fingerprint a grade records
-  magician install <pakNN_dir.vpk> [--as pakNN_dir.vpk] [--mod NAME] [--force]
-                                                lint, back up gameinfo.gi, add the addons search path (idempotent),
-                                                copy the VPK into game/citadel/addons (ledger-tracked, with the mod it is
-                                                for); refuses to replace another mod's pak of the same name (--as installs
-                                                under another slot, --force replaces)
+  magician install <pakNN_dir.vpk> [--as pakNN_dir.vpk] [--mod NAME] [--force] [--holder NAME] [--ignore-game]
+                                                lint (with lint's options), back up gameinfo.gi, add the addons search
+                                                path (idempotent), copy the VPK into game/citadel/addons (ledger-tracked,
+                                                with the mod it is for); refuses to replace another mod's pak of the same
+                                                name (--as installs under another slot, --force replaces); refuses while
+                                                deadlock.exe runs unless the caller holds the game lock (--holder NAME
+                                                or MAGICIAN_GAME_HOLDER); --ignore-game overrides
   magician install <.../maps/ui/hero_prefabs/<hero>.vpk>
                                                 a UI scene map goes to addons/maps/ui/hero_prefabs/ (same ledger and
                                                 backup); nothing else under maps/ installs
   magician install --status                     show the search path, backups and what we installed
-  magician uninstall <pakNN_dir.vpk> [--force]  remove a VPK we installed (never touches files we didn't, nor one whose
+  magician uninstall <pakNN_dir.vpk> [--force] [--holder NAME] [--ignore-game]
+                                                remove a VPK we installed (never touches files we didn't, nor one whose
                                                 bytes changed since, unless --force; a pak another tool renamed is
                                                 followed by its crc)
-  magician uninstall --all | --mod NAME [--force]
-                                                roll back every install in the ledger, or one mod's
-                                                install and uninstall refuse while deadlock.exe runs unless the caller
-                                                holds the game lock (--holder NAME or MAGICIAN_GAME_HOLDER); --ignore-game
-                                                overrides
+  magician uninstall --all | --mod NAME [--force] [--holder NAME] [--ignore-game]
+                                                roll back every install in the ledger, or one mod's; refused while
+                                                deadlock.exe runs as install is (the game lock's holder, --ignore-game)
   magician scene make <scene.vpk> --out DIR [--mod NAME]   split a built hero-page scene into a patch: only our files, plus the
                                                 crcs of the Valve files it keeps (nothing of Valve's is written)
-  magician scene check|compose|install <patch> [--out FILE] [--mod NAME] [--force]
+  magician scene check|compose|install <patch> [--out FILE] [--mod NAME] [--force] [--holder NAME] [--ignore-game]
                                                 build the full scene from a patch and the player's own stock map (refuses
-                                                when Valve's files differ from the patch's crcs); install adds the seat flags;
-                                                --game DIR, DEADLOCK_GAME or Steam's library list find the game
+                                                when Valve's files differ from the patch's crcs); install adds the seat
+                                                flags and, like install, is refused while deadlock.exe runs unless the
+                                                caller holds the game lock; --game DIR, DEADLOCK_GAME or Steam's library
+                                                list find the game
   magician build <addon> <out/pakNN_dir.vpk> [--csdk DIR] [--bin DIR] [--no-compile] [--force-compile] [--no-wait] [--lock-timeout SECS] [--timings]
                                                 one build per addon at a time (lock file in the addon's game output
                                                 folder): a second one waits, or fails at once with --no-wait
@@ -195,12 +210,17 @@ Every command:
                                                 name), else win64_nm when a clip uses CNmClipDocEvent_TaggedSound
                                                 compile only the addon's real sources (PSDs through a temporary image
                                                 list), package outputs that map to a live source (no build-only or
-                                                stale outputs), lint with the addon's magician.allow; path prefixes
-                                                listed in the addon's magician.exclude are left out of the pak
-  magician release <addon> --hero <hero> [--with <addon>]... [--out FILE] [--scene-root DIR]... [--mod <mod.toml>] [--no-compile] [--no-wait] [--timings] [--json]
+                                                stale outputs), lint (with lint's options; the addon's magician.allow
+                                                unless --allow names one); path prefixes listed in the addon's
+                                                magician.exclude are left out of the pak
+  magician release <addon> --hero <hero> [--with <addon>]... [--out FILE] [--scene-root DIR]... [--mod <mod.toml>]
+                [--no-compile] [--force-compile] [--no-wait] [--lock-timeout SECS] [--baseline FILE] [--timings] [--json]
                                                 one VPK from every department, lint (allow file), grade, and a
                                                 release-report.txt beside it (with the grade record, grade.json); --json
-                                                prints the release as one document (magician.release/1)
+                                                prints the release as one document (magician.release/1); each addon
+                                                compiles and waits for its build lock as in build (its compiler from
+                                                its own .magician-compiler), and the lint and the grade judge against
+                                                --baseline when one is given
   magician sign <addon|dir> [--key NAME] [--mod NAME] [--date YYYY-MM-DD] [--dry-run] [--force]
                                                 put the maker's mark into the addon's colour sources under the author's
                                                 key (--key, else the mod.toml's [mark] key, else its [mod] author, else
@@ -251,24 +271,23 @@ Every command:
                                                 unpacks to): fetch the zip and SHA256SUMS, check the zip's SHA-256, unpack
                                                 beside the toolkit, swap the files in keeping the previous ones, roll
                                                 everything back if a step fails. A git checkout: refuse with local
-                                                changes, no upstream or no fast-forward, else fast-forward and
-                                                `cargo build --release`, putting the program and the tree back if the
-                                                build fails. Refused while a game session holds the seat. Exit 0 updated or
-                                                already current, 3 refused or could not fetch (nothing changed), 1 failed
-                                                after the swap began and was rolled back; --dry-run says what it would do
+                                                changes, no upstream or no fast-forward, else fast-forward and rebuild
+                                                it with cargo (release profile), putting the program and the tree back
+                                                if the build fails. Refused while a game session holds the seat. Exit 0
+                                                updated or already current, 3 refused or could not fetch (nothing
+                                                changed), 1 failed after the swap began and was rolled back; --dry-run
+                                                says what it would do
   magician update --describe [--json]           this build's own VERSION (what a release says about itself); no network
-                                                --source LOCATION (or MAGICIAN_UPDATE_SOURCE, or `update_source =`; on
-                                                doctor --updates too) is where a release is: a folder, local or on the
-                                                network, or an https URL, holding magician-<platform>.zip|.tar.gz, SHA256SUMS
-                                                and VERSION; default is the latest release of this build's repository
-  --reference DIR (any command; or MAGICIAN_REFERENCE)
-                                                use another reference folder for baselines, rig sidecars and indexes
-  --policy FILE (lint, mesh, grade, release, build, pack, install, rubric, policy; or MAGICIAN_POLICY, or `policy =`)
-                                                judge by a policy file instead of the built-in lines; an unknown key or
-                                                an out-of-range value is a usage error naming it
+                                                --source LOCATION (or MAGICIAN_UPDATE_SOURCE, or `update_source =`; for
+                                                doctor's update check too) is where a release is: a folder, local or on
+                                                the network, or an https URL, holding magician-<platform>.zip|.tar.gz,
+                                                SHA256SUMS and VERSION; default is the latest release of this build's
+                                                repository
   magician expr '<expression>' | --vmat FILE [--attr name=lo:hi] [--cap PARAM=max]
-                                                prove a material expression's output range, cost and safety
+                                                prove a material expression's output range, cost and safety";
 
+/// The usage text from the exit codes on, after the section on the shared options (`SHARED`).
+const USAGE_TAIL: &str = "\
 Exit codes: 0 clean, nothing to do; 1 broken, a contract or rule failed and someone must act (lint errors, a mesh
 FAIL, drift or patchday BROKEN, a scene patch that no longer fits the game, an expression that fails its proof, a
 release whose lint failed, `grade --gate` with a blocker); 2 usage error (bad arguments, a missing file, a tool that is
@@ -287,6 +306,43 @@ MAGICIAN_VRF, `vrf =`, else Source2Viewer-CLI on PATH; the update source is --so
 `update_source =`, else the latest release of this build's repository. `magician paths` prints what each resolved to
 and where the config file is.";
 
+use cli::{Shared, Takers};
+
+/// The commands that read the game folder (the game itself, its build, its ledger or its hero table).
+const GAME_TAKERS: &[&str] = &[
+    "doctor", "new", "init", "check", "baseline", "index", "scan", "mesh", "cloth", "lint", "pack", "footprint", "grade", "install", "uninstall", "scene", "build", "release",
+    "drift", "patchday", "prove", "paths",
+];
+
+/// The options several commands take, declared once: the usage text's section on them and every command's help are
+/// written from this, and the option check reads it. A command named here takes the option; no other does.
+const SHARED: &[Shared] = &[
+    Shared { name: "--reference", value: "DIR", takers: Takers::Every, what: "use another reference folder for baselines, rig sidecars and indexes (or MAGICIAN_REFERENCE)" },
+    Shared { name: "--no-cache", value: "", takers: Takers::Every, what: "run without the findings cache (or MAGICIAN_NO_CACHE=1); the results are the same either way" },
+    Shared {
+        name: "--policy",
+        value: "FILE",
+        takers: Takers::Only(&["doctor", "check", "mesh", "lint", "pack", "grade", "rubric", "policy", "install", "build", "release", "paths"]),
+        what: "judge by a policy file instead of the built-in lines (or MAGICIAN_POLICY, or `policy =`); an unknown key or an out-of-range value is a usage error naming it",
+    },
+    Shared { name: "--game", value: "DIR", takers: Takers::Only(GAME_TAKERS), what: "Deadlock's game folder (Locations, below)" },
+    Shared { name: "--csdk", value: "DIR", takers: Takers::Only(&["doctor", "new", "check", "lint", "grade", "build", "release", "sign", "paths"]), what: "Valve's CSDK, for its addons and its compiler (Locations, below)" },
+    Shared { name: "--vrf", value: "FILE", takers: Takers::Only(&["doctor", "check", "index", "footprint", "grade", "patchday", "paths"]), what: "the Source 2 Viewer CLI (Locations, below)" },
+    Shared { name: "--source", value: "LOCATION", takers: Takers::Only(&["doctor", "update", "paths"]), what: "where a release is, for the update check (`magician help update`; Locations, below)" },
+];
+
+/// Commands that run another command's work with their own arguments, and so take its options too: pack, build and
+/// install lint the pak they made or were given.
+const INHERITS: &[(&str, &str)] = &[("pack", "lint"), ("install", "lint"), ("build", "lint")];
+
+/// The whole usage text, with the section on the shared options written from `SHARED`.
+static USAGE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| format!("{USAGE_HEAD}\n\n{}\n{USAGE_TAIL}", cli::shared_section(SHARED)));
+
+/// The command line's declaration, as the option check and `magician help` read it.
+fn spec() -> cli::Spec<'static> {
+    cli::Spec { usage: USAGE.as_str(), shared: SHARED, inherits: INHERITS, passthrough: frontdoor::VERB_NAMES }
+}
+
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     // The front door: `session`, `bundle` and `source` hand everything after the verb to the toolkit's Python tool
@@ -297,11 +353,11 @@ fn main() -> ExitCode {
             Err(e) => stop(&e, verb, false),
         };
     }
-    let mut args: Vec<String> = cli::command_first(&raw);
+    let mut args: Vec<String> = cli::command_first(&raw, SHARED);
     // `--help` and `--version` answer and stop: nothing else runs, whatever the rest of the line says.
     if cli::wants_help(&args) {
         let cmd = args.iter().find(|a| !a.starts_with('-') && *a != "help").map(String::as_str);
-        out!("{}", cli::help_for(USAGE, cmd));
+        out!("{}", spec().help(cmd));
         return ExitCode::SUCCESS;
     }
     if args.iter().any(|a| a == "--version") {
@@ -310,7 +366,7 @@ fn main() -> ExitCode {
     }
     let wants_json = args.iter().any(|a| a == "--json");
     let command = args.iter().find(|a| !a.starts_with('-')).cloned().unwrap_or_default();
-    if let Err(e) = cli::check_options(&args, USAGE).and_then(|()| cli::check_values(&args, SWITCHES, USAGE)) {
+    if let Err(e) = cli::check_options(&args, &spec()).and_then(|()| cli::check_values(&args, SWITCHES, &USAGE)) {
         return stop(&Stop::Usage(e), &command, wants_json);
     }
     if args.iter().any(|a| a == "--json") {
@@ -495,7 +551,7 @@ fn flag(args: &[String], name: &str) -> Option<String> {
 /// Every command `main` dispatches, for "did you mean" on a typo.
 const COMMANDS: &[&str] = &[
     "baseline", "ls", "refs", "dump", "kv", "index", "textures", "mesh", "cloth", "lint", "cache", "pack", "rules", "scan", "footprint", "grade", "rubric",
-    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "update", "help", "session", "bundle", "source",
+    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "update", "help", "session", "reprove", "bundle", "source",
 ];
 
 /// Options that take no value. Every other `--option` takes the argument after it, so `positional` skips that one.
@@ -1942,9 +1998,6 @@ fn cmd_release(args: &[String]) -> R {
         .unwrap_or_else(|| reference_root().join("work").join("release").join(&addon).join("pak10_dir.vpk"));
     let mut all: std::collections::BTreeMap<String, (Vec<u8>, String)> = Default::default();
     let mut left: std::collections::BTreeMap<&'static str, Vec<String>> = Default::default();
-    if flag(args, "--bin").is_some() {
-        return Err(format!("release compiles several addons: give each its compiler with a {} file in the addon, not --bin", build::COMPILER_MARKER).into());
-    }
     let timings = args.iter().any(|a| a == "--timings");
     let mut phases: Vec<(&str, f64)> = Vec::new();
     let mut lap = std::time::Instant::now();
@@ -2389,6 +2442,9 @@ fn cmd_rules(_args: &[String]) -> R {
 #[cfg(test)]
 mod fuzz_tests;
 
+#[cfg(test)]
+mod option_tests;
+
 /// Fuzz test binaries refuse any allocation a length in the input asked for (`crates/fuzz`).
 #[cfg(test)]
 #[global_allocator]
@@ -2402,8 +2458,8 @@ mod exclude_tests {
     fn switches_take_no_value_so_positionals_survive_them() {
         let a: Vec<String> = ["--deep", "x.vpk", "--hero", "lash", "y.vpk", "--light"].iter().map(|s| s.to_string()).collect();
         assert_eq!(positional(&a), vec!["x.vpk", "y.vpk"]);
-        // every switch is an option the usage text documents
-        let known = cli::known_options(USAGE);
+        // every switch is an option some command takes
+        let known = spec().all();
         for s in SWITCHES {
             assert!(known.contains(*s), "{s} is not in the usage text");
         }

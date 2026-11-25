@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-pub const USAGE: &str = "mesh <vpk> <model path> [--against valve|none] [--with <vpk>]... [--out DIR] [--glb FILE] [--game DIR]";
+pub const USAGE: &str = "mesh <vpk> <model path> [--against valve|none] [--with <vpk>]... [--out DIR] [--glb FILE] [--no-png] [--json-out FILE] [--game DIR]";
 
 fn read_from(paks: &[vpk::Vpk], p: &str) -> Option<Vec<u8>> {
     paks.iter().find_map(|v| v.find(p).and_then(|e| v.read(e).ok()))

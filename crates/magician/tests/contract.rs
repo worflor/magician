@@ -86,6 +86,73 @@ fn usage_errors_exit_2() {
     let _ = std::fs::remove_dir_all(&d);
 }
 
+/// Every file under `root` with its bytes, by path.
+fn tree(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut todo = vec![root.to_path_buf()];
+    while let Some(dir) = todo.pop() {
+        for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                todo.push(p);
+            } else {
+                out.insert(p.strip_prefix(root).unwrap().to_path_buf(), std::fs::read(&p).unwrap());
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn an_option_of_another_command_is_refused_before_anything_runs() {
+    // `install --dry-run` once installed: --dry-run is sign's and update's, and the check let any command's option
+    // through. A scratch game with a clean pak to install and one installed, so a run that went ahead would show.
+    let d = scratch("borrowed");
+    let game = fake_install(&d, "6864", b"valve clip");
+    let pak = d.join("pak20_dir.vpk");
+    vpk::write(&pak, &[("soundevents/x/ours.vsndevts_c".to_string(), events(3.0))]).unwrap();
+    let toml = d.join("mod.toml");
+    std::fs::write(&toml, "[mod]\nslug = \"x\"\nhero = \"lash\"\n").unwrap();
+    let (g, p, t) = (game.to_string_lossy().into_owned(), pak.to_string_lossy().into_owned(), toml.to_string_lossy().into_owned());
+    let before = tree(&d);
+    for (args, takers) in [
+        (vec!["install", &p, "--dry-run"], "(`sign` and `update` take it)"),
+        (vec!["uninstall", "pak10_dir.vpk", "--dry-run"], "(`sign` and `update` take it)"),
+        (vec!["install", &p, "--check"], "(`update` takes it)"),
+        (vec!["release", "x_addon", "--hero", "lash", "--dry-run"], "(`sign` and `update` take it)"),
+        (vec!["prove", &t, "--dry-run"], "(`sign` and `update` take it)"),
+        (vec!["uninstall", "--all", "--status"], "(`install` takes it)"),
+    ] {
+        // everything else on the line is the command's own, so the borrowed option is the only reason to refuse
+        let mut args = args.clone();
+        args.extend(["--game", &g]);
+        if args[0].ends_with("install") {
+            args.push("--ignore-game");
+        }
+        let o = magician(&d, &args);
+        let err = String::from_utf8_lossy(&o.stderr).into_owned();
+        assert_eq!(o.status.code(), Some(2), "{args:?}: {}", text(&o));
+        let flag = args.iter().find(|a| ["--dry-run", "--check", "--status"].contains(a)).unwrap();
+        assert!(err.contains(&format!("magician: {flag} is not an option of `magician {}` {takers}; `magician help {}` lists the ones it takes", args[0], args[0])), "{args:?}: {err}");
+        assert!(o.stdout.is_empty(), "{args:?}: nothing ran, so nothing was reported");
+        assert_eq!(tree(&d), before, "{args:?} changed something");
+    }
+    // the same refusal as the one JSON document, for a script reading JSON
+    let o = magician(&d, &["prove", &t, "--dry-run", "--json"]);
+    assert_eq!(o.status.code(), Some(2));
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(out.starts_with("{\"schema\":\"magician.error/1\",\"command\":\"prove\",\"exit\":2,\"kind\":\"usage\"") && out.contains("--dry-run is not an option of"), "{out}");
+    // what the command does take still runs: the same install, with options of its own and lint's
+    let o = magician(&d, &["install", &p, "--game", &g, "--ignore-game", "--mod", "x", "--deep"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(game.join("citadel").join("addons").join("pak20_dir.vpk").is_file());
+    // and help says, per command, what it takes
+    let o = magician(&d, &["help", "install"]);
+    let h = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(h.contains("--holder NAME") && h.contains("--ignore-game") && h.contains("lint's options") && !h.contains("--dry-run"), "{h}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
 /// A folder that passes for Deadlock's `game` folder: a build number and a stock hero-page map, nothing else.
 fn fake_game(root: &Path, files: &[(String, Vec<u8>)]) -> PathBuf {
     let game = root.join("game");
@@ -408,7 +475,10 @@ fn install_stops_on_fair_play_only_when_enforced_and_on_any_other_error_always()
     let g = game.to_string_lossy().into_owned();
     let run = |args: &[&str], policy: Option<&PathBuf>| {
         let mut a: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        a.extend(["--game".into(), g.clone(), "--ignore-game".into()]);
+        a.extend(["--game".into(), g.clone()]);
+        if a[0].ends_with("install") {
+            a.push("--ignore-game".into()); // the seat is install's and uninstall's; lint has none
+        }
         if let Some(p) = policy {
             a.extend(["--policy".into(), p.to_string_lossy().into_owned()]);
         }

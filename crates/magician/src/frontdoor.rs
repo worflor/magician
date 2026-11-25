@@ -20,6 +20,10 @@ use std::process::ExitCode;
 pub const VERBS: &[(&str, &str)] =
     &[("session", "ingame/mod_session.py"), ("reprove", "ingame/reprove.py"), ("bundle", "tools/bundle.py"), ("source", "tools/source.py")];
 
+/// The verbs alone: their arguments are their tool's own, so the option check leaves them alone (a test holds this to
+/// `VERBS`).
+pub const VERB_NAMES: &[&str] = &["session", "reprove", "bundle", "source"];
+
 pub fn script_of(verb: &str) -> Option<&'static str> {
     VERBS.iter().find(|(v, _)| *v == verb).map(|(_, s)| *s)
 }

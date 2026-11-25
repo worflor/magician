@@ -1,5 +1,13 @@
 //! The command line's contract with whoever calls it: `--help` and `--version` work anywhere and do nothing else, an
-//! option no command knows is refused before anything runs, and each exit code has one meaning.
+//! option the command it was given to does not take is refused before anything runs, and each exit code has one
+//! meaning.
+//!
+//! Where a command's options are declared: its own paragraphs of the usage text (`  magician <cmd> ...` and the
+//! lines indented under it) name the options only it takes; `Shared` names, once, the options several commands take
+//! (the locations, the policy, the reference folder) and which commands those are; `Spec::inherits` names a command
+//! that hands its arguments on to another's work (`pack` lints with lint's options). The check, `magician help
+//! <cmd>` and the usage text's shared section are all read from these, so what a command accepts and what its help
+//! lists cannot part.
 //!
 //! | Code | Meaning |
 //! |---|---|
@@ -79,13 +87,188 @@ pub fn version() -> String {
 /// The commands that print one JSON document on stdout with `--json` (and nothing else).
 pub const JSON_COMMANDS: &[&str] = &["lint", "grade", "drift", "patchday", "release", "rules", "check", "doctor", "prove", "update"];
 
-/// Options every command accepts or that are passed between Magician's own processes, beyond the ones the usage text
-/// lists for a command.
-const ALWAYS: &[&str] = &["--help", "-h", "--version", "--json", "--no-cache", "--reference", "--policy", "--game", "--addon-root", "--users"];
+/// Options every command takes, answered before any other check: help and the version (they run nothing), and
+/// `--json`, whose own check (`JSON_COMMANDS`) says where it is available.
+const ANYWHERE: &[&str] = &["--help", "-h", "--version", "--json"];
 
-/// Every option the usage text names (`--word`), plus `ALWAYS`.
-pub fn known_options(usage: &str) -> BTreeSet<String> {
-    let mut out: BTreeSet<String> = ALWAYS.iter().map(|s| s.to_string()).collect();
+/// Which commands take an option several share.
+#[derive(Debug, Clone, Copy)]
+pub enum Takers {
+    /// Every command Magician runs itself (not the front-door verbs, whose arguments are their tool's own).
+    Every,
+    Only(&'static [&'static str]),
+}
+
+/// An option several commands take, declared once: which commands take it, the value it wants (empty for a switch)
+/// and what it does. The usage text's section on these and each command's help are written from it.
+#[derive(Debug, Clone, Copy)]
+pub struct Shared {
+    pub name: &'static str,
+    pub value: &'static str,
+    pub takers: Takers,
+    pub what: &'static str,
+}
+
+/// The command line's declaration (see the module comment).
+pub struct Spec<'a> {
+    pub usage: &'a str,
+    pub shared: &'a [Shared],
+    /// `(command, other)`: the command also takes `other`'s own options (but not its `--json`), because it runs
+    /// `other`'s work with its own arguments.
+    pub inherits: &'a [(&'a str, &'a str)],
+    /// Verbs whose arguments go untouched to a tool of their own: never checked here, and they share nothing.
+    pub passthrough: &'a [&'a str],
+}
+
+impl Spec<'_> {
+    /// Every command the usage text documents, in its order (the front-door verbs included).
+    pub fn commands(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for l in self.usage.lines() {
+            if let Some(rest) = l.strip_prefix("  magician ") {
+                let c: String = rest.chars().take_while(|c| c.is_ascii_lowercase() || *c == '-').collect();
+                if !c.is_empty() && !out.contains(&c) {
+                    out.push(c);
+                }
+            }
+        }
+        out
+    }
+
+    fn shared_by(&self, cmd: &str) -> impl Iterator<Item = &Shared> + '_ {
+        let native = !self.passthrough.contains(&cmd);
+        let cmd = cmd.to_string();
+        self.shared.iter().filter(move |s| {
+            native
+                && match s.takers {
+                    Takers::Every => true,
+                    Takers::Only(l) => l.contains(&cmd.as_str()),
+                }
+        })
+    }
+
+    /// The options a command's own paragraphs name, less the shared ones (those are taken where `Shared` says).
+    pub fn own(&self, cmd: &str) -> BTreeSet<String> {
+        options_named(&block(self.usage, cmd)).into_iter().filter(|o| !self.shared.iter().any(|s| s.name == o)).collect()
+    }
+
+    /// What a command takes from another's options (`Spec::inherits`), less what it takes on its own.
+    pub fn inherited(&self, cmd: &str) -> BTreeSet<String> {
+        let own = self.own(cmd);
+        self.inherits.iter().filter(|(c, _)| *c == cmd).flat_map(|(_, from)| self.own(from)).filter(|o| o != "--json" && !own.contains(o)).collect()
+    }
+
+    /// Every option `cmd` accepts: its own, what it inherits, the shared ones it is among the takers of, and help.
+    pub fn takes(&self, cmd: &str) -> BTreeSet<String> {
+        let mut out = self.own(cmd);
+        out.extend(self.inherited(cmd));
+        out.extend(self.shared_by(cmd).map(|s| s.name.to_string()));
+        out.extend(ANYWHERE.iter().map(|s| s.to_string()));
+        out
+    }
+
+    /// The commands that take `opt`, in the usage text's order.
+    pub fn takers_of(&self, opt: &str) -> Vec<String> {
+        self.commands().into_iter().filter(|c| self.takes(c).contains(opt)).collect()
+    }
+
+    /// Every option some command takes.
+    pub fn all(&self) -> BTreeSet<String> {
+        self.commands().iter().flat_map(|c| self.takes(c)).collect()
+    }
+
+    /// `magician help <cmd>`: its own paragraphs, what it inherits and shares, then the exit codes. The whole usage
+    /// text when `cmd` is not a command it documents.
+    pub fn help(&self, cmd: Option<&str>) -> String {
+        let Some(cmd) = cmd.filter(|c| *c != "help" && !c.starts_with('-')) else { return self.usage.to_string() };
+        let mut out = block(self.usage, cmd);
+        if out.is_empty() {
+            return self.usage.to_string();
+        }
+        let mut also: Vec<String> = Vec::new();
+        for (_, from) in self.inherits.iter().filter(|(c, _)| *c == cmd) {
+            let names: Vec<String> = self.inherited(cmd).into_iter().collect();
+            also.push(format!("{from}'s options, for the {from} it runs (`magician help {from}`): {}", names.join(", ")));
+        }
+        let shared: Vec<String> = self.shared_by(cmd).map(|s| if s.value.is_empty() { s.name.to_string() } else { format!("{} {}", s.name, s.value) }).collect();
+        if !shared.is_empty() {
+            also.push(format!("the options it shares with other commands (`magician help` says what each does): {}", shared.join(", ")));
+        }
+        if !also.is_empty() {
+            out.push('\n');
+            out.push_str(&wrap_at("", &format!("Also {}.", also.join("; and ")), 0));
+        }
+        if let Some(i) = self.usage.find("Exit codes:") {
+            out.push('\n');
+            let tail = &self.usage[i..];
+            let end = tail.find("\n\n").unwrap_or(tail.len());
+            out.push_str(&tail[..end]);
+            out.push('\n');
+        }
+        out
+    }
+}
+
+/// The shared options, one entry each in the usage text's layout, written from their declaration.
+pub fn shared_section(shared: &[Shared]) -> String {
+    let mut out = String::from("Options several commands take (`magician help <command>` lists every option a command takes):\n");
+    for s in shared {
+        let head = if s.value.is_empty() { format!("  {}", s.name) } else { format!("  {} {}", s.name, s.value) };
+        let who = match s.takers {
+            Takers::Every => "every command".to_string(),
+            Takers::Only(l) => and_list(l),
+        };
+        out.push_str(&wrap(&head, &format!("{who}: {}", s.what)));
+    }
+    out
+}
+
+/// `a`, `a and b`, `a, b and c`.
+fn and_list<S: AsRef<str>>(items: &[S]) -> String {
+    let v: Vec<&str> = items.iter().map(AsRef::as_ref).collect();
+    match v.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.to_string(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// The column the usage text's descriptions start at, and the width it keeps to.
+const DESC_COL: usize = 48;
+const WIDTH: usize = 120;
+
+/// One entry in the usage text's layout: `head`, then `text` from the description column, wrapped to the width.
+fn wrap(head: &str, text: &str) -> String {
+    wrap_at(head, text, DESC_COL)
+}
+
+/// `wrap`, with the text from column `col`.
+fn wrap_at(head: &str, text: &str, col: usize) -> String {
+    let mut out = String::new();
+    let mut line = if head.is_empty() || head.len() < col { format!("{head:<col$}") } else { format!("{head}\n{:col$}", "") };
+    let mut fresh = true;
+    for w in text.split(' ') {
+        let width = line.rsplit('\n').next().unwrap_or("").len();
+        if !fresh && width + 1 + w.len() > WIDTH {
+            out.push_str(line.trim_end());
+            out.push('\n');
+            line = format!("{:col$}", "");
+            fresh = true;
+        }
+        if !fresh {
+            line.push(' ');
+        }
+        line.push_str(w);
+        fresh = false;
+    }
+    out.push_str(line.trim_end());
+    out.push('\n');
+    out
+}
+
+/// Every option a text names (`--word`), as written.
+pub fn options_named(usage: &str) -> BTreeSet<String> {
+    let mut out: BTreeSet<String> = BTreeSet::new();
     let b = usage.as_bytes();
     let mut i = 0;
     while i + 2 < b.len() {
@@ -150,23 +333,40 @@ pub fn did_you_mean(word: &str, candidates: &[&str], show: impl Fn(&str) -> Stri
     nearest(word, candidates.iter().copied()).filter(|c| *c != word).map(|c| format!(" (did you mean {}?)", show(c))).unwrap_or_default()
 }
 
-/// Refuse an option no command takes (a typo such as `--deeep` would otherwise be ignored, or swallow the argument
-/// after it), and `--json` on a command that has no JSON form.
-pub fn check_options(args: &[String], usage: &str) -> Result<(), String> {
-    let known = known_options(usage);
-    // a typo is most likely one of the options of the command it was given to
-    let own: Vec<String> = args.first().map(|c| known_options(&help_for(usage, Some(c))).into_iter().collect()).unwrap_or_default();
+/// Refuse an option the command it was given to does not take, before anything runs: a typo such as `--deeep` would
+/// otherwise be ignored or swallow the argument after it, and an option borrowed from another command would be
+/// ignored while the command did its real work (`install --dry-run` installed). Also `--json` on a command that has
+/// no JSON form. With no documented command first, an option no command takes is refused (the command's own error
+/// follows for the rest).
+pub fn check_options(args: &[String], spec: &Spec) -> Result<(), String> {
+    let all = spec.all();
+    let cmd = args.first().filter(|c| spec.commands().contains(c));
+    let takes = cmd.map(|c| spec.takes(c)).unwrap_or_else(|| all.clone());
+    // the options a typo is matched against: help and the version are never what an option was meant to be
+    let long = |s: &BTreeSet<String>| -> Vec<String> { s.iter().filter(|o| o.starts_with("--") && !ANYWHERE.contains(&o.as_str())).cloned().collect() };
+    let (takes_l, all_l) = (long(&takes), long(&all));
+    fn refs(v: &[String]) -> Vec<&str> {
+        v.iter().map(String::as_str).collect()
+    }
     for a in args {
-        if a.starts_with("--") && a.len() > 2 && !known.contains(a.as_str()) {
-            let own_refs: Vec<&str> = own.iter().map(String::as_str).filter(|o| o.starts_with("--")).collect();
-            let all: Vec<&str> = known.iter().map(String::as_str).filter(|o| o.starts_with("--")).collect();
-            let mut hint = did_you_mean(a, &own_refs, |c| c.to_string());
-            if hint.is_empty() {
-                hint = did_you_mean(a, &all, |c| c.to_string());
-            }
-            let cmd = args.first().filter(|c| !c.starts_with('-')).map(|c| format!("magician {c} --help")).unwrap_or_else(|| "magician --help".into());
-            return Err(format!("unknown option {a}{hint}; `{cmd}` lists the options"));
+        if !a.starts_with("--") || a.len() <= 2 || takes.contains(a.as_str()) {
+            continue;
         }
+        // a typo is most likely one of the options of the command it was given to
+        let mut hint = did_you_mean(a, &refs(&takes_l), |c| c.to_string());
+        if !all.contains(a.as_str()) {
+            if hint.is_empty() {
+                hint = did_you_mean(a, &refs(&all_l), |c| c.to_string());
+            }
+            let help = cmd.map(|c| format!("magician {c} --help")).unwrap_or_else(|| "magician --help".into());
+            return Err(format!("unknown option {a}{hint}; `{help}` lists the options"));
+        }
+        let Some(c) = cmd else { continue };
+        let who: Vec<String> = spec.takers_of(a).iter().map(|t| format!("`{t}`")).collect();
+        let verb = if who.len() == 1 { "takes" } else { "take" };
+        let near = hint.trim().trim_start_matches('(').trim_end_matches(')').to_string();
+        let near = if near.is_empty() { String::new() } else { format!("; {near}") };
+        return Err(format!("{a} is not an option of `magician {c}` ({} {verb} it{near}); `magician help {c}` lists the ones it takes", and_list(&who)));
     }
     if let Some(cmd) = args.first() {
         if args.iter().any(|a| a == "--json") && !JSON_COMMANDS.contains(&cmd.as_str()) {
@@ -179,14 +379,20 @@ pub fn check_options(args: &[String], usage: &str) -> Result<(), String> {
 /// Options that take no value whichever command they are on.
 const ALWAYS_SWITCHES: &[&str] = &["--help", "-h", "--version", "--json", "--no-cache"];
 
-/// The arguments with the command first: options every command takes may come before it (`magician --no-cache lint
-/// x.vpk --json`, `magician --reference D:\ref patchday`), and they move behind it, so the command is what dispatch
-/// and the --json check read.
-pub fn command_first(args: &[String]) -> Vec<String> {
+/// The arguments with the command first: the shared options may come before it (`magician --no-cache lint x.vpk
+/// --json`, `magician --reference D:\ref patchday`), and they move behind it, so the command is what dispatch and
+/// the option checks read (and a shared option the command does not take is refused there).
+pub fn command_first(args: &[String], shared: &[Shared]) -> Vec<String> {
+    let lead_value = |a: &str| -> Option<bool> {
+        if ANYWHERE.contains(&a) {
+            return Some(false);
+        }
+        shared.iter().find(|s| s.name == a).map(|s| !s.value.is_empty())
+    };
     let mut lead = Vec::new();
     let mut i = 0;
-    while i < args.len() && args[i].starts_with("--") && ALWAYS.contains(&args[i].as_str()) {
-        let takes_value = !ALWAYS_SWITCHES.contains(&args[i].as_str());
+    while i < args.len() && args[i].starts_with("--") && lead_value(&args[i]).is_some() {
+        let takes_value = lead_value(&args[i]) == Some(true);
         let n = if takes_value { 2 } else { 1 };
         lead.extend(args[i..(i + n).min(args.len())].iter().cloned());
         i += n;
@@ -245,10 +451,9 @@ pub fn wants_help(args: &[String]) -> bool {
     args.first().is_some_and(|a| a == "help") || args.iter().any(|a| a == "--help" || a == "-h")
 }
 
-/// The usage for `magician <cmd>`: the paragraphs of the usage text that document it (a line `  magician <cmd> ...` and
-/// its indented continuation lines), then the exit codes. The whole text when `cmd` is not a command it documents.
-pub fn help_for(usage: &str, cmd: Option<&str>) -> String {
-    let Some(cmd) = cmd.filter(|c| *c != "help" && !c.starts_with('-')) else { return usage.to_string() };
+/// The paragraphs of the usage text that document `magician <cmd>` (a line `  magician <cmd> ...` and its indented
+/// continuation lines); empty when it documents no such command.
+pub fn block(usage: &str, cmd: &str) -> String {
     let head = format!("  magician {cmd}");
     let mut out = String::new();
     let mut inside = false;
@@ -263,16 +468,6 @@ pub fn help_for(usage: &str, cmd: Option<&str>) -> String {
             out.push('\n');
         }
     }
-    if out.is_empty() {
-        return usage.to_string();
-    }
-    if let Some(i) = usage.find("Exit codes:") {
-        out.push('\n');
-        let tail = &usage[i..];
-        let end = tail.find("\n\n").unwrap_or(tail.len());
-        out.push_str(&tail[..end]);
-        out.push('\n');
-    }
     out
 }
 
@@ -280,28 +475,59 @@ pub fn help_for(usage: &str, cmd: Option<&str>) -> String {
 mod tests {
     use super::*;
 
-    const U: &str = "Tagline.\n\n  magician lint <mod.vpk> [--deep] [--allow FILE]\n                [--sources DIR]...   addon trees\n  magician ls <vpk>     list\n  magician scene make <x> --out DIR\n  magician scene check|compose <patch>\n\nExit codes: 0 clean; 1 broken.\nMore: 2 usage.\n\nLocations: --game DIR.";
+    const U: &str = "Tagline.\n\n  magician lint <mod.vpk> [--deep] [--allow FILE] [--json]\n                [--sources DIR]...   addon trees\n  magician ls <vpk>     list\n  magician pack <src> <out>   then lint it\n  magician install <pak> [--as NAME] [--force]\n  magician build <addon> [--force-compile]\n  magician sign <dir> [--dry-run]\n  magician update [--dry-run] [--check]\n  magician scene make <x> --out DIR\n  magician scene check|compose <patch> [--game DIR]\n  magician session [--plan] [--out DIR]\n\nExit codes: 0 clean; 1 broken.\nMore: 2 usage.\n\nLocations: --game DIR.";
+    const SHARED: &[Shared] = &[
+        Shared { name: "--no-cache", value: "", takers: Takers::Every, what: "no cache" },
+        Shared { name: "--game", value: "DIR", takers: Takers::Only(&["lint", "pack", "install", "scene"]), what: "the game folder" },
+    ];
+    const SPEC: Spec = Spec { usage: U, shared: SHARED, inherits: &[("pack", "lint"), ("install", "lint")], passthrough: &["session"] };
 
     fn a(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
-    fn options_come_from_the_usage_text() {
-        let k = known_options(U);
-        for o in ["--deep", "--allow", "--sources", "--out", "--game", "--help", "--policy"] {
-            assert!(k.contains(o), "{o} missing from {k:?}");
+    fn a_commands_options_are_its_own_paragraphs_what_it_inherits_and_what_it_shares() {
+        assert_eq!(SPEC.commands(), a(&["lint", "ls", "pack", "install", "build", "sign", "update", "scene", "session"]));
+        let set = |v: &[&str]| -> BTreeSet<String> { v.iter().map(|s| s.to_string()).collect() };
+        assert_eq!(SPEC.own("lint"), set(&["--deep", "--allow", "--json", "--sources"]));
+        assert_eq!(SPEC.own("scene"), set(&["--out"]), "a shared option named in a block is taken where Shared says");
+        assert_eq!(SPEC.inherited("install"), set(&["--deep", "--allow", "--sources"]), "never another's --json");
+        let t = SPEC.takes("install");
+        for o in ["--as", "--deep", "--allow", "--sources", "--game", "--no-cache", "--help", "--version"] {
+            assert!(t.contains(o), "install takes {o}: {t:?}");
         }
-        assert!(!k.contains("--deeep"));
+        assert!(!t.contains("--dry-run") && !t.contains("--out"), "{t:?}");
+        assert!(!SPEC.takes("ls").contains("--game") && SPEC.takes("ls").contains("--no-cache"));
+        assert!(!SPEC.takes("session").contains("--no-cache"), "a front-door verb shares nothing");
+        assert_eq!(SPEC.takers_of("--dry-run"), a(&["sign", "update"]));
+        assert!(!options_named(U).contains("--deeep"));
     }
 
     #[test]
-    fn an_unknown_option_is_a_usage_error_naming_it() {
-        assert!(check_options(&a(&["lint", "x.vpk", "--deep"]), U).is_ok());
-        let e = check_options(&a(&["lint", "x.vpk", "--deeep"]), U).unwrap_err();
-        assert!(e.contains("--deeep"), "{e}");
+    fn an_option_its_command_does_not_take_is_refused_naming_the_ones_that_do() {
+        assert!(check_options(&a(&["lint", "x.vpk", "--deep"]), &SPEC).is_ok());
+        assert!(check_options(&a(&["install", "x.vpk", "--deep", "--game", "g", "--as", "pak10_dir.vpk"]), &SPEC).is_ok());
+        let e = check_options(&a(&["install", "x.vpk", "--dry-run"]), &SPEC).unwrap_err();
+        assert_eq!(e, "--dry-run is not an option of `magician install` (`sign` and `update` take it); `magician help install` lists the ones it takes");
+        let e = check_options(&a(&["install", "x.vpk", "--check"]), &SPEC).unwrap_err();
+        assert!(e.starts_with("--check is not an option of `magician install` (`update` takes it)"), "{e}");
+        let e = check_options(&a(&["sign", "x", "--deep"]), &SPEC).unwrap_err();
+        assert!(e.contains("(`lint`, `pack` and `install` take it)"), "{e}");
+        // the nearest option the command does take, when there is one
+        let e = check_options(&a(&["build", "x", "--force"]), &SPEC).unwrap_err();
+        assert!(e.contains("(`install` takes it; did you mean --force-compile?)"), "{e}");
+        // a front-door verb's options count as its own
+        let e = check_options(&a(&["install", "x", "--out", "y"]), &SPEC).unwrap_err();
+        assert!(e.contains("(`scene` and `session` take it)"), "{e}");
+        assert!(check_options(&a(&["ls", "x", "--game", "g"]), &SPEC).unwrap_err().contains("(`lint`, `pack`, `install` and `scene` take it)"));
+        // an undocumented command is answered by dispatch; an option no command takes is refused anyway
+        assert!(check_options(&a(&["nonsense", "--dry-run"]), &SPEC).is_ok());
+        assert!(check_options(&a(&["nonsense", "--deeep"]), &SPEC).is_err());
+        let e = check_options(&a(&["lint", "x.vpk", "--deeep"]), &SPEC).unwrap_err();
+        assert!(e.contains("unknown option --deeep"), "{e}");
         // `-` alone and negative numbers are values, not options
-        assert!(check_options(&a(&["expr", "-1"]), U).is_ok());
+        assert!(check_options(&a(&["expr", "-1"]), &SPEC).is_ok());
     }
 
     #[test]
@@ -322,13 +548,16 @@ mod tests {
     }
 
     #[test]
-    fn options_every_command_takes_may_come_before_it() {
-        assert_eq!(command_first(&a(&["--no-cache", "lint", "x.vpk", "--json"])), a(&["lint", "--no-cache", "x.vpk", "--json"]));
-        assert_eq!(command_first(&a(&["--reference", "D:\\ref", "--json", "patchday"])), a(&["patchday", "--reference", "D:\\ref", "--json"]));
-        assert_eq!(command_first(&a(&["lint", "x.vpk"])), a(&["lint", "x.vpk"]));
-        assert_eq!(command_first(&a(&["--deep", "lint"])), a(&["--deep", "lint"]), "a command's own option stays where it is");
-        assert_eq!(command_first(&a(&["--reference"])), a(&["--reference"]));
-        assert!(check_options(&command_first(&a(&["--no-cache", "lint", "x.vpk", "--json"])), U).is_ok());
+    fn shared_options_may_come_before_the_command() {
+        let first = |v: &[&str]| command_first(&a(v), SHARED);
+        assert_eq!(first(&["--no-cache", "lint", "x.vpk", "--json"]), a(&["lint", "--no-cache", "x.vpk", "--json"]));
+        assert_eq!(first(&["--game", "D:\\g", "--json", "lint"]), a(&["lint", "--game", "D:\\g", "--json"]));
+        assert_eq!(first(&["lint", "x.vpk"]), a(&["lint", "x.vpk"]));
+        assert_eq!(first(&["--deep", "lint"]), a(&["--deep", "lint"]), "a command's own option stays where it is");
+        assert_eq!(first(&["--game"]), a(&["--game"]));
+        assert!(check_options(&first(&["--no-cache", "lint", "x.vpk", "--json"]), &SPEC).is_ok());
+        // moved behind the command, it is checked as that command's
+        assert!(check_options(&first(&["--game", "g", "ls", "x.vpk"]), &SPEC).is_err());
     }
 
     #[test]
@@ -341,30 +570,51 @@ mod tests {
         assert_eq!(nearest("xyz", ["ls", "lint"]), None, "nothing close is nothing");
         assert_eq!(nearest("Lahs", ["lash", "haze"]), Some("lash"));
         // an option is matched among the command's own first
-        let e = check_options(&a(&["lint", "x.vpk", "--deeep"]), U).unwrap_err();
+        let e = check_options(&a(&["lint", "x.vpk", "--deeep"]), &SPEC).unwrap_err();
         assert!(e.contains("did you mean --deep?") && e.contains("`magician lint --help`"), "{e}");
-        let e = check_options(&a(&["lint", "x.vpk", "--zzzzzzz"]), U).unwrap_err();
+        let e = check_options(&a(&["lint", "x.vpk", "--zzzzzzz"]), &SPEC).unwrap_err();
         assert!(!e.contains("did you mean"), "{e}");
     }
 
     #[test]
     fn json_only_where_a_command_has_one() {
-        assert!(check_options(&a(&["lint", "x.vpk", "--json"]), U).is_ok());
-        assert!(check_options(&a(&["ls", "x.vpk", "--json"]), U).unwrap_err().contains("no --json"));
+        assert!(check_options(&a(&["lint", "x.vpk", "--json"]), &SPEC).is_ok());
+        assert_eq!(check_options(&a(&["ls", "x.vpk", "--json"]), &SPEC).unwrap_err(), format!("`magician ls` has no --json form; it is available on {}", JSON_COMMANDS.join(", ")));
+        assert!(check_options(&a(&["pack", "x", "y", "--json"]), &SPEC).unwrap_err().contains("no --json"), "inherited options leave --json out");
     }
 
     #[test]
     fn help_is_asked_for_anywhere_and_is_specific_to_the_command() {
         assert!(wants_help(&a(&["baseline", "--help"])) && wants_help(&a(&["-h"])) && wants_help(&a(&["help", "lint"])));
         assert!(!wants_help(&a(&["grade", "x.vpk", "--hero", "lash"])));
-        let h = help_for(U, Some("lint"));
+        let h = SPEC.help(Some("lint"));
         assert!(h.starts_with("  magician lint <mod.vpk>") && h.contains("--sources DIR") && !h.contains("magician ls"), "{h}");
         assert!(h.contains("Exit codes: 0 clean; 1 broken.\nMore: 2 usage."), "{h}");
+        assert!(h.contains("
+
+Also the options it shares with other commands (`magician help` says what each does): --no-cache, --game DIR.
+
+Exit"), "{h}");
         assert!(!h.contains("Locations"), "{h}");
-        let s = help_for(U, Some("scene"));
+        let p = SPEC.help(Some("pack"));
+        assert!(p.contains("
+Also lint's options, for the lint it runs (`magician help lint`): --allow, --deep, --sources; and the options"), "{p}");
+        let s = SPEC.help(Some("scene"));
         assert!(s.contains("scene make") && s.contains("scene check|compose"), "{s}");
-        assert_eq!(help_for(U, Some("nonsense")), U);
-        assert_eq!(help_for(U, None), U);
+        assert!(!SPEC.help(Some("session")).contains("shares"), "a front-door verb's options are its tool's");
+        assert_eq!(SPEC.help(Some("nonsense")), U);
+        assert_eq!(SPEC.help(None), U);
+    }
+
+    #[test]
+    fn the_shared_section_is_written_from_the_declaration_in_the_usage_texts_layout() {
+        let s = shared_section(SHARED);
+        assert!(s.starts_with("Options several commands take"), "{s}");
+        assert!(s.contains(&format!("\n  --no-cache{}every command: no cache\n", " ".repeat(DESC_COL - 12))), "{s}");
+        assert!(s.contains("  --game DIR") && s.contains("lint, pack, install and scene: the game folder"), "{s}");
+        let long = wrap("  --x", &"word ".repeat(60));
+        assert!(long.lines().all(|l| l.len() <= WIDTH) && long.lines().count() > 2, "{long}");
+        assert!(long.lines().skip(1).all(|l| l.starts_with(&" ".repeat(DESC_COL)) && l.len() > DESC_COL), "{long}");
     }
 
     #[test]
