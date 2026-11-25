@@ -1,14 +1,14 @@
 # A mod source for Deadlock Mod Manager
 
-`tools/source.py` turns release bundles into a static mod source: a few JSON files and the release zips on any HTTPS
+`magician source` (`tools/source.py`) turns release bundles into a static mod source: a few JSON files and the release zips on any HTTPS
 host. A player adds the source to Deadlock Mod Manager (DMM) once; from then on the mods are in its Mods Store with a
 one-click install, and a new release shows up as an update. The protocol is DMM's native source protocol,
 [Build a mod registry](https://docs.deadlockmods.app/developer-docs/build-a-mod-registry). Nothing about it needs an
 account, a key or DMM's own servers.
 
-**Which DMM.** Mod sources (Settings > Mods > Mod sources, and the `deadlock-mod-manager://sources/...` links) landed in
-DMM's main branch on 2026-11-03, after 2.3.0 (2026-11-01), so 2.3.0 does not have them. They are in the 2.4.0 nightlies
-(main is versioned 2.4.0), so 2.4.0 should be the first release with them. Release builds accept only public HTTPS sources, so the first real test is on the hosted copy.
+**Which DMM.** Mod sources (Settings > Mods > Mod sources, and the `deadlock-mod-manager://sources/...` links)
+arrive with DMM 2.4.0; 2.3.0 and older do not have them. Release builds accept only public HTTPS sources, so a source
+is tested on its hosted copy.
 
 ## The spec
 
@@ -30,7 +30,7 @@ A small JSON file beside, not inside, the folder it writes:
 ```
 
 `source_id` is permanent: with the descriptor's origin it is the source's identity in every player's DMM. `base_url`
-is where the folder is served (`--base-url` overrides it). Each mod is a `bundle.json` with the zip `bundle.py --zip`
+is where the folder is served (`--base-url` overrides it). Each mod is a `bundle.json` with the zip `magician bundle --zip`
 wrote (`zip`, or `bundle_dir` and the zip is found beside it). `sections` are README sections copied into the
 listing's description (default `Not seen yet`); `preselect` ticks optional mods by default. Optional keys:
 `downloads_url` (default `base_url` + `files/`; may hold `{id}` and `{version}`), `media_url`, `download_origins`,
@@ -98,7 +98,7 @@ download.
 
 ## What DMM shows of a source
 
-Read from DMM's code at `d0c8f78` (2026-11-24); main may be ahead of any build a player has.
+Read from DMM's code at commit `d0c8f78`, the 2.4.0 line.
 
 - The source is an entry in the Mods Store's source menu beside GameBanana, with its `iconUrl` (a raster image up to
   128 KiB; the tool writes `icon` as a 256 px JPEG) and `name`. Nothing else of the descriptor is shown: there is no
@@ -117,7 +117,7 @@ Read from DMM's code at `d0c8f78` (2026-11-24); main may be ahead of any build a
 
 ## Updates
 
-Build the new bundle and zip with `bundle.py --zip` (a new `release` in `bundle.json`), point the spec at the new zip and
+Build the new bundle and zip with `magician bundle --zip` (a new `release` in `bundle.json`), point the spec at the new zip and
 run the tool again. The release's `contentRevision` is a hash of the zip's bytes and of the plan's ids and paths; the
 release id is the version plus the start of that hash. New bytes are always a new release, and DMM offers it as an
 update; a description, tag or screenshot change is not one. The previous release moves into `releases.json` (DMM's
@@ -137,24 +137,22 @@ media. A user site with a custom domain redirects `<user>.github.io` to that dom
 
 Downloads may live on GitHub Releases instead (`downloads_url` like
 `https://github.com/<user>/<repo>/releases/download/{id}-{version}/`). A release download answers with a redirect to
-`https://release-assets.githubusercontent.com` (seen 2026-11-24; it was `objects.githubusercontent.com` before). DMM
+`https://release-assets.githubusercontent.com` (it has been `objects.githubusercontent.com` before). DMM
 follows artifact redirects only to declared download origins, so the tool declares both `https://github.com` and that
 host and prints what to upload where. The cost is that GitHub owns the redirect: if it moves to another host, downloads
 fail until the descriptor declares it, and any change to the declared origins makes every player remove and add the
 source again. Keeping everything on the Pages origin avoids that.
 
-## Verified, and not
+## What has been proven
 
-Verified: DMM's offline checker passes on the tree, with and without an `unavailable` listing; the tree
-serves over HTTP with the right types and the landing page renders in light and dark and at phone width;
+By test: DMM's offline checker passes on the tree, with and without an `unavailable` listing, and
 `tools/test_source.py` holds the guards (spec checks, the same bytes twice, the revision moving only with the bytes,
-history and pruning, foreign files untouched, GitHub release origins). The descriptor and listing shapes follow DMM's
-own validation code (`apps/desktop/src-tauri/src/providers/native_sources/`).
+history and pruning, foreign files untouched, GitHub release origins, proofs counted only for the zip's own paks). The
+descriptor and listing shapes follow DMM's own validation code (`apps/desktop/src-tauri/src/providers/native_sources/`).
 
-In DMM `2.4.0-nightly.20261110` against a hosted source (2026-11-24): adding the source by address, the Store
-listing with cover, hero, tags, description, changelog and files, an install whose pak is the release's bytes, delete,
-and the `sources/install` link from the page.
+In the app, DMM `2.4.0-nightly.20261110` against a hosted source: adding the source by address, the Store listing with
+cover, hero, tags, description, changelog and files, an install whose pak is the release's bytes, delete, and the
+`sources/install` link from the page.
 
-Not verified in the app: the component picker with an optional pak, DMM offering an update from one release to the
-next, and how an `unavailable` listing looks (the checker and DMM's validation code accept it; nobody has looked at
-the card).
+Not seen in the app: the component picker with an optional pak, DMM offering an update from one release to the next,
+and the card of an `unavailable` listing. The checker and DMM's validation code accept all three.

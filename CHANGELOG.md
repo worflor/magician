@@ -4,6 +4,9 @@ Newest first. Dates are when the capability was proven, not when the code was wr
 
 ## Unreleased
 
+- `magician reprove` joins the front door (`ingame\reprove.py`), and `reprove --json` prints its document alone on stdout with everything else on stderr.
+- `patchday` and `reprove` find a folder of mods whatever it is called: the mods `--mod` names, else every mod under `MAGICIAN_MODS` (or `mods =` in the config file), else the nearest folder, from the working one upward, with `mod.toml` files one or two levels below it. They looked for a folder named `model-replacements` before. `magician paths` has a `mods` row.
+- The docs were gone over as one piece: the README leads with one front door and a mod as a folder, the skill covers the in-game re-prove, starting a mod and publishing, the runbook's drills are history at its end, and the status page says what works and what is left, with no dated narration.
 - `ingame/reprove.py`: patch day in game in one command. It runs the patch-day check (capturing a new build's baseline), then for each mod that needs a re-prove a vanilla pass when the build has no log for its hero and map, the mod's `[ingame] pass`, and the warnings it adds over vanilla, into `<reference>\work\passes\<slug>\`. One report gives each mod a state: `ready`, `look`, `failed` (exit 0, 4, 1). `--plan` launches nothing. `reprove.py accept <pass>` checks the pass is whole, on the installed build and of the installed paks, then runs `magician prove --evidence <pass>`. Written and run unattended on the 6866 to 6868 update the same day.
 - Stills are not compared between passes. It was built and measured: two passes of the same pak differ in 3 to 13% of a still's grid cells (idle sway, neon, sky), a whole skin against vanilla in 3 to 17%. No threshold tells them apart; the numbers are in docs/PATCH-DAY.md.
 - `mod_session.py --help` and `reprove.py --help` print the usage and exit 0.
