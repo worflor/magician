@@ -29,7 +29,7 @@ What a script on an always-on machine can do without anyone, and where it has to
 1.  M install --status                      what is installed, is the addons path still in gameinfo.gi
 2.  M patchday --capture                    THE entry point (below). Captures the new build's baseline + rig, then checks everything
 3.  M patchday --from <build>               re-run with every mod compared from one older era (default: each mod's last proven build)
-4.  M drift <pak> --from <old>              full lists for any pak patchday flagged (paks are in game\citadel\addons\)
+4.  M drift <pak> --from <old>              full lists for any pak patchday flagged (paks are in game/citadel/addons/)
 5.  fix, rebuild, M release ...             only for BROKEN (next section); a clean patch skips this
 6.  M reprove                               re-prove in game: every mod that needs it, one report (below). LOOK at the sheets
 7.  M reprove accept <pass folder>          record a proof of the installed bytes on this build, per mod, then commit its
@@ -150,7 +150,7 @@ What the toolkit guarantees (tested in `install.rs`, scratch copies only):
 - **`gameinfo.gi` is repaired by the next install, not by itself.** The update replaces it with the new stock file and drops our line; the paks stay in `addons/`. `install --status` and `patchday` say `MISSING (Steam reset gameinfo.gi?)`. The next `install` re-applies the line (idempotent) and writes `gameinfo.gi.magician-backup-<new build>` from the new stock file. The old build's backup stays.
 - **Backups are always stock.** One backup per build, written only when the path is missing, so a backup never contains our line.
 
-What Steam does (observed behaviour, not tested here): it does not replace files under a running game and applies the update after it quits (possibly with "update required" on next launch). A game running during the update keeps the old build's bytes in memory; its `steam.inf` on disk may already say the new build, so the harness's build number can disagree with the running game until a restart. After any update: `stop_game.ps1`, run `patchday`, then launch. Steam can also apply an update at the moment a session launches the game, and the session then plays the new build: a pass records the build it ran on, and `reprove accept` refuses one from a build that is not the installed one.
+What Steam does (observed behaviour, not tested here): it does not replace files under a running game and applies the update after it quits (possibly with "update required" on next launch). A game running during the update keeps the old build's bytes in memory; its `steam.inf` on disk may already say the new build, so the harness's build number can disagree with the running game until a restart. After any update: `python -I ingame/stop_game.py`, run `patchday`, then launch. Steam can also apply an update at the moment a session launches the game, and the session then plays the new build: a pass records the build it ran on, and `reprove accept` refuses one from a build that is not the installed one.
 
 The harness has one more guard: `launch.py` refuses (exit 4) to adopt a game it did not start, because it may carry other paks; run `stop_game.py`, check `install --status`, launch again.
 

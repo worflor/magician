@@ -22,6 +22,7 @@ Each kind of knowledge has one home. Read it there, and put new knowledge there.
 - [docs/reference/engine.md](docs/reference/engine.md): facts about Deadlock, the CSDK compiler and Source 2 Viewer that the code relies on, and the scars behind them. One fact in one place.
 - [docs/STATUS.md](docs/STATUS.md): current state, loose ends and known gaps. [CHANGELOG.md](CHANGELOG.md): what shipped, newest first.
 - [docs/PATCH-DAY.md](docs/PATCH-DAY.md): the patch-day runbook and what each failure means.
+- [docs/SHOWCASE.md](docs/SHOWCASE.md): two real skins in Magician's own output. Its blocks are pasted from the tool, so run them again when a label, a verdict line or the skins change.
 - [ingame/README.md](ingame/README.md), [mcp/README.md](mcp/README.md), [cinema/README.md](cinema/README.md): their subsystems. The in-game harness's README is also the home of game facts learned by driving it.
 - [skills/using-magician/](skills/using-magician/SKILL.md): how an agent drives Magician on a mod. Keep it in step when a command, exit code or safety rule changes.
 - [skills/moving-to-magician/](skills/moving-to-magician/SKILL.md): how an agent brings a mod made without Magician under it. It quotes `init`, `check` and `install` messages word for word; keep them in step.
@@ -30,7 +31,8 @@ Each kind of knowledge has one home. Read it there, and put new knowledge there.
 
 ## Posture
 
-- **Headless first.** The caller is a script or an agent. No prompts, no output that only works in colour, exit codes that mean something (0 clean, 1 broken, 2 usage error, 3 refused on purpose, 4 re-prove, 5 an update is available; `cli.rs`), stable labels a script can match, one JSON document with a `schema` string where a machine is the reader. A new command or flag earns a line in `magician`'s usage text, because a command accepts only the options declared for it and refuses every other before anything runs: a flag only one command takes goes in that command's own paragraphs of the usage text (`USAGE_HEAD` in main.rs); one several commands take goes in `SHARED` (main.rs) with the commands that take it, never in two places; a command that runs another's work with its own arguments, as `install` lints, is named in `INHERITS`. A flag that takes no value also goes in `SWITCHES`. `magician help <command>` is written from the same declaration, and `option_tests.rs` fails when the code reads a flag no command declares, a command's help and what it accepts differ, or a call in the toolkit's tools or a command line in the docs passes a flag its command does not take (the toolkit's calls are listed there: add a new one).
+- **Headless first.** The caller is a script or an agent. No prompts, no output that only works in colour, exit codes that mean something (0 clean, 1 broken, 2 usage error, 3 refused on purpose, 4 re-prove, 5 an update is available; `cli.rs`), stable labels a script can match, one JSON document with a `schema` string where a machine is the reader.
+- **An option is declared once, in the usage text.** A command accepts only the options declared for it and refuses every other before anything runs, and `magician help <command>` is written from the same declaration. A flag only one command takes goes in that command's own paragraphs of the usage text (`USAGE_HEAD` in main.rs); one several commands take goes in `SHARED` (main.rs) with the commands that take it, never in two places; a command that runs another's work with its own arguments, as `install` lints, is named in `INHERITS`; a flag that takes no value also goes in `SWITCHES`. `option_tests.rs` fails when the code reads a flag no command declares, a command's help and what it accepts differ, or a call in the toolkit's tools or a command line in the docs passes a flag its command does not take (the toolkit's calls are listed there: add a new one).
 - **A compiler, not a loader.** Never grow a runtime, a mod manager or a launcher. Output must install in other people's managers.
 - **The game build is the era.** Baselines, drift and "proven on N of M builds" are the spine; don't hardcode facts about one build where a baseline read will do.
 - **Compile-clean is not proof.** Exit code 0 is one input. Visual proof from `ingame/` and `qa/` decides.
@@ -61,7 +63,9 @@ crates/magician   the CLI: main.rs, cli.rs (--help, --version, options, exit cod
                   paths.rs (where the game, reference folder, tools and policy are), modctx.rs (the mod of the working
                   folder, and filling a bare verb in from it), heroes.rs (the game's hero table), checkcmd.rs, doctor.rs,
                   initcmd.rs, newcmd.rs (a skin's folder from nothing), frontdoor.rs (session, reprove, bundle and
-                  source: the Python tools through the CLI), update.rs (`update --check`, the release's `VERSION`, the update source and the curl fetch) and updateapply.rs (applying one: the checksum, the swap and its rollback, the git fast-forward and rebuild), out.rs (every write to stdout and stderr), style.rs,
+                  source: the Python tools through the CLI), update.rs (`update --check`, the release's `VERSION`,
+                  the update source and the curl fetch) and updateapply.rs (applying one: the checksum, the swap and
+                  its rollback, the git fast-forward and rebuild), out.rs (every write to stdout and stderr), style.rs,
                   progress.rs, build.rs, lock.rs (per-addon build lock), install.rs (slots, ledger, scene route, seat
                   check), scene.rs (scene patches), patchday.rs and patchcmd.rs (eras, the rig and engine sidecars,
                   drift verdicts, prove), proofs.rs (the proof ledger: which bytes were proven on which build, and the
@@ -78,11 +82,13 @@ qa/ harness/      offline visual QA and Blender render scripts; qa/heroes/haze.j
                   keeps its own and passes its path)
 cinema/           the optional, dev-only film kit for trailers and stills (pak90, never installed during QA or play)
 tools/            bundle.py (player release bundles with mod-interchange.json) and source.py (a static mod source from
-                  bundles), behind `magician bundle` and `magician source`; make-release.ps1 (the release files: the asset for this platform, VERSION, SHA256SUMS; Windows PowerShell 5.1 or PowerShell 7), scene_install.ps1 / .py (the player-side
-                  scene installers bundles ship), scene_lump.py (re-dress a UI scene map), rip_heroes.py (hero glbs
-                  for reference, never committed) and s2v_mcp.py (the Source 2 Viewer MCP launcher), each with a .ps1 caller; test_bundle.py,
-                  test_source.py and test_scene_install.py hold their guards
-docs/             PDD.md, TDD.md, STATUS.md, PATCH-DAY.md, reference/
+                  bundles), behind `magician bundle` and `magician source`; make-release.ps1 (the release files: the
+                  asset for this platform, VERSION, SHA256SUMS; Windows PowerShell 5.1 or PowerShell 7),
+                  scene_install.ps1 / .py (the player-side scene installers bundles ship), scene_lump.py (re-dress a
+                  UI scene map), rip_heroes.py (hero glbs for reference, never committed) and s2v_mcp.py (the Source 2
+                  Viewer MCP launcher), each with a .ps1 caller; test_bundle.py, test_source.py and
+                  test_scene_install.py hold their guards
+docs/             PDD.md, TDD.md, STATUS.md, PATCH-DAY.md, SHOWCASE.md, reference/
 ```
 
 ## Commands
@@ -142,7 +148,7 @@ that says what it found, so every later run replays it first. Inputs there come 
 game file: a case found with `MAGICIAN_FUZZ_GAME` is a mutation of Valve's bytes, so it is not kept; write a test that
 builds the same shape from nothing instead (`typed_null_arrays` in `crates/resource/tests/fuzz.rs` is one).
 
-`--help` after any command prints its usage and runs nothing (`crates/magician/tests/update.rs` holds `magician update` (scratch toolkits and checkouts, a local folder or a server on this machine as the source; it needs `git`, `curl`, `tar` and `rustc`), and `crates/magician/tests/contract.rs` holds that and the exit codes to the built binary). `crates/magician/tests/real_mods.rs` grades real mods when the machine has them (Maid Lash, from a `model-replacements/maid-lash/` folder in any folder above the repository, and a new-character mod with a voice pak, named by `MAGICIAN_REAL_NEW_CHARACTER`) and skips otherwise; without them nothing is lost but those two grades. CI (`.github/workflows/ci.yml`) builds a fresh clone on clean Windows and Linux runners and runs the workspace tests, clippy and the Python tests on both, the harness's X11 side under Xvfb.
+`crates/magician/tests/contract.rs` holds the built binary to its contract: `--help` after any command prints its usage and runs nothing, and the exit codes mean what they say. `crates/magician/tests/update.rs` holds `magician update` on scratch toolkits and checkouts, with a local folder or a server on this machine as the source (it needs `git`, `curl`, `tar` and `rustc`). `crates/magician/tests/real_mods.rs` grades real mods when the machine has them (Maid Lash, from a `model-replacements/maid-lash/` folder in any folder above the repository, and a new-character mod with a voice pak, named by `MAGICIAN_REAL_NEW_CHARACTER`) and skips otherwise; without them nothing is lost but those two grades. CI (`.github/workflows/ci.yml`) builds a fresh clone on clean Windows and Linux runners and runs the workspace tests, clippy and the Python tests on both, the harness's X11 side under Xvfb.
 
 The `dev` profile runs at opt-level 1 because VPK trees are 150k+ entries and unoptimised parsing is needlessly slow.
 
@@ -152,7 +158,7 @@ A release is its asset per platform (`magician-windows-x64.zip`, `magician-linux
 
 1. Make the commit to release on `main`, with the change's entry in [CHANGELOG.md](CHANGELOG.md) under a heading named for the version. Say in that entry whether the lint rules, the grading rubric or the built-in policy changed: that is what `update --check` tells a user, and `magician update --describe` (the `rubric`, `policy`, `lint_rules` and `lint_fingerprint` lines) shows what the build says. Bump `version` in the workspace `Cargo.toml` when the release is a new version; two commits of one version are told apart by their dates.
 2. Prove the files locally, into a scratch folder: `tools/make-release.ps1 -Out <scratch>` (on Linux, `pwsh tools/make-release.ps1 -Out <scratch>`; each system builds its own asset). It builds the release executable (into `CARGO_TARGET_DIR` when set), writes `VERSION` from the built program, packs the tracked toolkit files, and writes `SHA256SUMS`. It refuses a tree with local changes and a program that was not built from HEAD, and uploads nothing. Then try it as a user would, on a scratch copy of a toolkit folder: `magician update --check --source <scratch>`, and an `update` into the copy.
-3. Tag the commit `vX.Y.Z` and push the tag. `.github/workflows/release.yml` runs the same script on Windows and Linux runners (`-Tag` refuses a tag that is not `v` and the program's version), gathers the assets, writes one `SHA256SUMS` over them and attaches the files to the release. Nobody uploads by hand. The workflow has not run on GitHub yet (nor has `ci.yml`); the script has made both assets locally, and each has updated a scratch install from a folder: look at the first release's files before telling anyone.
+3. Tag the commit `vX.Y.Z` and push the tag. `.github/workflows/release.yml` runs the same script on Windows and Linux runners (`-Tag` refuses a tag that is not `v` and the program's version), gathers the assets, writes one `SHA256SUMS` over them and attaches the files to the release. Nobody uploads by hand. The workflow has not run on GitHub yet ([docs/STATUS.md](docs/STATUS.md), "Releases are unproven end to end"): look at the first release's files before telling anyone.
 4. `releases/latest/download` is the default update source, so the repository's latest published release is what every `update --check` sees. A draft or a pre-release is not "latest".
 
 ## Rules for changes
