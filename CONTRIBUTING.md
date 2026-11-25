@@ -171,7 +171,8 @@ What the engine, the compiler and the viewer do is in [docs/reference/engine.md]
 | Output | `println!` panics when the reader has gone (`magician ls x \| head -1` exited 101). | `out.rs`: a closed stream is dropped for the rest of the run; `a_reader_that_stops_reading_does_not_crash_the_command` holds it. |
 | Viewer | Source 2 Viewer prints `--- Wrote 1 files` on stdout and drops `exceptions.txt` in its working folder, which corrupts `grade --json` and litters the user's folder; two grades decompiling one file at once clash. | `footprint::Sources::text` runs it in a private folder under the cache with stdout closed and renames its file into place. |
 | Discovery | A first run on a new build captures its baseline into the reference folder; a drill's fake game must not seed it. | `auto_capture` only for a game found through Steam or the config file, never one from `--game` or `DEADLOCK_GAME`. |
-| Paths in strings | A Windows path typed into a Python string or a shell heredoc loses its backslashes to escapes (`\f`, `\v`, `\n`). | Write docs with file tools; raw strings or forward slashes in code. |
+| Paths in strings | A Windows path typed into a Python string or a shell heredoc loses its backslashes to escapes (`\f`, `\v`, `\n`). | Write docs with file tools; raw strings or forward slashes in code. A search for control characters in `*.md` (`[\x00-\x08\x0b\x0c]`, or a lone `\r`) finds the damage. |
+| Visual QA | After a glTF import, Blender's Workbench texture mode draws each material's active image node, which can be the self-illumination map: a palette costume renders black. | `qa/qa_lib.py` `open_model` makes the image linked to Base Color the active node. |
 
 ## Verifying a change
 
