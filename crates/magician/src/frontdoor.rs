@@ -1,4 +1,4 @@
-//! One front door: `magician session ...`, `reprove ...`, `bundle ...` and `source ...` run the toolkit's Python
+//! One front door: `magician session ...`, `reprove ...`, `bundle ...`, `source ...` and `publish ...` run the toolkit's Python
 //! tools with the same arguments, the same stdin, stdout and stderr, and the same exit code, so a user or a script
 //! names one program. The Python is not rewritten here: these verbs only find it and hand over.
 //!
@@ -8,6 +8,7 @@
 //! | `reprove` | `ingame/reprove.py`: patch day in game, every mod that needs a re-prove, one report; `accept` records one |
 //! | `bundle` | `tools/bundle.py`: a player release bundle from a `bundle.json` |
 //! | `source` | `tools/source.py`: a static Deadlock Mod Manager mod source from bundles |
+//! | `publish` | `tools/publish.py`: a bundle's zip as a new version of a file on an existing Nexus Mods page |
 //!
 //! The toolkit folder and Python come from `paths::toolkit` and `paths::python`; when either is not there the verb says
 //! what is missing and how to point at it, and exits 2. Everything after the verb is the tool's, `--help` included.
@@ -18,11 +19,11 @@ use std::process::ExitCode;
 
 /// The pass-through verbs and the script each runs, relative to the toolkit folder.
 pub const VERBS: &[(&str, &str)] =
-    &[("session", "ingame/mod_session.py"), ("reprove", "ingame/reprove.py"), ("bundle", "tools/bundle.py"), ("source", "tools/source.py")];
+    &[("session", "ingame/mod_session.py"), ("reprove", "ingame/reprove.py"), ("bundle", "tools/bundle.py"), ("source", "tools/source.py"), ("publish", "tools/publish.py")];
 
 /// The verbs alone: their arguments are their tool's own, so the option check leaves them alone (a test holds this to
 /// `VERBS`).
-pub const VERB_NAMES: &[&str] = &["session", "reprove", "bundle", "source"];
+pub const VERB_NAMES: &[&str] = &["session", "reprove", "bundle", "source", "publish"];
 
 pub fn script_of(verb: &str) -> Option<&'static str> {
     VERBS.iter().find(|(v, _)| *v == verb).map(|(_, s)| *s)

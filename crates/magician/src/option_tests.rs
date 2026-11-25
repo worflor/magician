@@ -37,6 +37,7 @@ const REAL_CALLS: &[(&str, &str)] = &[
     ("qa/detect", "ls VPK PREFIX"),
     ("qa/qa_profile.py", "refs VPK PATH"),
     ("tools/bundle.py", "scene check PATCH"),
+    ("tools/publish.py", "grade P1 P2 --mod MOD --json"),
     ("tools/make-release.ps1", "update --describe"),
     ("mcp/server.py", "rules --json"),
     ("mcp/server.py", "lint VPK --json --deep --allow FILE --policy FILE"),
@@ -76,11 +77,11 @@ fn every_call_the_toolkit_and_magician_make_is_accepted() {
 #[test]
 fn an_option_borrowed_from_another_command_is_refused_naming_the_ones_that_take_it() {
     for (line, said) in [
-        ("install pak10_dir.vpk --dry-run", "(`sign` and `update` take it)"),
-        ("uninstall pak10_dir.vpk --dry-run", "(`sign` and `update` take it)"),
+        ("install pak10_dir.vpk --dry-run", "(`publish`, `sign` and `update` take it)"),
+        ("uninstall pak10_dir.vpk --dry-run", "(`publish`, `sign` and `update` take it)"),
         ("install pak10_dir.vpk --check", "(`update` takes it)"),
-        ("release addon --hero lash --dry-run", "(`sign` and `update` take it)"),
-        ("prove mod.toml --dry-run", "(`sign` and `update` take it)"),
+        ("release addon --hero lash --dry-run", "(`publish`, `sign` and `update` take it)"),
+        ("prove mod.toml --dry-run", "(`publish`, `sign` and `update` take it)"),
         ("install --plan", "(`reprove` takes it)"),
         ("install pak10_dir.vpk --describe", "(`update` takes it)"),
         ("uninstall --all --status", "(`install` takes it)"),

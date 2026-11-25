@@ -116,11 +116,11 @@ fn an_option_of_another_command_is_refused_before_anything_runs() {
     let (g, p, t) = (game.to_string_lossy().into_owned(), pak.to_string_lossy().into_owned(), toml.to_string_lossy().into_owned());
     let before = tree(&d);
     for (args, takers) in [
-        (vec!["install", &p, "--dry-run"], "(`sign` and `update` take it)"),
-        (vec!["uninstall", "pak10_dir.vpk", "--dry-run"], "(`sign` and `update` take it)"),
+        (vec!["install", &p, "--dry-run"], "(`publish`, `sign` and `update` take it)"),
+        (vec!["uninstall", "pak10_dir.vpk", "--dry-run"], "(`publish`, `sign` and `update` take it)"),
         (vec!["install", &p, "--check"], "(`update` takes it)"),
-        (vec!["release", "x_addon", "--hero", "lash", "--dry-run"], "(`sign` and `update` take it)"),
-        (vec!["prove", &t, "--dry-run"], "(`sign` and `update` take it)"),
+        (vec!["release", "x_addon", "--hero", "lash", "--dry-run"], "(`publish`, `sign` and `update` take it)"),
+        (vec!["prove", &t, "--dry-run"], "(`publish`, `sign` and `update` take it)"),
         (vec!["uninstall", "--all", "--status"], "(`install` takes it)"),
     ] {
         // everything else on the line is the command's own, so the borrowed option is the only reason to refuse

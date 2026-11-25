@@ -121,6 +121,12 @@ either is not there):
   magician source <source.json> [--out DIR] [--prune]
                                                 tools/source.py: a static Deadlock Mod Manager mod source from bundles;
                                                 `magician source --help`
+  magician publish nexus <bundle.json> [--zip FILE] [--mod mod.toml] [--dry-run] [--ignore-gate]
+                                                tools/publish.py: the bundle's zip as a new version of a file on an
+                                                existing Nexus Mods page (ids in bundle.json's nexus block, the key in
+                                                NEXUSMODS_API_KEY), refused (exit 3) when the release gate on the zip's
+                                                own paks has a blocker; --dry-run says what would go where and sends
+                                                nothing; `magician publish --help`
 
 Inside a mod's folder (one with a mod.toml, or below one) lint, grade, drift, release, install, uninstall, prove,
 footprint and scene check|install need nothing after the verb: the paks, hero, addon, allowances, last proven build
@@ -293,7 +299,8 @@ Every command:
                                                 the grading rubric, the built-in policy and the lint rule set, so grades
                                                 and lint are re-run. Changes nothing; exit 0 current or ahead, 5 an update
                                                 is available, 3 could not check. This and `update` are the only commands
-                                                that touch the network, each step bounded to 10 s
+                                                that touch the network, each step bounded to 10 s, besides `publish`,
+                                                whose whole job is an upload
   magician update [--dry-run] [--source LOCATION] [--json]
                                                 apply it, only when asked. A release install (the folder its archive
                                                 unpacks to): fetch the archive and SHA256SUMS, check its SHA-256, unpack
@@ -373,7 +380,7 @@ fn spec() -> cli::Spec<'static> {
 
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
-    // The front door: `session`, `bundle` and `source` hand everything after the verb to the toolkit's Python tool
+    // The front door: `session`, `reprove`, `bundle`, `source` and `publish` hand everything after the verb to the toolkit's Python tool
     // (frontdoor.rs), `--help` and `--json` included: those are the tool's own.
     if let Some(verb) = raw.first().filter(|v| frontdoor::script_of(v).is_some()) {
         return match frontdoor::run(verb, &raw[1..]) {
@@ -582,7 +589,7 @@ fn flag(args: &[String], name: &str) -> Option<String> {
 /// Every command `main` dispatches, for "did you mean" on a typo.
 const COMMANDS: &[&str] = &[
     "baseline", "ls", "diff", "refs", "dump", "kv", "index", "corpus", "witness", "textures", "mesh", "cloth", "lint", "cache", "pack", "rules", "scan", "footprint", "grade", "rubric",
-    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "update", "help", "session", "reprove", "bundle", "source",
+    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "update", "help", "session", "reprove", "bundle", "source", "publish",
 ];
 
 /// Options that take no value. Every other `--option` takes the argument after it, so `positional` skips that one.
