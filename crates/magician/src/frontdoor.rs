@@ -1,10 +1,11 @@
-//! One front door: `magician session ...`, `magician bundle ...` and `magician source ...` run the toolkit's Python
+//! One front door: `magician session ...`, `reprove ...`, `bundle ...` and `source ...` run the toolkit's Python
 //! tools with the same arguments, the same stdin, stdout and stderr, and the same exit code, so a user or a script
 //! names one program. The Python is not rewritten here: these verbs only find it and hand over.
 //!
 //! | Verb | Runs |
 //! |---|---|
 //! | `session` | `ingame\mod_session.py`: a mod's in-game session (`up`, `run`, `film`, `down`, `all`, `qa`) |
+//! | `reprove` | `ingame\reprove.py`: patch day in game, every mod that needs a re-prove, one report; `accept` records one |
 //! | `bundle` | `tools\bundle.py`: a player release bundle from a `bundle.json` |
 //! | `source` | `tools\source.py`: a static Deadlock Mod Manager mod source from bundles |
 //!
@@ -16,7 +17,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 /// The pass-through verbs and the script each runs, relative to the toolkit folder.
-pub const VERBS: &[(&str, &str)] = &[("session", "ingame/mod_session.py"), ("bundle", "tools/bundle.py"), ("source", "tools/source.py")];
+pub const VERBS: &[(&str, &str)] =
+    &[("session", "ingame/mod_session.py"), ("reprove", "ingame/reprove.py"), ("bundle", "tools/bundle.py"), ("source", "tools/source.py")];
 
 pub fn script_of(verb: &str) -> Option<&'static str> {
     VERBS.iter().find(|(v, _)| *v == verb).map(|(_, s)| *s)

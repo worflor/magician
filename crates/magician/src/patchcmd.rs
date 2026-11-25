@@ -3,12 +3,18 @@
 use super::*;
 use std::collections::BTreeMap;
 
-/// `mod.toml` files for `patchday`: the `--mod` flags, else every `model-replacements/*/mod.toml` found above the
-/// working directory (or above this binary), else the mod.toml of the working folder (modctx.rs).
+/// `mod.toml` files for `patchday`: the `--mod` flags; else every mod under the mods folder when one is named
+/// (`MAGICIAN_MODS`, `mods =`); else the mods of the nearest folder, from the working one upward (then from this
+/// binary's), that has any one or two levels below it; else the mod.toml of the working folder (modctx.rs). So a
+/// folder of mods is found from inside any of them, from the folder itself and from the one above it, whatever the
+/// folders are called.
 fn find_mod_tomls(args: &[String]) -> Vec<PathBuf> {
     let given = flags(args, "--mod");
     if !given.is_empty() {
         return given.into_iter().map(PathBuf::from).collect();
+    }
+    if let Some(f) = paths::mods() {
+        return patchday::mod_tomls_under(&f.path);
     }
     let mut starts: Vec<PathBuf> = std::env::current_dir().into_iter().collect();
     if let Ok(exe) = std::env::current_exe() {
@@ -16,15 +22,13 @@ fn find_mod_tomls(args: &[String]) -> Vec<PathBuf> {
     }
     for s in starts {
         for dir in s.ancestors() {
-            let mr = dir.join("model-replacements");
-            if mr.is_dir() {
-                let mut v: Vec<PathBuf> = std::fs::read_dir(&mr).into_iter().flatten().flatten().map(|e| e.path().join("mod.toml")).filter(|p| p.is_file()).collect();
-                v.sort();
+            let v = patchday::mod_tomls_under(dir);
+            if !v.is_empty() {
                 return v;
             }
         }
     }
-    // no workspace of mods: the mod of this folder, if it is one
+    // no folder of mods: the mod of this folder, if it is one
     crate::modctx::ModCtx::discover().map(|m| vec![m.toml]).unwrap_or_default()
 }
 

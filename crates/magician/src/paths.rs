@@ -185,6 +185,12 @@ pub fn vrf(flag: Option<String>) -> Found {
     explicit(flag, "--vrf", "MAGICIAN_VRF", "vrf").unwrap_or_else(|| Found { path: PathBuf::from("Source2Viewer-CLI"), source: "PATH".into() })
 }
 
+/// The folder that holds the mods `patchday` checks, when one is named: `MAGICIAN_MODS`, else `mods =` in the config
+/// file. A scheduled job runs from wherever the scheduler starts it, so an always-on machine names the folder once.
+pub fn mods() -> Option<Found> {
+    explicit(None, "", "MAGICIAN_MODS", "mods")
+}
+
 /// The toolkit folder, the one holding `ingame\mod_session.py` and `tools\` (the Python the front-door verbs run):
 /// `MAGICIAN_HOME`, the config's `home`, else the nearest folder above this executable that holds
 /// `ingame/mod_session.py` (a checkout's `target\release\magician.exe` finds its own checkout). `Err` says what was

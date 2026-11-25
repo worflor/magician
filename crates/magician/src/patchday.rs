@@ -464,6 +464,29 @@ pub fn mod_slug(toml: &str) -> Option<String> {
     grade::manifest::string(toml, "mod", "slug")
 }
 
+/// The mods of a folder: every `mod.toml` one or two levels below it that reads as one (a `[mod] slug`), sorted. Two
+/// levels takes a folder of mods (`<dir>/<mod>/mod.toml`) and a workspace that keeps them in one (`<dir>/<any name>/
+/// <mod>/mod.toml`); it goes no deeper, so a mod's own subfolders and a whole disk are never walked.
+pub fn mod_tomls_under(dir: &Path) -> Vec<PathBuf> {
+    let subdirs = |d: &Path| -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(d).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+        v.sort();
+        v
+    };
+    let is_mod = |p: &Path| std::fs::read_to_string(p).is_ok_and(|t| mod_slug(&t).is_some());
+    let mut out = Vec::new();
+    for child in subdirs(dir) {
+        let toml = child.join("mod.toml");
+        if is_mod(&toml) {
+            out.push(toml);
+            continue; // a mod's own subfolders are its business
+        }
+        out.extend(subdirs(&child).into_iter().map(|g| g.join("mod.toml")).filter(|p| is_mod(p)));
+    }
+    out.sort();
+    out
+}
+
 /// The heroes.vdata key a mod.toml names (`[mod] hero = "hero_lash"`), when it names one.
 pub fn mod_hero(toml: &str) -> Option<String> {
     grade::manifest::string(toml, "mod", "hero")
@@ -746,6 +769,28 @@ mod tests {
         assert_eq!(t[0], ("model".to_string(), "models/heroes_wip/lash/lash.vmdl".to_string()));
         assert_eq!(compiled_target(&t[0].1), "models/heroes_wip/lash/lash.vmdl_c");
         assert!(is_game_resource(&t[0].1) && !is_game_resource("evidence/6861/asset-catalog.tsv") && !is_game_resource("models/heroes_wip/lash/materials"));
+    }
+
+    #[test]
+    fn a_folder_of_mods_is_found_one_or_two_levels_down_whatever_it_is_called() {
+        let d = std::env::temp_dir().join(format!("magician-mods-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let put = |rel: &str, text: &str| {
+            let p = d.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, text).unwrap();
+        };
+        put("skins/b-skin/mod.toml", "[mod]\nslug = \"b-skin\"\n");
+        put("skins/a-skin/mod.toml", "[mod]\nslug = \"a-skin\"\n");
+        put("skins/a-skin/source/old/mod.toml", "[mod]\nslug = \"nested\"\n"); // inside a mod: not another mod
+        put("skins/notes/mod.toml", "not a manifest\n");
+        put("tool/crates/deep/down/mod.toml", "[mod]\nslug = \"too-deep\"\n");
+        let names = |v: Vec<PathBuf>| v.iter().map(|p| p.parent().unwrap().file_name().unwrap().to_string_lossy().into_owned()).collect::<Vec<_>>();
+        assert_eq!(names(mod_tomls_under(&d.join("skins"))), ["a-skin", "b-skin"], "the folder of mods itself");
+        assert_eq!(names(mod_tomls_under(&d)), ["a-skin", "b-skin"], "the folder above it");
+        assert!(mod_tomls_under(&d.join("tool")).is_empty(), "never deeper than two levels");
+        assert!(mod_tomls_under(&d.join("missing")).is_empty());
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// A heroes.vdata with one hero: `extra` goes into the block, `model` is its model.

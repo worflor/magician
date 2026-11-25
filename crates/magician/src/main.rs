@@ -93,6 +93,11 @@ either is not there):
   magician session qa --mod <folder> --out <dir> [scenario]...
                                                 ingame/mod_session.py: a mod's in-game session (up, run, film, down,
                                                 all, qa); `magician session --help` for the rest
+  magician reprove [--mod <folder>]... [--plan] | reprove accept <pass dir>
+                                                ingame/reprove.py: patch day in game: the patch-day check, then each mod
+                                                that needs it gets a vanilla pass (when the build has no baseline) and
+                                                its own pass, and one report gives each a state (exit 0 ready, 4 look,
+                                                1 failed); `accept` records a pass that was looked at with `prove`
   magician bundle <bundle.json> [--zip] [--out DIR]
                                                 tools/bundle.py: a player release bundle (mod-interchange.json, files,
                                                 previews, the scene installers); `magician bundle --help`
@@ -534,6 +539,10 @@ fn cmd_paths(args: &[String]) -> R {
     row("csdk", paths::csdk(flag(args, "--csdk")));
     row("vrf", Ok(paths::vrf(flag(args, "--vrf"))));
     row("game_lock", Ok(paths::game_lock()));
+    match paths::mods() {
+        Some(f) => say!("mods	{}	{}", f.path.display(), f.source),
+        None => say!("mods	-	not set: patchday looks below the working folder and the folders above it"),
+    }
     row("toolkit", paths::toolkit());
     row("python", paths::python().map(|(f, _)| f));
     match paths::policy(flag(args, "--policy")) {
