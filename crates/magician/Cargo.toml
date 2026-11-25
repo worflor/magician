@@ -4,6 +4,7 @@ description = "Magician is a headless toolchain for creating, validating, and ma
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "magician"

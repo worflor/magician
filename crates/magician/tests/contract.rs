@@ -942,3 +942,28 @@ fn the_mark_key_comes_from_the_mod_and_there_is_no_default() {
     assert!(text(&o).contains("no maker's mark key"), "{}", text(&o));
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn update_check_exits_5_for_an_available_update_and_nothing_else_does() {
+    let d = scratch("update-exit");
+    // the exit codes are documented, 5 included, wherever a script looks for them
+    for args in [&["--help"][..], &["help", "update"]] {
+        let o = magician(&d, args);
+        assert!(String::from_utf8_lossy(&o.stdout).contains("5 an update is available"), "{args:?}: {}", text(&o));
+    }
+    let me = String::from_utf8(magician(&d, &["update", "--describe"]).stdout).unwrap();
+    let release = |name: &str, text: &str| {
+        let dir = d.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("VERSION"), text).unwrap();
+        dir.to_string_lossy().into_owned()
+    };
+    let check = |src: &str| magician(&d, &["update", "--check", "--source", src]).status.code();
+    assert_eq!(check(&release("current", &me)), Some(0));
+    assert_eq!(check(&release("newer", &me.replace(&format!("version = {}", env!("CARGO_PKG_VERSION")), "version = 99.0.0"))), Some(5));
+    assert_eq!(check(&release("older", &me.replace(&format!("version = {}", env!("CARGO_PKG_VERSION")), "version = 0.0.1"))), Some(0), "a build newer than the latest release is ahead, not behind");
+    assert_eq!(check(&d.join("no-release").to_string_lossy()), Some(3), "could not check");
+    // no other command answers 5, and a mistyped update is a usage error
+    assert_eq!(magician(&d, &["update", "--chek"]).status.code(), Some(2));
+    let _ = std::fs::remove_dir_all(&d);
+}

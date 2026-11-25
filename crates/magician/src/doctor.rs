@@ -57,6 +57,12 @@ pub fn checks(args: &[String]) -> Vec<Check> {
         None => out.push(c("config", State::Skip, "no location for one (set MAGICIAN_CONFIG)", None)),
     }
 
+    out.push(c("toolchain", State::Ok, format!("{}, built {}", cli::version(), env!("MAGICIAN_GIT_DATE")), None));
+    // The one online check, and only when asked for (doctor is offline otherwise): it is a note, never a failure.
+    if args.iter().any(|a| a == "--updates") {
+        out.push(crate::update::doctor_check(args));
+    }
+
     // The game, its build and whether it mounts the addons folder.
     let game = paths::game(flag(args, "--game"));
     let build = match &game {

@@ -247,6 +247,17 @@ pub fn policy(flag: Option<String>) -> Option<Found> {
     explicit(flag, "--policy", "MAGICIAN_POLICY", "policy")
 }
 
+/// Where `magician update` looks for a release (the three files `VERSION`, `SHA256SUMS` and the zip): `--source`,
+/// `MAGICIAN_UPDATE_SOURCE`, the config's `update_source`, else the `releases/latest/download` address of the
+/// repository this build came from. A folder (local or on the network) is as good as a URL. The location is kept as
+/// text, since it is often not a path.
+pub fn update_source(flag: Option<String>) -> Found {
+    explicit(flag, "--source", "MAGICIAN_UPDATE_SOURCE", "update_source").unwrap_or_else(|| Found {
+        path: PathBuf::from(format!("{}/releases/latest/download", env!("CARGO_PKG_REPOSITORY").trim_end_matches('/'))),
+        source: "default (this build's repository)".into(),
+    })
+}
+
 /// An addon is named by one folder in the CSDK's `citadel_addons`: not empty, no separator, drive or `..`. The name is
 /// joined onto the CSDK's content and game trees, where a build writes its lock, log and outputs, so `""` (an unset
 /// variable) would mean every addon at once, and `C:\x` or `..` somewhere outside the CSDK.

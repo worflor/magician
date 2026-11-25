@@ -64,13 +64,18 @@ mod progress;
 mod proofs;
 mod scene;
 mod style;
+mod update;
+mod updateapply;
 
 const USAGE: &str = "\
 Magician is a headless toolchain for creating, validating, and maintaining Deadlock mods through automation, scripts, and AI agents.
 
 Start here:
-  magician doctor [--mod mod.toml] [--json]     this machine's setup, one line each with its fix: the game and its build,
-                                                the baseline, the viewer, the CSDK, the policy, the mod of this folder
+  magician doctor [--mod mod.toml] [--updates] [--source LOCATION] [--json]
+                                                this machine's setup, one line each with its fix: the toolchain, the game
+                                                and its build, the baseline, the viewer, the CSDK, the policy, the mod of
+                                                this folder; --updates adds the update check (the only thing doctor
+                                                does online; without it doctor never touches the network)
   magician new <hero> [--slug NAME] [--dir DIR] [--name NAME] [--author NAME]
                                                 start a skin from nothing: a mod folder (DIR/<slug>, default
                                                 <hero>-skin) with a mod.toml whose [target] is the hero's real model and
@@ -229,6 +234,31 @@ Every command:
                                                 cache and config file resolved to, and why (tab-separated); for the mod
                                                 (--mod, or the one of this folder) its hero, paks, addon, allowance files
                                                 and scene patches, each with where it was found
+  magician update --check [--source LOCATION] [--json]
+                                                is there a newer Magician? Reads the release's VERSION from the update
+                                                source and compares it with this build (version, then commit): current,
+                                                behind (an update is available), ahead (this build is newer than the
+                                                latest release), or unknown (the source could not be read, said as
+                                                \"could not check\"). Also says whether updating would change judgement:
+                                                the grading rubric, the built-in policy and the lint rule set, so grades
+                                                and lint are re-run. Changes nothing; exit 0 current or ahead, 5 an update
+                                                is available, 3 could not check. This and `update` are the only commands
+                                                that touch the network, each step bounded to 10 s
+  magician update [--dry-run] [--source LOCATION] [--json]
+                                                apply it, only when asked. A release install (the folder a release zip
+                                                unpacks to): fetch the zip and SHA256SUMS, check the zip's SHA-256, unpack
+                                                beside the toolkit, swap the files in keeping the previous ones, roll
+                                                everything back if a step fails. A git checkout: refuse with local
+                                                changes, no upstream or no fast-forward, else fast-forward and
+                                                `cargo build --release`, putting the program and the tree back if the
+                                                build fails. Refused while a game session holds the seat. Exit 0 updated or
+                                                already current, 3 refused or could not fetch (nothing changed), 1 failed
+                                                after the swap began and was rolled back; --dry-run says what it would do
+  magician update --describe [--json]           this build's own VERSION (what a release says about itself); no network
+                                                --source LOCATION (or MAGICIAN_UPDATE_SOURCE, or `update_source =`; on
+                                                doctor --updates too) is where a release is: a folder, local or on the
+                                                network, or an https URL, holding magician-<platform>.zip|.tar.gz, SHA256SUMS
+                                                and VERSION; default is the latest release of this build's repository
   --reference DIR (any command; or MAGICIAN_REFERENCE)
                                                 use another reference folder for baselines, rig sidecars and indexes
   --policy FILE (lint, mesh, grade, release, build, pack, install, rubric, policy; or MAGICIAN_POLICY, or `policy =`)
@@ -241,7 +271,8 @@ Exit codes: 0 clean, nothing to do; 1 broken, a contract or rule failed and some
 FAIL, drift or patchday BROKEN, a scene patch that no longer fits the game, an expression that fails its proof, a
 release whose lint failed, `grade --gate` with a blocker); 2 usage error (bad arguments, a missing file, a tool that is
 not there); 3 refused on purpose, nothing changed (lint errors at install, a game seat or build lock someone else
-holds, a slot another mod owns); 4 re-prove: it loads, but must be proven in game on this build (drift, patchday).
+holds, a slot another mod owns, an update that could not be fetched or verified); 4 re-prove: it loads, but must be
+proven in game on this build (drift, patchday); 5 an update is available (`update --check`, and nothing else).
 The reason for 1, 2 and 3 follows `magician:` on stderr; with --json, a command that stops on one prints it as the one
 document on stdout too (schema magician.error/1). `--help` (or -h) after any command prints its usage and
 exits 0 without doing anything; `--version` prints the toolchain version.
@@ -249,8 +280,9 @@ exits 0 without doing anything; `--version` prints the toolchain version.
 Locations: the game is --game, DEADLOCK_GAME, `game =` in the config file, else found through Steam; the reference
 folder (baselines, indexes, work\\) is --reference, MAGICIAN_REFERENCE, `reference =`, else
 %LOCALAPPDATA%\\magician\\reference; the CSDK is --csdk, MAGICIAN_CSDK or `csdk =`; the Source 2 Viewer CLI is --vrf,
-MAGICIAN_VRF, `vrf =`, else Source2Viewer-CLI on PATH. `magician paths` prints what each resolved to and where the
-config file is.";
+MAGICIAN_VRF, `vrf =`, else Source2Viewer-CLI on PATH; the update source is --source, MAGICIAN_UPDATE_SOURCE,
+`update_source =`, else the latest release of this build's repository. `magician paths` prints what each resolved to
+and where the config file is.";
 
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
@@ -348,6 +380,7 @@ fn dispatch(args: &[String]) -> R {
         Some("new") => newcmd::cmd_new(&args[1..]),
         Some("doctor") => doctor::cmd_doctor(&args[1..]),
         Some("check") => checkcmd::cmd_check(&args[1..]),
+        Some("update") => update::cmd_update(&args[1..]),
         Some("verify") => markcmd::cmd_verify(&args[1..]).map_err(Stop::from),
         Some(other) => Err(Stop::Usage(format!("unknown command {other:?}{}; `magician help` lists them", cli::did_you_mean(other, COMMANDS, |c| format!("`magician {c}`"))))),
         None => Err(Stop::Usage("no command".into())),
@@ -462,13 +495,13 @@ fn flag(args: &[String], name: &str) -> Option<String> {
 /// Every command `main` dispatches, for "did you mean" on a typo.
 const COMMANDS: &[&str] = &[
     "baseline", "ls", "refs", "dump", "kv", "index", "textures", "mesh", "cloth", "lint", "cache", "pack", "rules", "scan", "footprint", "grade", "rubric",
-    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "help", "session", "bundle", "source",
+    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "update", "help", "session", "bundle", "source",
 ];
 
 /// Options that take no value. Every other `--option` takes the argument after it, so `positional` skips that one.
 const SWITCHES: &[&str] = &[
     "--deep", "--light", "--gate", "--timings", "--capture", "--all", "--force", "--status", "--no-compile", "--force-compile", "--no-wait",
-    "--ignore-game", "--dry-run", "--summary", "--list", "--shapes", "--no-png", "--verbose",
+    "--ignore-game", "--dry-run", "--summary", "--list", "--shapes", "--no-png", "--verbose", "--check", "--describe", "--updates",
 ];
 
 /// The arguments that are not options or option values. A switch (`--deep`) takes no value, so `lint --deep x.vpk`
@@ -545,6 +578,7 @@ fn cmd_paths(args: &[String]) -> R {
         Some(f) => say!("mods	{}	{}", f.path.display(), f.source),
         None => say!("mods	-	not set: patchday looks below the working folder and the folders above it"),
     }
+    row("update_source", Ok(paths::update_source(flag(args, "--source"))));
     row("toolkit", paths::toolkit());
     row("python", paths::python().map(|(f, _)| f));
     match paths::policy(flag(args, "--policy")) {

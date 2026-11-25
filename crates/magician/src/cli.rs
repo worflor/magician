@@ -8,6 +8,7 @@
 //! | 2 | usage error: bad arguments, a missing file, something that could not run |
 //! | 3 | refused on purpose: lint errors at install, a held game seat or build lock, a slot another mod owns |
 //! | 4 | re-prove: it loads, but must be proven in game on the new build |
+//! | 5 | an update is available (`magician update --check`, and nothing else) |
 
 use std::collections::BTreeSet;
 
@@ -16,6 +17,7 @@ pub const BROKEN: u8 = 1;
 pub const USAGE: u8 = 2;
 pub const REFUSED: u8 = 3;
 pub const REPROVE: u8 = 4;
+pub const UPDATE_AVAILABLE: u8 = 5;
 
 /// Why a command stopped before its normal end. The message goes to stderr after `magician:`.
 #[derive(Debug, Clone, PartialEq)]
@@ -75,7 +77,7 @@ pub fn version() -> String {
 }
 
 /// The commands that print one JSON document on stdout with `--json` (and nothing else).
-pub const JSON_COMMANDS: &[&str] = &["lint", "grade", "drift", "patchday", "release", "rules", "check", "doctor", "prove"];
+pub const JSON_COMMANDS: &[&str] = &["lint", "grade", "drift", "patchday", "release", "rules", "check", "doctor", "prove", "update"];
 
 /// Options every command accepts or that are passed between Magician's own processes, beyond the ones the usage text
 /// lists for a command.
