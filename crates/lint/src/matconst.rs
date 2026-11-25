@@ -47,7 +47,7 @@ pub fn is_engine_default(path: &str) -> bool {
 pub fn constant_colour(tex: &[u8]) -> Option<[f64; 4]> {
     let (_, _, px) = resource::pixels::decode(tex, 0)?;
     let first: [u8; 4] = px.get(0..4)?.try_into().ok()?;
-    let spread_ok = px.chunks_exact(4).all(|c| c.iter().zip(first).all(|(&a, b)| a.abs_diff(b) <= CONSTANT_SPREAD));
+    let spread_ok = px.as_chunks::<4>().0.iter().all(|c| c.iter().zip(first).all(|(&a, b)| a.abs_diff(b) <= CONSTANT_SPREAD));
     spread_ok.then(|| first.map(|c| c as f64 / 255.0))
 }
 

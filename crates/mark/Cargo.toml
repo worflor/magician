@@ -10,10 +10,10 @@ name = "mark"
 
 [dependencies]
 magician-resource = { path = "../resource" }
-magician-vpk = { path = "../vpk" }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 magician-fuzz = { path = "../fuzz" }
+magician-vpk = { path = "../vpk" }

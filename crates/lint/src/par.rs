@@ -29,7 +29,14 @@ struct Worker;
 impl Worker {
     fn take() -> Option<Worker> {
         let cap = threads().saturating_sub(1);
-        EXTRA.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| (n < cap).then_some(n + 1)).ok().map(|_| Worker)
+        let mut n = EXTRA.load(Ordering::Acquire);
+        while n < cap {
+            match EXTRA.compare_exchange_weak(n, n + 1, Ordering::AcqRel, Ordering::Acquire) {
+                Ok(_) => return Some(Worker),
+                Err(now) => n = now,
+            }
+        }
+        None
     }
 }
 

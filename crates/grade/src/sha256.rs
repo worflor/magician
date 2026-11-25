@@ -33,8 +33,8 @@ impl Sha256 {
 
     fn block(&mut self, b: &[u8]) {
         let mut w = [0u32; 64];
-        for (i, c) in b.chunks_exact(4).enumerate() {
-            w[i] = u32::from_be_bytes([c[0], c[1], c[2], c[3]]);
+        for (i, c) in b.as_chunks::<4>().0.iter().enumerate() {
+            w[i] = u32::from_be_bytes(*c);
         }
         for i in 16..64 {
             let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
@@ -77,11 +77,10 @@ impl Sha256 {
             self.block(&b);
             self.fill = 0;
         }
-        let mut chunks = data.chunks_exact(64);
-        for c in &mut chunks {
+        let (blocks, rest) = data.as_chunks::<64>();
+        for c in blocks {
             self.block(c);
         }
-        let rest = chunks.remainder();
         self.buf[..rest.len()].copy_from_slice(rest);
         self.fill = rest.len();
     }

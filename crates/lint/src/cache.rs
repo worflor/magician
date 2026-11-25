@@ -45,13 +45,12 @@ pub fn stats() -> (usize, usize) {
 pub fn hash64(data: &[u8], seed: u64) -> u64 {
     const K: u64 = 0x9E37_79B9_7F4A_7C15;
     let mut h = seed ^ (data.len() as u64).wrapping_mul(K);
-    let mut chunks = data.chunks_exact(8);
-    for c in &mut chunks {
-        let w = u64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]);
+    let (words, rest) = data.as_chunks::<8>();
+    for c in words {
+        let w = u64::from_le_bytes(*c);
         let m = (h ^ w) as u128 * K as u128;
         h = (m as u64) ^ ((m >> 64) as u64);
     }
-    let rest = chunks.remainder();
     if !rest.is_empty() {
         let mut b = [0u8; 8];
         b[..rest.len()].copy_from_slice(rest);

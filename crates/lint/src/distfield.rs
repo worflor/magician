@@ -17,14 +17,13 @@ pub const BONE_HASH_SEED: u32 = 0x3141_5926;
 pub fn murmur2(data: &[u8], seed: u32) -> u32 {
     const M: u32 = 0x5bd1_e995;
     let mut h = seed ^ data.len() as u32;
-    let mut chunks = data.chunks_exact(4);
-    for c in &mut chunks {
-        let mut k = u32::from_le_bytes([c[0], c[1], c[2], c[3]]).wrapping_mul(M);
+    let (words, r) = data.as_chunks::<4>();
+    for c in words {
+        let mut k = u32::from_le_bytes(*c).wrapping_mul(M);
         k ^= k >> 24;
         k = k.wrapping_mul(M);
         h = h.wrapping_mul(M) ^ k;
     }
-    let r = chunks.remainder();
     if r.len() >= 3 {
         h ^= (r[2] as u32) << 16;
     }
