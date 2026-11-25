@@ -179,11 +179,22 @@ fn parse_summary(line: &str, s: &mut CompileSummary) -> bool {
 
 /// Run resourcecompiler on a batch, streaming its output to `log`, ending it if it hangs after its summary.
 /// `game` is a `-game` folder (distance-field documents: `distance_field_game`), else the compiler's own default.
-pub fn compile_batch(rc: &Path, files: &[PathBuf], game: Option<&Path>, log: &mut std::fs::File, s: &mut CompileSummary) -> Result<(), String> {
-    let mut child = std::process::Command::new(rc)
+/// `wine` is `paths::wine`'s answer: `None` runs the compiler as it is (Windows), else through Wine in that prefix,
+/// with every path given as Wine names it.
+pub fn compile_batch(rc: &Path, wine: Option<&(PathBuf, PathBuf)>, files: &[PathBuf], game: Option<&Path>, log: &mut std::fs::File, s: &mut CompileSummary) -> Result<(), String> {
+    let arg = |p: &Path| if wine.is_some() { crate::paths::wine_path(p) } else { p.as_os_str().to_os_string() };
+    let mut cmd = match wine {
+        Some((w, prefix)) => {
+            let mut c = std::process::Command::new(w);
+            c.arg(rc).env("WINEPREFIX", prefix).env("WINEDEBUG", "-all");
+            c
+        }
+        None => std::process::Command::new(rc),
+    };
+    let mut child = cmd
         .arg("-nop4")
-        .args(game.map(|g| vec![std::ffi::OsString::from("-game"), g.as_os_str().to_os_string()]).unwrap_or_default())
-        .args(files)
+        .args(game.map(|g| vec![std::ffi::OsString::from("-game"), arg(g)]).unwrap_or_default())
+        .args(files.iter().map(|f| arg(f)))
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()

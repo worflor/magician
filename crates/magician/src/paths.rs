@@ -200,6 +200,40 @@ pub fn csdk(flag: Option<String>) -> Result<Found, String> {
     })
 }
 
+/// A program on PATH by name, as the system would run it (`.exe` too on Windows).
+pub fn on_path(name: &str) -> Option<PathBuf> {
+    let exts: &[&str] = if cfg!(windows) { &["", ".exe", ".cmd", ".bat"] } else { &[""] };
+    std::env::split_paths(&std::env::var_os("PATH")?).find_map(|d| exts.iter().map(|e| d.join(format!("{name}{e}"))).find(|p| p.is_file()))
+}
+
+/// Wine, which runs Valve's compiler (`resourcecompiler.exe`, a Windows program) everywhere but Windows, and the
+/// Wine prefix it runs in. Wine: `MAGICIAN_WINE`, the config's `wine`, else `wine` (then `wine64`) on PATH. Prefix:
+/// `WINEPREFIX` when set, else the config's `wine_prefix`, else `magician/wine` in the data folder (made by Wine on
+/// first use, so the compiler never shares the user's own `~/.wine`). `Ok(None)` on Windows, where the compiler runs
+/// as it is; `Err` says what is missing and how to get it.
+pub fn wine() -> Result<Option<(Found, Found)>, String> {
+    if cfg!(windows) {
+        return Ok(None);
+    }
+    let wine = explicit(None, "", "MAGICIAN_WINE", "wine")
+        .or_else(|| ["wine", "wine64"].iter().find_map(|n| on_path(n)).map(|path| Found { path, source: "PATH".into() }))
+        .ok_or_else(|| "Valve's compiler, resourcecompiler.exe, is a Windows program, and it runs here under Wine, which is not on PATH: install it (`apt install wine64` on Debian and Ubuntu), or set MAGICIAN_WINE (or `wine =` in the config file) to it".to_string())?;
+    let prefix = env("WINEPREFIX")
+        .map(|p| Found { path: PathBuf::from(p), source: "WINEPREFIX".into() })
+        .or_else(|| config("wine_prefix").map(|p| Found { path: PathBuf::from(p), source: "config (wine_prefix)".into() }))
+        .unwrap_or_else(|| {
+            let data = env("XDG_DATA_HOME").map(PathBuf::from).or_else(|| env("HOME").map(|h| PathBuf::from(h).join(".local").join("share")));
+            Found { path: data.unwrap_or_default().join("magician").join("wine"), source: "default".into() }
+        });
+    Ok(Some((wine, prefix)))
+}
+
+/// A path as a Windows program under Wine reads it: Wine's drive `Z:` is the root of this file system.
+pub fn wine_path(p: &Path) -> std::ffi::OsString {
+    let abs = std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
+    format!("Z:{}", abs.to_string_lossy().replace('/', "\\")).into()
+}
+
 /// The Source 2 Viewer CLI: `--vrf`, `MAGICIAN_VRF`, the config's `vrf`, else `Source2Viewer-CLI` from PATH.
 pub fn vrf(flag: Option<String>) -> Found {
     explicit(flag, "--vrf", "MAGICIAN_VRF", "vrf").unwrap_or_else(|| Found { path: PathBuf::from("Source2Viewer-CLI"), source: "PATH".into() })
@@ -384,6 +418,12 @@ owners = [\"lash_voice\", \"..\", \"a/b\"]
         let (found, looked) = mod_allowances(&bare.join("mod.toml"), "", Some(&csdk));
         assert!(found.is_empty() && looked.len() == 2, "{looked:?}");
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_path_is_handed_to_the_compiler_under_wine_on_drive_z() {
+        assert_eq!(wine_path(Path::new("/root/csdk/content/citadel_addons/a/x.vmdl")), std::ffi::OsString::from(r"Z:\root\csdk\content\citadel_addons\a\x.vmdl"));
     }
 
     #[test]

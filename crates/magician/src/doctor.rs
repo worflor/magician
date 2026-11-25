@@ -155,11 +155,13 @@ pub fn checks(args: &[String]) -> Vec<Check> {
             let has_rc = std::fs::read_dir(&bin).into_iter().flatten().flatten().any(|e| e.path().join("resourcecompiler.exe").is_file());
             if !has_rc {
                 out.push(c("csdk", State::Fail, format!("{} ({}) has no resourcecompiler.exe in a folder under game/bin", f.path.display(), f.source), Some("point it at the CSDK 13 folder that holds content/ and game/".into())));
-            } else if cfg!(windows) {
-                out.push(c("csdk", State::Ok, format!("{} ({})", f.path.display(), f.source), None));
             } else {
-                // Valve's compiler is a Windows program; packaging what it compiled, and sign, work here
-                out.push(c("csdk", State::Skip, format!("{} ({}): resourcecompiler.exe runs on Windows only, so build and release package what is already compiled (--no-compile); sign works", f.path.display(), f.source), Some("compile on Windows".into())));
+                // Valve's compiler is a Windows program: elsewhere Wine runs it (paths::wine)
+                match paths::wine() {
+                    Ok(None) => out.push(c("csdk", State::Ok, format!("{} ({})", f.path.display(), f.source), None)),
+                    Ok(Some((w, p))) => out.push(c("csdk", State::Ok, format!("{} ({}); resourcecompiler.exe runs under Wine {} ({}), prefix {} ({})", f.path.display(), f.source, w.path.display(), w.source, p.path.display(), p.source), None)),
+                    Err(e) => out.push(c("csdk", State::Todo, format!("{} ({}), but build and release can't compile: {e}", f.path.display(), f.source), Some("apt install wine64 (Debian and Ubuntu), or set MAGICIAN_WINE".into()))),
+                }
             }
         }
         Err(_) => out.push(c("csdk", State::Skip, "no CSDK: only build, release and sign need it", Some(config_line("csdk", &native("<...>\\Reduced_CSDK_13"))))),

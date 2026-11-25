@@ -301,7 +301,7 @@ exits 0 without doing anything; `--version` prints the toolchain version.
 Locations: the game is --game, DEADLOCK_GAME, `game =` in the config file, else found through Steam; the reference
 folder (baselines, indexes, work/) is --reference, MAGICIAN_REFERENCE, `reference =`, else magician/reference in
 the platform's data folder (%LOCALAPPDATA% on Windows, ~/.local/share on Linux); the CSDK is --csdk, MAGICIAN_CSDK
-or `csdk =` (its compiler is a Windows program: build and release compile on Windows); the Source 2 Viewer CLI is --vrf,
+or `csdk =` (its compiler is a Windows program; elsewhere Wine runs it: MAGICIAN_WINE or `wine =`); the Source 2 Viewer CLI is --vrf,
 MAGICIAN_VRF, `vrf =`, else Source2Viewer-CLI on PATH; the update source is --source, MAGICIAN_UPDATE_SOURCE,
 `update_source =`, else the latest release of this build's repository. `magician paths` prints what each resolved to
 and where the config file is.";
@@ -628,6 +628,14 @@ fn cmd_paths(args: &[String]) -> R {
     row("game", paths::game(flag(args, "--game")));
     row("reference", Ok(paths::reference()));
     row("csdk", paths::csdk(flag(args, "--csdk")));
+    match paths::wine() {
+        Ok(Some((w, p))) => {
+            row("wine", Ok(w));
+            row("wine_prefix", Ok(p));
+        }
+        Ok(None) => {}
+        Err(e) => row("wine", Err(e)),
+    }
     row("vrf", Ok(paths::vrf(flag(args, "--vrf"))));
     row("game_lock", Ok(paths::game_lock()));
     match paths::mods() {
@@ -1803,14 +1811,17 @@ fn compile_addon(addon: &str, args: &[String], compile: bool, explicit_bin: Opti
     if up_to_date {
         say!("compiled {addon}: up to date, no source changed since the last compile (resourcecompiler not started; --force-compile runs it)");
     }
-    if compile && !up_to_date && !cfg!(windows) {
-        // Valve's compiler is a Windows program (README.md, Platforms): say so here rather than fail to start it.
-        return Err(Stop::Usage(format!(
-            "{addon}: its sources changed since the last compile, and resourcecompiler.exe runs on Windows only: compile \
-             on Windows, or package what is already compiled with --no-compile"
-        )));
-    }
     if compile && !up_to_date {
+        // Valve's compiler is a Windows program: elsewhere it runs under Wine (paths::wine), or the build says what
+        // is missing before it starts anything
+        let wine = paths::wine().map_err(|e| Stop::Usage(format!("{addon}: {e}")))?.map(|(w, p)| (w.path, p.path));
+        if let Some((w, p)) = &wine {
+            // Wine makes the prefix on first use, but only inside a folder that is there
+            if let Some(parent) = p.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+            }
+            say!("{addon}: resourcecompiler.exe runs under Wine: {} (prefix {})", w.display(), p.display());
+        }
         // A UTF-8 BOM makes resourcecompiler reject a text source. Refuse rather than strip: the sources belong to
         // the departments (often mid-edit by another tool), the build never writes into them, and a silent fix
         // would hide the editor setting that keeps adding the BOM.
@@ -1854,7 +1865,7 @@ fn compile_addon(addon: &str, args: &[String], compile: bool, explicit_bin: Opti
         let plain = [skels].into_iter().filter(|b| !b.is_empty()).chain(build::batches(&rest)).map(|b| (b, None));
         let with_fields = build::batches(&dstf).into_iter().map(|b| (b, dstf_game.as_deref()));
         for (batch, game) in plain.chain(with_fields) {
-            if let Err(e) = build::compile_batch(&rc, &batch, game, &mut log, &mut summary) {
+            if let Err(e) = build::compile_batch(&rc, wine.as_ref(), &batch, game, &mut log, &mut summary) {
                 result = Err(e);
                 break;
             }
