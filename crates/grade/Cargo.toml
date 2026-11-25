@@ -1,6 +1,6 @@
 [package]
 name = "magician-grade"
-description = "Grading: a hero's footprint from the game's own data, and a mod's depth, identity, fair play, freshness and release gate against it, as one reproducible record"
+description = "Grading: a hero's footprint from the game's own data, and what a mod makes its own of it, its identity, fair play, freshness and release gate, as one reproducible record"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

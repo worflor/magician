@@ -48,7 +48,15 @@ pub struct Coverage {
     pub anim_abilities_full: f64,
     pub anim_other_full: f64,
     pub ui_hero_art_share: f64,
-    pub kit_departments: f64,
+}
+
+/// The two lines that describe a group (look, effects, sound) by its weighted coverage.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Groups {
+    /// Named in the label at or above this.
+    pub covered: f64,
+    /// `some <group>` at or above this (and above nothing); left out under it.
+    pub touched: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,8 +78,7 @@ pub struct Policy {
     /// Whether rights must be cleared to pass the release gate (`rights.enforce`). Off by default: `unreviewed` is a
     /// warning; `denied` blocks either way.
     pub rights_enforce: bool,
-    /// The S, A, B, C and D thresholds.
-    pub letters: [f64; 5],
+    pub groups: Groups,
     pub weights_character: Vec<(String, f64)>,
     pub weights_variant: Vec<(String, f64)>,
     pub weights_kit: Vec<(String, f64)>,
@@ -98,7 +105,7 @@ impl Default for Policy {
             compliance: Compliance { never: strings(rubric::NEVER_ALLOWABLE), advisory: strings(rubric::ADVISORY), m140_max_worst_units: None, m140_max_visible_share: None, m130_max_share: 1.0 },
             enforce: rubric::FAIR_PLAY_ENFORCED,
             rights_enforce: rubric::RIGHTS_ENFORCED,
-            letters: [rubric::LETTERS[0].1, rubric::LETTERS[1].1, rubric::LETTERS[2].1, rubric::LETTERS[3].1, rubric::LETTERS[4].1],
+            groups: Groups { covered: rubric::COVERED, touched: rubric::TOUCHED },
             weights_character: owned(rubric::WEIGHTS_CHARACTER),
             weights_variant: owned(rubric::WEIGHTS_VARIANT),
             weights_kit: owned(rubric::WEIGHTS_KIT),
@@ -118,7 +125,6 @@ impl Default for Policy {
                 anim_abilities_full: rubric::ANIM_ABILITIES_FULL,
                 anim_other_full: rubric::ANIM_OTHER_FULL,
                 ui_hero_art_share: rubric::UI_HERO_ART_SHARE,
-                kit_departments: rubric::KIT_DEPARTMENTS,
             },
             set_by: BTreeMap::new(),
             file: None,
@@ -171,13 +177,13 @@ pub fn keys() -> Vec<Key> {
     k.push(num("compliance.m140_max_visible_share", 0.0, 1.0, "the largest visible share beyond the taste line an M140 allowance accepts (default: the M129 line)"));
     k.push(num("compliance.m130_max_share", 0.0, 1.0, "the widest M130 share an allowance accepts, if M130 is not advisory"));
     k.push(Key { name: "rights.enforce".into(), kind: Kind::Bool, what: "true: rights must be cleared to pass the release gate; false: unreviewed is a warning (denied blocks either way)".into() });
-    for l in ["S", "A", "B", "C", "D"] {
-        k.push(num(&format!("letters.{l}"), 0.0, 100.0, &format!("the depth score at or above which a mod earns {l}")));
-    }
+    k.push(num("groups.covered", 0.01, 1.0, "a group (look, effects, sound) is named in the label once its weighted coverage reaches this"));
+    k.push(num("groups.touched", 0.0, 1.0, "a group reads \"some <group>\" once its weighted coverage reaches this (and is above nothing); under it, it is left out"));
     for a in Archetype::all() {
         let (req, app) = a.surfaces();
         for id in req.iter().chain(app) {
-            k.push(num(&format!("weights.{}.{id}", a.id()), 0.0, 100.0, &format!("the weight of {} in the {} rubric (each rubric totals 100)", rubric::criterion(id).name, a.id())));
+            let c = rubric::criterion(id);
+            k.push(num(&format!("weights.{}.{id}", a.id()), 0.0, 100.0, &format!("how much {} counts within {} in the {} rubric", c.name, c.group.id(), a.id())));
         }
     }
     k.push(num("identity.new_character_signals", 0.5, 4.0, "identity signals a new character needs"));
@@ -193,7 +199,6 @@ pub fn keys() -> Vec<Key> {
     k.push(num("coverage.anim_abilities_full", 1.0, 100.0, "ability clips for full credit in that band"));
     k.push(num("coverage.anim_other_full", 1.0, 1000.0, "other clips for full credit in that band"));
     k.push(num("coverage.ui_hero_art_share", 0.01, 1.0, "share of the hero art replaced for full hero-art credit"));
-    k.push(num("coverage.kit_departments", 1.0, 4.0, "a kit's scope is at least this many of VFX, sound, UI and voice"));
     k
 }
 
@@ -228,7 +233,7 @@ impl Policy {
                 "m140_max_visible_share" => n(self.m140_limits().1),
                 _ => n(self.compliance.m130_max_share),
             },
-            "letters" => n(self.letters[["S", "A", "B", "C", "D"].iter().position(|l| *l == rest).unwrap_or(0)]),
+            "groups" => n(if rest == "covered" { self.groups.covered } else { self.groups.touched }),
             "weights" => {
                 let (a, id) = rest.split_once('.').unwrap_or(("", ""));
                 let a = Archetype::all().into_iter().find(|x| x.id() == a).unwrap_or(Archetype::Character);
@@ -249,8 +254,7 @@ impl Policy {
                 "anim_ui_full" => self.coverage.anim_ui_full,
                 "anim_abilities_full" => self.coverage.anim_abilities_full,
                 "anim_other_full" => self.coverage.anim_other_full,
-                "ui_hero_art_share" => self.coverage.ui_hero_art_share,
-                _ => self.coverage.kit_departments,
+                _ => self.coverage.ui_hero_art_share,
             }),
         }
     }
@@ -285,7 +289,8 @@ impl Policy {
                 "m140_max_visible_share" => self.compliance.m140_max_visible_share = Some(x),
                 _ => self.compliance.m130_max_share = x,
             },
-            "letters" => self.letters[["S", "A", "B", "C", "D"].iter().position(|l| *l == rest).unwrap_or(0)] = x,
+            "groups" if rest == "covered" => self.groups.covered = x,
+            "groups" => self.groups.touched = x,
             "weights" => {
                 let (a, id) = rest.split_once('.').unwrap_or(("", ""));
                 let list = match a {
@@ -318,8 +323,7 @@ impl Policy {
                     "anim_ui_full" => &mut c.anim_ui_full,
                     "anim_abilities_full" => &mut c.anim_abilities_full,
                     "anim_other_full" => &mut c.anim_other_full,
-                    "ui_hero_art_share" => &mut c.ui_hero_art_share,
-                    _ => &mut c.kit_departments,
+                    _ => &mut c.ui_hero_art_share,
                 };
                 *slot = x;
             }
@@ -327,20 +331,12 @@ impl Policy {
         Ok(())
     }
 
-    /// Checks across keys: the envelope tiers in order, letters falling from S to D, each rubric totalling 100, and
-    /// the rule lists naming fair-play rules, none in both.
+    /// Checks across keys: the envelope tiers in order, the touched line under the covered one, and the rule lists
+    /// naming fair-play rules, none in both.
     fn check(&self) -> Result<(), String> {
         self.fair_play.check()?;
-        for w in self.letters.windows(2) {
-            if w[0] <= w[1] {
-                return Err(format!("letters must fall from S to D, each below the last (got {})", self.letters.map(fmt).join(", ")));
-            }
-        }
-        for a in Archetype::all() {
-            let total: f64 = self.weights(a).iter().map(|(_, w)| w).sum();
-            if (total - 100.0).abs() > 1e-6 {
-                return Err(format!("the weights of the {} rubric total {}, not 100: set [weights.{}] so they add up", a.id(), fmt(total), a.id()));
-            }
+        if self.groups.touched >= self.groups.covered {
+            return Err(format!("groups.touched ({}) must be under groups.covered ({})", fmt(self.groups.touched), fmt(self.groups.covered)));
         }
         for (name, l) in [("compliance.never_allowable", &self.compliance.never), ("compliance.advisory", &self.compliance.advisory)] {
             if let Some(bad) = l.iter().find(|c| !rubric::FAIR_PLAY_RULES.contains(&c.as_str())) {
@@ -454,6 +450,9 @@ pub fn parse(text: &str, name: &str) -> Result<Policy, String> {
         }
         if let Some(h) = line.strip_prefix('[') {
             let h = h.strip_suffix(']').ok_or_else(|| format!("{at}: a section header is [name]"))?.trim();
+            if h == "letters" {
+                return Err(format!("{at}: [letters] is gone: a grade describes what a mod makes its own and has no letter; [groups] covered and touched are the lines that name a group"));
+            }
             if h == "gate" {
                 return Err(format!("{at}: [gate] nsfr is gone: fair play has one switch, [fair_play] enforce (nsfr = \"block\" is enforce = true, nsfr = \"warn\" is enforce = false)"));
             }
@@ -518,7 +517,7 @@ mod tests {
         assert_eq!(e["fair_play.hitbox_egregious_units"], ("15".to_string(), "house.toml line 3".to_string()));
         assert_eq!(e["fair_play.enforce"], ("true".to_string(), "house.toml line 4".to_string()));
         assert_eq!(e["rights.enforce"], ("false".to_string(), "default".to_string()));
-        assert_eq!(e["letters.S"], ("90".to_string(), "default".to_string()));
+        assert_eq!(e["groups.covered"], ("0.8".to_string(), "default".to_string()));
         assert_eq!(p.overrides(), vec!["fair_play.enforce", "fair_play.hitbox_egregious_units", "compliance.advisory", "compliance.m140_max_worst_units"]);
     }
 
@@ -526,10 +525,10 @@ mod tests {
     fn the_fingerprint_follows_the_values_not_the_spelling() {
         let d = Policy::default().fingerprint();
         assert_eq!(d.len(), 64);
-        let spelled = parse("[letters]\nS = 90\n[fair_play]\nsilhouette_min = 0.97\n", "x").unwrap();
+        let spelled = parse("[groups]\ncovered = 0.8\n[fair_play]\nsilhouette_min = 0.97\n", "x").unwrap();
         assert_eq!(spelled.fingerprint(), d, "a file that spells the defaults out is the default policy");
         assert!(spelled.overrides().is_empty());
-        let moved = parse("[letters]\nS = 92\n", "x").unwrap();
+        let moved = parse("[groups]\ncovered = 0.9\n", "x").unwrap();
         assert_ne!(moved.fingerprint(), d);
         let other = parse("[compliance]\nadvisory = [\"M130\", \"M081\"]\n", "x").unwrap();
         assert_eq!(other.fingerprint(), d, "a rule list is a set: its order is not a value");
@@ -552,11 +551,12 @@ mod tests {
         // the old switch is refused with the new one's name, never read as the opposite
         let e = bad("[gate]\nnsfr = \"warn\"\n");
         assert!(e.contains("p.toml line 1") && e.contains("[fair_play] enforce") && e.contains("\"warn\" is enforce = false"), "{e}");
-        assert!(bad("[letters]\nS = 95\nS = 96\n").contains("letters.S is set twice (first at p.toml line 2)"));
-        assert!(bad("[letters]\nA = 95\n").contains("letters must fall from S to D"));
-        let e = bad("[weights.kit]\nvfx = 30\n");
-        assert!(e.contains("the kit rubric total 104, not 100"), "{e}");
+        assert!(bad("[groups]\ncovered = 0.9\ncovered = 0.7\n").contains("groups.covered is set twice (first at p.toml line 2)"));
+        assert!(bad("[groups]\ntouched = 0.8\n").contains("groups.touched (0.8) must be under groups.covered (0.8)"));
+        let e = bad("[letters]\nS = 90\n");
+        assert!(e.contains("p.toml line 1") && e.contains("[letters] is gone") && e.contains("[groups]"), "{e}");
         assert!(bad("[weights.kit]\nmodel = 10\n").contains("unknown key weights.kit.model"), "a kit has no model criterion");
+        assert!(bad("[weights.character]\ncraft = 15\n").contains("unknown key weights.character.craft"), "craft is lint's now");
         assert!(bad("[compliance]\nadvisory = [\"M061\"]\n").contains("M061 is not a fair-play rule"));
         assert!(bad("[compliance]\nadvisory = [\"M129\"]\n").contains("M129 is in both"));
         assert!(bad("[fair_play]\nhitbox_taste_units = 20\n").contains("hitbox_egregious_units"));

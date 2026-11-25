@@ -1,12 +1,13 @@
-//! The grading rubric. One home for every number a grade is judged by: the criteria, their weights per archetype, the
-//! letter thresholds, the coverage targets, the identity requirements, the fair-play rule classes and the depth caps.
-//! A policy file (`policy.rs`) may move any of them; these are the defaults, and a run with no policy uses them.
+//! The grading rubric. One home for every number a grade is judged by: the criteria and the group each belongs to,
+//! their weights within a group per archetype, the two lines that name a group, the coverage targets, the identity
+//! requirements and the fair-play rule classes. A policy file (`policy.rs`) may move any of them; these are the
+//! defaults, and a run with no policy uses them.
 //!
-//! Depth means completeness, not taste: S means "comprehensively fulfils its archetype", never "looks great", and
-//! letters compare within an archetype, never across. Coverage is measured *per group* (per ability, per moment), not
-//! per file: replacing a quarter of an ability's particles with intent is a full reskin of that ability. Hundreds of
-//! untouched debris sprites shouldn't drag a beautiful ability down, and a mod that replaces 90 files of one ability
-//! shouldn't look complete.
+//! A grade describes, it does not rank: it names the kind of mod and which of the hero's three groups (look, effects,
+//! sound) the mod makes its own, `some <group>` where it has begun one, and leaves out what is still Valve's. Coverage
+//! is measured *per group of files* (per ability, per moment), not per file: replacing a quarter of an ability's
+//! particles with intent is a full reskin of that ability. Hundreds of untouched debris sprites shouldn't hide a
+//! reskinned ability, and a mod that replaces 90 files of one ability shouldn't read as covering them all.
 
 use crate::footprint::{Cat, Footprint};
 use crate::policy::Policy;
@@ -14,26 +15,57 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// The version of the grading rules a record was judged by. Raise it when a rule's meaning changes, so an old record
 /// is never read as if today's rules made it.
-pub const RULES_VERSION: &str = "2.0.0";
+pub const RULES_VERSION: &str = "3.0.0";
+
+// ---------------------------------------------------------------------------------------------------- groups
+
+/// The three things a hero mod can make its own, in the order a label names them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Group {
+    Look,
+    Effects,
+    Sound,
+}
+
+impl Group {
+    pub fn id(self) -> &'static str {
+        match self {
+            Group::Look => "look",
+            Group::Effects => "effects",
+            Group::Sound => "sound",
+        }
+    }
+    pub fn all() -> [Group; 3] {
+        [Group::Look, Group::Effects, Group::Sound]
+    }
+}
+
+/// A group is named once its weighted coverage reaches this line.
+pub const COVERED: f64 = 0.8;
+/// A group reads `some <group>` once its weighted coverage reaches this line (and is above nothing); under it the
+/// group is left out, as Valve's.
+pub const TOUCHED: f64 = 0.0;
 
 // ---------------------------------------------------------------------------------------------------- criteria
 
 pub struct Criterion {
     pub id: &'static str,
     pub name: &'static str,
+    /// The name a group's line uses when the mod covers it.
+    pub short: &'static str,
+    pub group: Group,
     pub why: &'static str,
 }
 
 pub const CRITERIA: &[Criterion] = &[
-    Criterion { id: "model", name: "Hero model", why: "The silhouette players see all match. A character starts here." },
-    Criterion { id: "materials", name: "Materials & textures", why: "Its own surfaces (new or replaced materials), not just a reshaped mesh. For a variant: every visible material slot of the hero." },
-    Criterion { id: "vfx", name: "Ability VFX", why: "Every signature ability and the weapon look like *this* character. Measured per ability." },
-    Criterion { id: "sound", name: "Kit sound", why: "Abilities, weapon, melee and movement sound like the fantasy. Measured per group." },
-    Criterion { id: "animation", name: "Animation", why: "Hero-select and showcase clips first (where the fantasy is sold), then ability and other clips." },
-    Criterion { id: "ui", name: "UI art", why: "Hero card, gloat and critical cards, minimap and small icons, name logo, ability icons." },
-    Criterion { id: "scenes", name: "Showcase scenes", why: "The hero shop, prefab and postgame portrait scenes." },
-    Criterion { id: "voice", name: "Voice & stingers", why: "Voice treatment or stingers layered on his lines (no voice cloning)." },
-    Criterion { id: "craft", name: "Craft", why: "Lint-clean, no dropped dependencies, never ships skeleton/graph/data, no orphan files. Fair-play findings are judged apart (compliance), never here." },
+    Criterion { id: "model", name: "Hero model", short: "model", group: Group::Look, why: "The silhouette players see all match. A character starts here." },
+    Criterion { id: "materials", name: "Materials & textures", short: "materials", group: Group::Look, why: "Its own surfaces (new or replaced materials), not just a reshaped mesh. For a variant: every visible material slot of the hero." },
+    Criterion { id: "ui", name: "UI art", short: "UI art", group: Group::Look, why: "Hero card, gloat and critical cards, minimap and small icons, name logo, ability icons." },
+    Criterion { id: "scenes", name: "Showcase scenes", short: "scenes", group: Group::Look, why: "The hero shop, prefab and postgame portrait scenes." },
+    Criterion { id: "vfx", name: "Ability VFX", short: "ability VFX", group: Group::Effects, why: "Every signature ability and the weapon look like *this* character. Measured per ability." },
+    Criterion { id: "animation", name: "Animation", short: "animation", group: Group::Effects, why: "Hero-select and showcase clips first (where the fantasy is sold), then ability and other clips." },
+    Criterion { id: "sound", name: "Kit sound", short: "kit sound", group: Group::Sound, why: "Abilities, weapon, melee and movement sound like the fantasy. Measured per group." },
+    Criterion { id: "voice", name: "Voice & stingers", short: "voice", group: Group::Sound, why: "Voice treatment or stingers layered on his lines (no voice cloning)." },
 ];
 
 pub fn criterion(id: &str) -> &'static Criterion {
@@ -42,10 +74,10 @@ pub fn criterion(id: &str) -> &'static Criterion {
 
 // ---------------------------------------------------------------------------------------------------- archetypes
 
-/// Which rubric a mod is judged by. Identity (`identity.rs`) decides it; the label word follows from it and the letter.
+/// Which rubric a mod is judged by. Identity (`identity.rs`) decides it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Archetype {
-    /// A new character (Echo, Echolite) or the same character in new clothes or a new body (Costume).
+    /// A new character (Echo) or the same character in new clothes or a new body (Costume).
     Character,
     /// Valve's mesh kept, new materials and textures.
     Variant,
@@ -64,27 +96,22 @@ impl Archetype {
     pub fn all() -> [Archetype; 3] {
         [Archetype::Character, Archetype::Variant, Archetype::Kit]
     }
-    /// Criteria that always count, and criteria that count once the mod touches them (a variant without UI art is
-    /// not marked down for UI it never claimed). A character counts every criterion, as the v1 rubric did.
+    /// Criteria that always count, and criteria that count once the mod touches them (a sound kit is not described
+    /// by the UI it never claimed). A character counts every criterion.
     pub fn surfaces(self) -> (&'static [&'static str], &'static [&'static str]) {
         match self {
-            Archetype::Character => (&["model", "materials", "vfx", "sound", "animation", "ui", "scenes", "voice", "craft"], &[]),
-            Archetype::Variant => (&["materials", "craft"], &["ui", "scenes"]),
-            Archetype::Kit => (&["craft"], &["vfx", "sound", "ui", "voice", "animation"]),
+            Archetype::Character => (&["model", "materials", "ui", "scenes", "vfx", "animation", "sound", "voice"], &[]),
+            Archetype::Variant => (&["materials"], &["ui", "scenes", "vfx", "animation", "sound", "voice"]),
+            Archetype::Kit => (&[], &["ui", "vfx", "animation", "sound", "voice"]),
         }
     }
 }
 
-/// Default weights per archetype; each list totals 100. The character rubric keeps v1's weights. A variant's and a
-/// kit's score is over the criteria in its scope only, so craft weighs less there: a clean pak with one sound in it is
-/// a fragment of a kit, not half of one.
-pub const WEIGHTS_CHARACTER: &[(&str, f64)] =
-    &[("model", 20.0), ("materials", 8.0), ("vfx", 16.0), ("sound", 12.0), ("animation", 10.0), ("ui", 10.0), ("scenes", 4.0), ("voice", 5.0), ("craft", 15.0)];
-pub const WEIGHTS_VARIANT: &[(&str, f64)] = &[("materials", 65.0), ("craft", 15.0), ("ui", 15.0), ("scenes", 5.0)];
-pub const WEIGHTS_KIT: &[(&str, f64)] = &[("vfx", 26.0), ("sound", 20.0), ("animation", 16.0), ("ui", 16.0), ("voice", 12.0), ("craft", 10.0)];
-
-/// Letter thresholds (score at or above), S down to D; anything lower is F.
-pub const LETTERS: [(&str, f64); 5] = [("S", 90.0), ("A", 75.0), ("B", 58.0), ("C", 40.0), ("D", 20.0)];
+/// Default weights per archetype: how much each criterion counts within its group (look, effects, sound). Only the
+/// ratios inside a group matter.
+pub const WEIGHTS_CHARACTER: &[(&str, f64)] = &[("model", 20.0), ("materials", 8.0), ("ui", 10.0), ("scenes", 4.0), ("vfx", 16.0), ("animation", 10.0), ("sound", 12.0), ("voice", 5.0)];
+pub const WEIGHTS_VARIANT: &[(&str, f64)] = &[("materials", 65.0), ("ui", 15.0), ("scenes", 5.0), ("vfx", 16.0), ("animation", 10.0), ("sound", 12.0), ("voice", 5.0)];
+pub const WEIGHTS_KIT: &[(&str, f64)] = &[("ui", 16.0), ("vfx", 26.0), ("animation", 16.0), ("sound", 20.0), ("voice", 12.0)];
 
 // ---------------------------------------------------------------------------------------------------- coverage
 
@@ -102,8 +129,6 @@ pub const ANIM_ABILITIES_FULL: f64 = 4.0;
 pub const ANIM_OTHER_FULL: f64 = 6.0;
 /// UI: the hero art is fully credited once this share of it is replaced.
 pub const UI_HERO_ART_SHARE: f64 = 0.6;
-/// A kit's scope is at least this many of VFX, sound, UI and voice, so nobody declares a tiny scope and claims S.
-pub const KIT_DEPARTMENTS: f64 = 2.0;
 
 // ---------------------------------------------------------------------------------------------------- identity
 
@@ -121,8 +146,8 @@ pub const VALVE_MESH_SHARE: f64 = 0.98;
 
 // ---------------------------------------------------------------------------------------------------- compliance
 
-/// The fair-play rules: what they find sets compliance, never the letter. M062 counts only for hitboxes (a lost bone or
-/// attachment is the mod not working, a depth matter).
+/// The fair-play rules: what they find sets compliance, never the description. M062 counts only for hitboxes (a lost
+/// bone or attachment is the mod not working: a lint error, so `broken`).
 pub const FAIR_PLAY_RULES: &[&str] = &["M062", "M063", "M081", "M082", "M124", "M129", "M130", "M131", "M140"];
 /// Never allowable: anything that makes an enemy harder to read, or removes or weakens a gameplay cue. A finding of
 /// one of these fails fair play whatever an allowance says.
@@ -139,7 +164,7 @@ pub fn is_fair_play(code: &str, message: &str) -> bool {
 }
 
 /// Whether a finding belongs to the compliance axis at all (fair play, or a fair-play check that could not run). Such
-/// findings never count against depth.
+/// findings never make a mod `broken`.
 pub fn is_compliance(code: &str, message: &str) -> bool {
     code == UNCHECKED || is_fair_play(code, message)
 }
@@ -165,12 +190,8 @@ pub struct ModFacts {
     /// UI scene map VPKs (`maps/ui/...vpk`, footprint paths) the release carries with entities of their own
     /// (`evidence::carried_scenes`). A map that is not in the pak itself is credited from here.
     pub scene_maps: BTreeSet<String>,
-    /// Lint errors that are not fair play, allowed or not: something won't load in game.
-    pub lint_errors: usize,
-    /// Lint warnings that are not fair play and carry no allowance.
-    pub lint_warnings: usize,
+    /// M061 findings without an allowance: an effect or sound of Valve's original that no longer plays.
     pub dropped_deps: usize,
-    pub orphans: usize,
     /// The hero-select pose, shop/postgame poses and deaths are legacy sequences stored inside the
     /// model itself (ANIM/ASEQ blocks), not clip files. True when the mod's model carries different
     /// animation data from Valve's.
@@ -182,39 +203,89 @@ pub struct ModFacts {
 pub struct Line {
     pub id: &'static str,
     pub name: &'static str,
+    pub group: Group,
     pub weight: f64,
     pub coverage: f64,
-    /// Whether the line counts toward the score (an applicable criterion the mod never touched does not).
+    /// Whether the line counts toward its group (an applicable criterion the mod never touched does not).
     pub counted: bool,
     pub detail: String,
+    /// What was counted, in the game's terms, for a group's line when the criterion is only partly covered.
+    pub fact: String,
     /// Most valuable missing items for this criterion, best first.
     pub missing: Vec<String>,
 }
 
-pub struct Cap {
-    pub max: &'static str,
-    pub why: String,
+impl Line {
+    /// How the group's line names this criterion: its short name when covered, Valve's when untouched, else the count.
+    fn phrase(&self) -> String {
+        if self.coverage >= 1.0 - 1e-9 {
+            self.name_short().to_string()
+        } else if self.coverage <= 0.0 {
+            format!("Valve's {}", self.name_short())
+        } else {
+            self.fact.clone()
+        }
+    }
+    fn name_short(&self) -> &'static str {
+        criterion(self.id).short
+    }
+}
+
+/// Where a group stands: the mod covers it, has begun it (`some`), or it is still Valve's (left out of the label).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    Covered,
+    Some,
+    Valve,
+}
+
+impl State {
+    pub fn id(self) -> &'static str {
+        match self {
+            State::Covered => "covered",
+            State::Some => "some",
+            State::Valve => "valve",
+        }
+    }
+}
+
+pub struct GroupLine {
+    pub group: Group,
+    /// The weighted coverage of the group's counted criteria, 0 to 1.
+    pub coverage: f64,
+    pub state: State,
+    /// What was counted, in the game's terms: `model, materials, UI art 11 of 13, scenes 1 of 3`, or `Valve's`.
+    pub counted: String,
 }
 
 pub struct Report {
     pub hero: String,
     pub archetype: Archetype,
-    pub score: f64,
-    pub letter: &'static str,
-    pub uncapped: &'static str,
-    pub caps: Vec<Cap>,
     pub lines: Vec<Line>,
+    pub groups: Vec<GroupLine>,
+    /// Plain facts about the mod working that are not lint errors (those make it `broken`): files that break the hero
+    /// on the next update, effects or sounds that no longer play.
+    pub notes: Vec<String>,
 }
 
-/// The letter a score earns under the policy's thresholds.
-pub fn letter(score: f64, p: &Policy) -> &'static str {
-    LETTERS.iter().zip(p.letters.iter()).find(|(_, min)| score >= **min - 1e-9).map(|((l, _), _)| *l).unwrap_or("F")
-}
-
-const ORDER: [&str; 6] = ["S", "A", "B", "C", "D", "F"];
-
-fn rank(l: &str) -> usize {
-    ORDER.iter().position(|x| *x == l).unwrap_or(5)
+impl Report {
+    /// The groups as the label names them: `look, some effects`, or `nothing measured` when every group is Valve's.
+    pub fn description(&self) -> String {
+        let named: Vec<String> = self
+            .groups
+            .iter()
+            .filter_map(|g| match g.state {
+                State::Covered => Some(g.group.id().to_string()),
+                State::Some => Some(format!("some {}", g.group.id())),
+                State::Valve => None,
+            })
+            .collect();
+        if named.is_empty() {
+            "nothing measured".into()
+        } else {
+            named.join(", ")
+        }
+    }
 }
 
 /// Credit for one group: full once `share` of its files are replaced (at least one).
@@ -244,22 +315,37 @@ fn pretty_group(fp: &Footprint, g: &str) -> String {
         .unwrap_or_else(|| g.to_string())
 }
 
-/// Average group credit over the given groups, and the missing groups (named) worst first.
-fn grouped_line(fp: &Footprint, m: &ModFacts, cat: Cat, share: f64, keep: impl Fn(&str) -> bool) -> (f64, String, Vec<String>) {
+/// One criterion measured per group of files: its average credit, the detail, the missing groups (named) worst
+/// first, and which groups are covered.
+struct Grouped {
+    coverage: f64,
+    detail: String,
+    missing: Vec<String>,
+    all: Vec<String>,
+    done: BTreeSet<String>,
+    /// Groups begun but not covered.
+    begun: BTreeSet<String>,
+}
+
+fn grouped_line(fp: &Footprint, m: &ModFacts, cat: Cat, share: f64, keep: impl Fn(&str) -> bool) -> Grouped {
     let gs = groups(fp, cat, keep);
     if gs.is_empty() {
-        return (1.0, "nothing to cover".into(), vec![]);
+        return Grouped { coverage: 1.0, detail: "nothing to cover".into(), missing: vec![], all: vec![], done: BTreeSet::new(), begun: BTreeSet::new() };
     }
     let mut sum = 0.0;
     let mut missing = Vec::new();
-    let mut done = 0;
+    let mut done = BTreeSet::new();
+    let mut begun = BTreeSet::new();
     for (g, (n, paths)) in &gs {
         let r = paths.iter().filter(|p| m.paths.contains(*p)).count();
         let c = group_credit(r, *n, share);
         sum += c;
         if c >= 1.0 {
-            done += 1;
+            done.insert(g.clone());
         } else {
+            if c > 0.0 {
+                begun.insert(g.clone());
+            }
             // Name the effect or sound itself before its textures and materials.
             let mut todo: Vec<&String> = paths.iter().filter(|p| !m.paths.contains(*p)).collect();
             todo.sort_by_key(|p| (!(p.ends_with(".vpcf_c") || p.ends_with(".vsnd_c")), p.len()));
@@ -267,15 +353,49 @@ fn grouped_line(fp: &Footprint, m: &ModFacts, cat: Cat, share: f64, keep: impl F
             missing.push(format!("{}: {r}/{n} replaced, e.g. {first}", pretty_group(fp, g)));
         }
     }
-    (sum / gs.len() as f64, format!("{done}/{} groups covered", gs.len()), missing)
+    Grouped { coverage: sum / gs.len() as f64, detail: format!("{}/{} groups covered", done.len(), gs.len()), missing, all: gs.into_keys().collect(), done, begun }
+}
+
+/// The groups of a kit criterion in the game's terms, the ones the mod touches: `4 of 4 abilities (2 in part), the
+/// weapon and part of movement`.
+fn kit_phrase(g: &Grouped) -> String {
+    let named = ["weapon", "melee", "movement"];
+    let abilities: Vec<&String> = g.all.iter().filter(|x| !named.contains(&x.as_str())).collect();
+    let mut parts = Vec::new();
+    if !abilities.is_empty() {
+        let done = abilities.iter().filter(|a| g.done.contains(**a)).count();
+        let begun = abilities.iter().filter(|a| g.begun.contains(**a)).count();
+        let part = if begun > 0 { format!(" ({begun} in part)") } else { String::new() };
+        parts.push(format!("{} of {} abilit{}{part}", done + begun, abilities.len(), if abilities.len() == 1 { "y" } else { "ies" }));
+    }
+    for x in named {
+        let name = if x == "weapon" { "the weapon" } else { x };
+        if g.done.contains(x) {
+            parts.push(name.to_string());
+        } else if g.begun.contains(x) {
+            parts.push(format!("part of {name}"));
+        }
+    }
+    match parts.len() {
+        0 => "none of its parts".into(),
+        1 => parts.remove(0),
+        _ => {
+            let last = parts.pop().unwrap_or_default();
+            format!("{} and {last}", parts.join(", "))
+        }
+    }
+}
+
+fn plural(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
 }
 
 /// Whether the mod touches anything of this criterion at all (an applicable criterion counts once it does).
-fn touched(id: &str, coverage: f64) -> bool {
-    id == "craft" || coverage > 0.0
+fn touched(coverage: f64) -> bool {
+    coverage > 0.0
 }
 
-/// Every criterion's coverage for this mod against the hero's footprint, before weighting.
+/// Every criterion's coverage for this mod against the hero's footprint.
 fn lines(fp: &Footprint, m: &ModFacts, archetype: Archetype, p: &Policy) -> Vec<Line> {
     let cv = &p.coverage;
     let token = |path: &str| fp.tokens.iter().any(|t| crate::footprint::has_token(path, t));
@@ -287,14 +407,15 @@ fn lines(fp: &Footprint, m: &ModFacts, archetype: Archetype, p: &Policy) -> Vec<
         .chain(["weapon".to_string()])
         .collect();
     let mut out = Vec::new();
-    let mut push = |id: &'static str, coverage: f64, detail: String, missing: Vec<String>| {
-        out.push(Line { id, name: criterion(id).name, weight: 0.0, coverage: coverage.clamp(0.0, 1.0), counted: true, detail, missing });
+    let mut push = |id: &'static str, coverage: f64, detail: String, fact: String, missing: Vec<String>| {
+        let c = criterion(id);
+        out.push(Line { id, name: c.name, group: c.group, weight: 0.0, coverage: coverage.clamp(0.0, 1.0), counted: true, detail, fact, missing });
     };
 
     // Model
     let hero_model = fp.by_cat(Cat::Model).find(|i| i.group == "core").map(|i| i.path.clone());
     let has_model = hero_model.as_ref().is_some_and(|p| m.paths.contains(p));
-    push("model", if has_model { 1.0 } else { 0.0 }, if has_model { "replaced".into() } else { "not replaced".into() }, if has_model { vec![] } else { hero_model.into_iter().collect() });
+    push("model", if has_model { 1.0 } else { 0.0 }, if has_model { "replaced".into() } else { "not replaced".into() }, String::new(), if has_model { vec![] } else { hero_model.into_iter().collect() });
 
     // Materials. A variant is judged slot by slot: every visible material slot of Valve's hero model. Everything else
     // counts the hero's own materials: named by its path, or used by its own compiled model (a mod's materials may
@@ -303,7 +424,7 @@ fn lines(fp: &Footprint, m: &ModFacts, archetype: Archetype, p: &Policy) -> Vec<
         (Some((covered, missing)), Archetype::Variant) => {
             let total = covered.len() + missing.len();
             let c = if total == 0 { 0.0 } else { covered.len() as f64 / total as f64 };
-            push("materials", c, format!("{}/{total} visible material slots of the hero covered", covered.len()), missing.clone());
+            push("materials", c, format!("{}/{total} visible material slots of the hero covered", covered.len()), format!("materials on {} of {total} visible slots", covered.len()), missing.clone());
         }
         _ => {
             let mats = m.paths.iter().filter(|q| q.ends_with(".vmat_c") && (token(q) || m.model_materials.contains(*q))).count();
@@ -312,53 +433,23 @@ fn lines(fp: &Footprint, m: &ModFacts, archetype: Archetype, p: &Policy) -> Vec<
                 "materials",
                 mats as f64 / full,
                 format!("{mats} hero material(s), {} used by the hero's model", m.model_materials.len()),
+                plural(mats, "hero material", "hero materials"),
                 if mats as f64 >= full { vec![] } else { vec![format!("ship the outfit's own materials ({full}+ for full credit)")] },
             );
         }
     }
-
-    // Ability VFX, per signature ability + weapon.
-    let (c, d, miss) = grouped_line(fp, m, Cat::AbilityVfx, cv.group_share, |g| signature.contains(g));
-    push("vfx", c, d, miss);
-
-    // Kit sound: signature abilities, weapon, melee, movement. New sound files count too.
-    let (gc, gd, gmiss) = grouped_line(fp, m, Cat::Sound, cv.group_share, |g| signature.contains(g) || g == "melee" || g == "movement");
-    let new_sounds = m.paths.iter().filter(|q| q.ends_with(".vsnd_c") && fp.cat_of(q).is_none() && token(q)).count();
-    let events_replaced = m.paths.iter().any(|q| q.starts_with("soundevents/hero/") && token(q));
-    let custom = if events_replaced { (new_sounds as f64 / cv.new_sounds_full).min(1.0) * 0.85 } else { 0.0 };
-    push("sound", gc.max(custom), format!("{gd}; {new_sounds} new sound file(s){}", if events_replaced { ", events rewired" } else { "" }), gmiss);
-
-    // Animation: UI clips weigh most.
-    let clips = |g: &str| {
-        let all: Vec<&String> = fp.by_cat(Cat::Animation).filter(|i| i.group == g).map(|i| &i.path).collect();
-        let r = all.iter().filter(|q| m.paths.contains(**q)).count();
-        (r, all.len())
-    };
-    let (ui_r, ui_n) = clips("clips:ui");
-    let (ab_r, ab_n) = clips("clips:abilities");
-    let other_r: usize = ["clips:melee", "clips:reactions", "clips:locomotion", "clips:aim"].iter().map(|g| clips(g).0).sum();
-    let ui_r = ui_r + if m.model_anim_changed { 2 } else { 0 };
-    let anim = 0.5 * (ui_r as f64 / cv.anim_ui_full).min(1.0) + 0.3 * (ab_r as f64 / cv.anim_abilities_full).min(1.0) + 0.2 * (other_r as f64 / cv.anim_other_full).min(1.0);
-    let mut anim_missing = vec![];
-    if (ui_r as f64) < cv.anim_ui_full {
-        anim_missing.push(format!("hero-select/showcase clips: {ui_r}/{ui_n} replaced ({} for full credit)", cv.anim_ui_full));
-    }
-    if (ab_r as f64) < cv.anim_abilities_full {
-        anim_missing.push(format!("ability clips: {ab_r}/{ab_n} replaced ({} for full credit)", cv.anim_abilities_full));
-    }
-    if (other_r as f64) < cv.anim_other_full {
-        anim_missing.push(format!("idle/locomotion/melee/reaction clips: {other_r} replaced ({} for full credit)", cv.anim_other_full));
-    }
-    push("animation", anim, format!("ui {ui_r}{}, abilities {ab_r}, other {other_r}", if m.model_anim_changed { " (incl. in-model select/death poses)" } else { "" }), anim_missing);
 
     // UI art: hero art (70%) + ability icons (30%).
     let hero_art: Vec<&String> = fp.by_cat(Cat::UiArt).filter(|i| i.group == "ui").map(|i| &i.path).collect();
     let icons: Vec<&String> = fp.by_cat(Cat::UiArt).filter(|i| i.group != "ui").map(|i| &i.path).collect();
     let ha = hero_art.iter().filter(|q| m.paths.contains(**q)).count();
     let ic = icons.iter().filter(|q| m.paths.contains(**q)).count();
-    let ui = 0.7 * ((ha as f64) / (hero_art.len().max(1) as f64 * cv.ui_hero_art_share)).min(1.0) + 0.3 * ((ic as f64) / (icons.len().max(1) as f64)).min(1.0);
+    // a hero with no ability icons (or no hero art) in its footprint is judged on the part it has
+    let parts = [(0.7, hero_art.len(), (ha as f64) / (hero_art.len() as f64 * cv.ui_hero_art_share)), (0.3, icons.len(), (ic as f64) / (icons.len() as f64))];
+    let (got, of) = parts.iter().filter(|p| p.1 > 0).fold((0.0, 0.0), |(g, o), &(w, _, c)| (g + w * c.min(1.0), o + w));
+    let ui = if of > 0.0 { got / of } else { 0.0 };
     let ui_missing: Vec<String> = hero_art.iter().chain(icons.iter()).filter(|q| !m.paths.contains(**q)).map(|q| q.to_string()).collect();
-    push("ui", ui, format!("hero art {ha}/{}, ability icons {ic}/{}", hero_art.len(), icons.len()), ui_missing);
+    push("ui", ui, format!("hero art {ha}/{}, ability icons {ic}/{}", hero_art.len(), icons.len()), format!("UI art {} of {}", ha + ic, hero_art.len() + icons.len()), ui_missing);
 
     // Scenes
     let scenes: Vec<&String> = fp.by_cat(Cat::Scene).map(|i| &i.path).collect();
@@ -374,42 +465,71 @@ fn lines(fp: &Footprint, m: &ModFacts, archetype: Archetype, p: &Policy) -> Vec<
         "scenes",
         if scenes.is_empty() { 1.0 } else { sc as f64 / scenes.len() as f64 },
         format!("{sc}/{}", scenes.len()),
+        format!("scenes {sc} of {}", scenes.len()),
         scenes.iter().filter(|s| !covered.contains(s)).map(|s| s.to_string()).collect(),
+    );
+
+    // Ability VFX, per signature ability + weapon.
+    let v = grouped_line(fp, m, Cat::AbilityVfx, cv.group_share, |g| signature.contains(g));
+    push("vfx", v.coverage, v.detail.clone(), format!("VFX for {}", kit_phrase(&v)), v.missing.clone());
+
+    // Animation: UI clips weigh most.
+    let clips = |g: &str| {
+        let all: Vec<&String> = fp.by_cat(Cat::Animation).filter(|i| i.group == g).map(|i| &i.path).collect();
+        let r = all.iter().filter(|q| m.paths.contains(**q)).count();
+        (r, all.len())
+    };
+    let (ui_r, ui_n) = clips("clips:ui");
+    let (ab_r, ab_n) = clips("clips:abilities");
+    let others = ["clips:melee", "clips:reactions", "clips:locomotion", "clips:aim"].map(clips);
+    let (other_r, other_n): (usize, usize) = (others.iter().map(|c| c.0).sum(), others.iter().map(|c| c.1).sum());
+    let all_clips = fp.by_cat(Cat::Animation).count();
+    let all_r = fp.by_cat(Cat::Animation).filter(|i| m.paths.contains(&i.path)).count();
+    // the select and death poses inside the model always exist, and count as two hero-select clips
+    let ui_r = ui_r + if m.model_anim_changed { 2 } else { 0 };
+    // A band is full at its target or at every clip the hero has in it, whichever is fewer; a hero with no clips in
+    // a band is not judged on it.
+    let bands = [(0.5, ui_r, ui_n + 2, cv.anim_ui_full), (0.3, ab_r, ab_n, cv.anim_abilities_full), (0.2, other_r, other_n, cv.anim_other_full)];
+    let (got, of) = bands.iter().filter(|b| b.2 > 0).fold((0.0, 0.0), |(g, o), &(w, r, n, full)| (g + w * (r as f64 / full.min(n as f64)).min(1.0), o + w));
+    let anim = if of > 0.0 { got / of } else { 0.0 };
+    let mut anim_missing = vec![];
+    for (what, (_, r, n, full)) in ["hero-select/showcase clips (the in-model poses count as two)", "ability clips", "idle/locomotion/melee/reaction clips"].iter().zip(bands) {
+        let need = full.min(n as f64);
+        if n > 0 && (r as f64) < need {
+            anim_missing.push(format!("{what}: {r}/{n} replaced ({need} for full credit)"));
+        }
+    }
+    push(
+        "animation",
+        anim,
+        format!("ui {ui_r}{}, abilities {ab_r}, other {other_r}", if m.model_anim_changed { " (incl. in-model select/death poses)" } else { "" }),
+        format!("{all_r} of {all_clips} clips{}", if m.model_anim_changed { " and the in-model poses" } else { "" }),
+        anim_missing,
+    );
+
+    // Kit sound: signature abilities, weapon, melee, movement. New sound files count too.
+    let s = grouped_line(fp, m, Cat::Sound, cv.group_share, |g| signature.contains(g) || g == "melee" || g == "movement");
+    let new_sounds = m.paths.iter().filter(|q| q.ends_with(".vsnd_c") && fp.cat_of(q).is_none() && token(q)).count();
+    let events_replaced = m.paths.iter().any(|q| q.starts_with("soundevents/hero/") && token(q));
+    let custom = if events_replaced { (new_sounds as f64 / cv.new_sounds_full).min(1.0) * 0.85 } else { 0.0 };
+    push(
+        "sound",
+        s.coverage.max(custom),
+        format!("{}; {new_sounds} new sound file(s){}", s.detail, if events_replaced { ", events rewired" } else { "" }),
+        format!("sound for {}{}", kit_phrase(&s), if events_replaced && new_sounds > 0 { format!(" ({})", plural(new_sounds, "new sound", "new sounds")) } else { String::new() }),
+        s.missing,
     );
 
     // Voice & stingers: any VO-side treatment.
     let vo = m.paths.iter().filter(|q| fp.cat_of(q) == Some(Cat::Voice)).count();
+    let vo_all = fp.by_cat(Cat::Voice).count();
     push(
         "voice",
         vo as f64 / cv.voice_full,
         format!("{vo} voice file(s) treated"),
+        format!("voice {vo} of {vo_all} lines"),
         if vo as f64 >= cv.voice_full { vec![] } else { vec!["stingers on kill/select/emote lines (vo:kill, vo:select, vo:emote)".into()] },
     );
-
-    // Craft
-    let protected = protected(fp, m);
-    let craft = (if m.lint_errors == 0 { 6.0 } else { 0.0 })
-        + (if m.lint_warnings == 0 { 2.0 } else { 0.0 })
-        + (if m.dropped_deps == 0 { 3.0 } else { 0.0 })
-        + (if protected.is_empty() { 2.0 } else { 0.0 })
-        + (if m.orphans == 0 { 2.0 } else { 0.0 });
-    let mut craft_missing = vec![];
-    if m.lint_errors > 0 {
-        craft_missing.push(format!("{} lint error(s)", m.lint_errors));
-    }
-    if m.lint_warnings > 0 {
-        craft_missing.push(format!("{} lint warning(s)", m.lint_warnings));
-    }
-    if m.dropped_deps > 0 {
-        craft_missing.push(format!("{} dropped dependency(ies) (M061)", m.dropped_deps));
-    }
-    for q in &protected {
-        craft_missing.push(format!("ships protected file {q}"));
-    }
-    if m.orphans > 0 {
-        craft_missing.push(format!("{} orphan file(s) (M031)", m.orphans));
-    }
-    push("craft", craft / 15.0, format!("{craft:.0}/15"), craft_missing);
 
     // Weights and scope for the archetype.
     let (required, applicable) = archetype.surfaces();
@@ -417,73 +537,52 @@ fn lines(fp: &Footprint, m: &ModFacts, archetype: Archetype, p: &Policy) -> Vec<
     out.retain(|l| required.contains(&l.id) || applicable.contains(&l.id));
     for l in &mut out {
         l.weight = weights.iter().find(|(id, _)| id == l.id).map_or(0.0, |(_, w)| *w);
-        l.counted = required.contains(&l.id) || touched(l.id, l.coverage);
-    }
-    // A kit's scope is never smaller than `kit_departments` of VFX, sound, UI and voice: the untouched ones with the
-    // most weight join it at zero coverage.
-    if archetype == Archetype::Kit {
-        let depts = ["vfx", "sound", "ui", "voice"];
-        let need = cv.kit_departments.round() as usize;
-        let mut have = out.iter().filter(|l| depts.contains(&l.id) && l.counted).count();
-        let mut idle: Vec<usize> = (0..out.len()).filter(|&i| depts.contains(&out[i].id) && !out[i].counted).collect();
-        idle.sort_by(|&a, &b| out[b].weight.partial_cmp(&out[a].weight).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(&b)));
-        for i in idle {
-            if have >= need {
-                break;
-            }
-            out[i].counted = true;
-            out[i].missing.insert(0, format!("a kit covers at least {need} of VFX, sound, UI and voice"));
-            have += 1;
-        }
+        l.counted = required.contains(&l.id) || touched(l.coverage);
     }
     out
 }
 
+/// Files a mod must never ship: they replace the hero's real skeleton, graph or game data.
 fn protected<'a>(fp: &Footprint, m: &'a ModFacts) -> Vec<&'a String> {
     m.paths.iter().filter(|q| fp.cat_of(q).is_some_and(|c| c.protected()) || q.ends_with(".vnmskel_c") || q.ends_with(".vnmgraph_c") || q.ends_with(".vdata_c")).collect()
 }
 
-/// The depth grade of a mod judged as `archetype` against the hero's footprint.
+/// A group's weighted coverage, its state under the policy's lines, and what was counted.
+fn group_line(group: Group, lines: &[Line], p: &Policy) -> GroupLine {
+    let parts: Vec<&Line> = lines.iter().filter(|l| l.group == group && l.counted).collect();
+    let total: f64 = parts.iter().map(|l| l.weight).sum();
+    let coverage = if total > 0.0 { parts.iter().map(|l| l.weight * l.coverage).sum::<f64>() / total } else { 0.0 };
+    let state = if coverage <= 0.0 {
+        State::Valve
+    } else if coverage >= p.groups.covered - 1e-9 {
+        State::Covered
+    } else if coverage >= p.groups.touched - 1e-9 {
+        State::Some
+    } else {
+        State::Valve
+    };
+    let counted = if coverage <= 0.0 {
+        "Valve's".to_string()
+    } else {
+        let said: Vec<String> = parts.iter().map(|l| l.phrase()).collect();
+        said.join(if said.iter().any(|s| s.contains(',')) { "; " } else { ", " })
+    };
+    GroupLine { group, coverage, state, counted }
+}
+
+/// What a mod judged as `archetype` makes its own of the hero, against the hero's footprint.
 pub fn grade(fp: &Footprint, m: &ModFacts, archetype: Archetype, p: &Policy) -> Report {
     let lines = lines(fp, m, archetype, p);
-    let total: f64 = lines.iter().filter(|l| l.counted).map(|l| l.weight).sum();
-    let got: f64 = lines.iter().filter(|l| l.counted).map(|l| l.weight * l.coverage).sum();
-    let score = if total > 0.0 { 100.0 * got / total } else { 0.0 };
-    let uncapped = letter(score, p);
-    // Caps: about the mod working in game, never about fair play (that is compliance) or taste.
-    let mut caps = Vec::new();
-    if !protected(fp, m).is_empty() {
-        caps.push(Cap { max: "D", why: "ships skeleton/anim-graph/game-data files; the hero breaks on the next update".into() });
-    }
-    if m.lint_errors > 0 {
-        caps.push(Cap { max: "C", why: "lint errors mean something won't load in game".into() });
+    let groups = Group::all().into_iter().map(|g| group_line(g, &lines, p)).collect();
+    let mut notes = Vec::new();
+    let prot = protected(fp, m);
+    if let Some(first) = prot.first() {
+        notes.push(format!("ships {}, which replace the hero's own and break it on the next update (e.g. {first})", plural(prot.len(), "skeleton, anim graph or game data file", "skeleton, anim graph or game data files")));
     }
     if m.dropped_deps > 0 {
-        caps.push(Cap { max: "B", why: "dropped dependencies silently remove effects or sounds".into() });
+        notes.push(format!("{} (M061): effects or sounds of Valve's originals that no longer play", plural(m.dropped_deps, "dropped dependency", "dropped dependencies")));
     }
-    // Minimum coverage for S: nobody declares a tiny scope and claims S.
-    match archetype {
-        Archetype::Variant => {
-            if let Some(l) = lines.iter().find(|l| l.id == "materials").filter(|l| l.coverage < 1.0 - 1e-9) {
-                caps.push(Cap { max: "A", why: format!("an S variant covers every visible material slot of the hero ({})", l.detail) });
-            }
-        }
-        Archetype::Kit => {
-            let depts = ["vfx", "sound", "ui", "voice"];
-            let need = p.coverage.kit_departments.round() as usize;
-            let touched_depts = lines.iter().filter(|l| depts.contains(&l.id) && touched(l.id, l.coverage)).count();
-            if touched_depts < need {
-                caps.push(Cap { max: "A", why: format!("an S kit covers at least {need} of VFX, sound, UI and voice ({touched_depts} touched)") });
-            }
-            let partial: Vec<&str> = lines.iter().filter(|l| l.id != "craft" && l.counted && touched(l.id, l.coverage) && l.coverage < 1.0 - 1e-9).map(|l| l.name).collect();
-            if !partial.is_empty() {
-                caps.push(Cap { max: "A", why: format!("an S kit covers every ability, the weapon and movement in each department it touches (not yet: {})", partial.join(", ")) });
-            }
-        }
-        Archetype::Character => {}
-    }
-    let worst = caps.iter().map(|c| rank(c.max)).max().unwrap_or(0).max(rank(uncapped));
-    Report { hero: fp.display.clone(), archetype, score, letter: ORDER[worst], uncapped, caps, lines }
+    Report { hero: fp.display.clone(), archetype, lines, groups, notes }
 }
 
 #[cfg(test)]
@@ -520,20 +619,27 @@ mod tests {
         r.lines.iter().find(|l| l.id == id).unwrap()
     }
 
+    fn group(r: &Report, g: Group) -> &GroupLine {
+        r.groups.iter().find(|x| x.group == g).unwrap()
+    }
+
+    const MATS: [&str; 3] = ["models/heroes_wip/lash/materials/a.vmat_c", "models/heroes_wip/lash/materials/b.vmat_c", "models/heroes_wip/lash/materials/c.vmat_c"];
+
     #[test]
-    fn letters_cover_the_range_and_every_archetype_totals_100() {
+    fn every_criterion_has_a_group_and_every_weight_a_criterion_it_judges() {
         let p = policy();
-        assert_eq!(letter(100.0, &p), "S");
-        assert_eq!(letter(90.0, &p), "S");
-        assert_eq!(letter(89.99, &p), "A");
-        assert_eq!(letter(80.0, &p), "A");
-        assert_eq!(letter(0.0, &p), "F");
+        for g in Group::all() {
+            assert!(CRITERIA.iter().any(|c| c.group == g), "{} has no criterion", g.id());
+        }
+        // the criteria are in label order: look, then effects, then sound
+        assert!(CRITERIA.windows(2).all(|w| w[0].group <= w[1].group));
         for a in Archetype::all() {
-            let w: f64 = p.weights(a).iter().map(|(_, w)| w).sum();
-            assert!((w - 100.0).abs() < 1e-9, "{}: weights must total 100, got {w}", a.id());
             let (req, app) = a.surfaces();
             for (id, _) in p.weights(a) {
                 assert!(req.contains(&id.as_str()) || app.contains(&id.as_str()), "{}: weight for {id}, which it does not judge", a.id());
+            }
+            for id in req.iter().chain(app) {
+                assert!(p.weights(a).iter().any(|(w, _)| w == id), "{}: no weight for {id}", a.id());
             }
         }
     }
@@ -546,23 +652,30 @@ mod tests {
     }
 
     #[test]
-    fn model_only_skin_grades_as_a_skin() {
-        let r = grade(&fp(), &facts(&["models/heroes_wip/lash/lash.vmdl_c", "models/heroes_wip/lash/materials/a.vmat_c", "models/heroes_wip/lash/materials/b.vmat_c", "models/heroes_wip/lash/materials/c.vmat_c"]), Archetype::Character, &policy());
-        assert!(r.score >= 40.0 && r.score < 58.0, "score {}", r.score);
-        assert_eq!(r.letter, "C");
+    fn a_model_and_its_materials_are_some_look_and_the_rest_is_valve_s() {
+        let mut paths = vec!["models/heroes_wip/lash/lash.vmdl_c"];
+        paths.extend(MATS);
+        let r = grade(&fp(), &facts(&paths), Archetype::Character, &policy());
+        assert_eq!(r.description(), "some look");
+        let look = group(&r, Group::Look);
+        assert_eq!((look.state, look.counted.as_str()), (State::Some, "model, materials, Valve's UI art, Valve's scenes"));
+        assert_eq!(group(&r, Group::Effects).counted, "Valve's");
+        assert!(r.notes.is_empty());
     }
 
     #[test]
-    fn shipping_the_skeleton_caps_at_d() {
+    fn shipping_the_skeleton_is_a_note_not_a_lower_description() {
         let r = grade(&fp(), &facts(&["models/heroes_wip/lash/lash.vmdl_c", "models/heroes_wip/lash/lash.vnmskel_c"]), Archetype::Character, &policy());
-        assert_eq!(r.letter, "D");
-        assert!(r.caps.iter().any(|c| c.why.contains("skeleton")));
+        assert_eq!(r.description(), "some look");
+        assert!(r.notes[0].starts_with("ships 1 skeleton, anim graph or game data file") && r.notes[0].contains("lash.vnmskel_c"), "{:?}", r.notes);
+        let mut f = facts(&["models/heroes_wip/lash/lash.vmdl_c"]);
+        f.dropped_deps = 3;
+        assert_eq!(grade(&fp(), &f, Archetype::Character, &policy()).notes, vec!["3 dropped dependencies (M061): effects or sounds of Valve's originals that no longer play".to_string()]);
     }
 
     fn everything() -> (Footprint, ModFacts) {
         let mut p: Vec<String> = fp().items.iter().filter(|i| !i.cat.protected()).map(|i| i.path.clone()).collect();
-        p.extend(["models/heroes_wip/lash/materials/a.vmat_c", "models/heroes_wip/lash/materials/b.vmat_c", "models/heroes_wip/lash/materials/c.vmat_c"].map(String::from));
-        p.extend((0..6).map(|i| format!("models/heroes_staging/lash_v2/clips/extra_{i}.vnmclip_c")));
+        p.extend(MATS.map(String::from));
         let mut f = ModFacts { paths: p.into_iter().collect(), ..Default::default() };
         f.paths.extend((0..40).map(|i| format!("sounds/vo/lash/lash_kill_{i}.vsnd_c")));
         let mut fpx = fp();
@@ -578,36 +691,49 @@ mod tests {
         }
         for i in 0..6 {
             let p = format!("models/heroes_staging/lash_v2/clips/extra_{i}.vnmclip_c");
-            fpx.items.push(Item { cat: Cat::Animation, group: "clips:locomotion".into(), path: p });
+            fpx.items.push(Item { cat: Cat::Animation, group: "clips:locomotion".into(), path: p.clone() });
+            f.paths.insert(p);
         }
         (fpx, f)
     }
 
     #[test]
-    fn everything_clean_is_s() {
+    fn everything_is_look_effects_sound_in_plain_names() {
         let (fpx, f) = everything();
         let r = grade(&fpx, &f, Archetype::Character, &policy());
-        assert_eq!(r.letter, "S", "score {}", r.score);
-        assert!(r.caps.is_empty());
+        assert_eq!(r.description(), "look, effects, sound");
+        let said: Vec<&str> = r.groups.iter().map(|g| g.counted.as_str()).collect();
+        assert_eq!(said, ["model, materials, UI art, scenes", "ability VFX, animation", "kit sound, voice"]);
     }
 
     #[test]
-    fn a_policy_moves_the_letter_lines_and_the_weights() {
+    fn a_partial_group_says_what_was_counted_in_the_game_s_terms() {
         let (fpx, mut f) = everything();
-        f.lint_warnings = 1; // craft 13/15
+        // every flog particle and most clips back to Valve's, and a quarter of the voice
+        f.paths.retain(|p| !p.contains("flog_") && !p.contains("extra_") && !p.contains("ability_"));
+        f.paths.retain(|p| p.strip_prefix("sounds/vo/lash/lash_kill_").and_then(|n| n.strip_suffix(".vsnd_c")).is_none_or(|n| n.parse::<usize>().unwrap() < 10));
         let r = grade(&fpx, &f, Archetype::Character, &policy());
-        assert!(r.score < 100.0 && r.letter == "S", "{} {}", r.score, r.letter);
-        // the S line just under the score, at it, and just over it
-        let at = r.score;
-        for (s, want) in [(at - 0.01, "S"), (at, "S"), (at + 0.01, "A")] {
-            let mut p = policy();
-            p.letters[0] = s;
-            assert_eq!(grade(&fpx, &f, Archetype::Character, &p).letter, want, "S at {s}");
-        }
-        // moving weight onto craft lowers the same mod's score
-        let mut p = policy();
-        p.weights_character = vec![("model".into(), 10.0), ("materials".into(), 8.0), ("vfx".into(), 16.0), ("sound".into(), 12.0), ("animation".into(), 10.0), ("ui".into(), 10.0), ("scenes".into(), 4.0), ("voice".into(), 5.0), ("craft".into(), 25.0)];
-        assert!(grade(&fpx, &f, Archetype::Character, &p).score < r.score);
+        let effects = group(&r, Group::Effects);
+        assert_eq!(effects.counted, "VFX for 1 of 2 abilities, 2 of 12 clips");
+        assert_eq!(effects.state, State::Some, "{}", effects.coverage);
+        assert_eq!(group(&r, Group::Sound).counted, "kit sound, voice 10 of 40 lines");
+        assert_eq!(r.description(), "look, some effects, some sound");
+    }
+
+    #[test]
+    fn the_two_lines_are_the_policy_s() {
+        let (fpx, mut f) = everything();
+        f.paths.retain(|p| !p.contains("flog_") && !p.contains("extra_") && !p.contains("ability_"));
+        let r = grade(&fpx, &f, Archetype::Character, &policy());
+        let c = group(&r, Group::Effects).coverage;
+        assert!(c > 0.1 && c < COVERED, "{c}");
+        let at = |covered: f64, touched: f64| {
+            let p = crate::policy::parse(&format!("[groups]\ncovered = {covered}\ntouched = {touched}\n"), "p").unwrap();
+            grade(&fpx, &f, Archetype::Character, &p).groups[1].state
+        };
+        assert_eq!(at(c, 0.0), State::Covered, "a group is named at the line");
+        assert_eq!(at(c + 0.01, 0.0), State::Some);
+        assert_eq!(at(c + 0.02, c + 0.01), State::Valve, "under the touched line it is left out");
     }
 
     #[test]
@@ -622,6 +748,7 @@ mod tests {
         assert_eq!(line(&g(&f), "materials").coverage, 1.0, "{}", line(&g(&f), "materials").detail);
         f.model_materials.remove(shipped[2]);
         assert!((line(&g(&f), "materials").coverage - 2.0 / 3.0).abs() < 1e-9);
+        assert_eq!(line(&g(&f), "materials").phrase(), "2 hero materials");
         // a stray entry that is not among the mod's paths is not counted
         f.model_materials.insert("materials/outfit/valves_own.vmat_c".into());
         assert!((line(&g(&f), "materials").coverage - 2.0 / 3.0).abs() < 1e-9);
@@ -642,56 +769,48 @@ mod tests {
     }
 
     #[test]
-    fn lint_errors_cap_depth_and_fair_play_is_never_a_depth_matter() {
-        let (fpx, mut f) = everything();
-        f.lint_errors = 1;
-        let r = grade(&fpx, &f, Archetype::Character, &policy());
-        assert_eq!(r.letter, "C");
-        assert!(r.caps.iter().any(|c| c.why.contains("won't load")));
-        // which findings are compliance, not depth
+    fn which_findings_are_fair_play() {
         assert!(is_fair_play("M129", "x") && is_fair_play("M140", "x") && is_fair_play("M062", "hitbox 'default/head' changed"));
         assert!(!is_fair_play("M062", "bone 'pelvis' missing"), "a lost bone is the mod not working");
         assert!(!is_fair_play("M061", "x") && is_compliance("M144", "x"));
     }
 
     #[test]
-    fn one_replaced_sound_is_not_an_s_kit() {
-        let f = facts(&["sounds/abilities/lash/strike_0.vsnd_c"]);
-        let r = grade(&fp(), &f, Archetype::Kit, &policy());
-        assert_ne!(r.letter, "S", "score {}", r.score);
-        assert!(r.score < 40.0, "a single sound is a fragment of a kit: {}", r.score);
-        assert!(r.caps.iter().any(|c| c.why.contains("at least 2 of VFX, sound, UI and voice")), "{:?}", r.caps.iter().map(|c| &c.why).collect::<Vec<_>>());
-        // the scope was padded with the heaviest untouched department, at zero
-        assert!(line(&r, "vfx").counted && line(&r, "vfx").coverage == 0.0);
-        assert!(!line(&r, "animation").counted, "an applicable department the kit never touched is not counted");
-    }
-
-    #[test]
-    fn a_complete_kit_in_two_departments_is_s_and_a_partial_one_is_not() {
+    fn a_kit_is_described_by_what_it_touches() {
+        // one replaced sound: some sound, nothing else
+        let r = grade(&fp(), &facts(&["sounds/abilities/lash/strike_0.vsnd_c"]), Archetype::Kit, &policy());
+        assert_eq!(r.description(), "some sound");
+        assert_eq!(group(&r, Group::Sound).counted, "sound for 1 of 1 ability (1 in part)");
+        assert!(!line(&r, "vfx").counted && !line(&r, "voice").counted, "a kit is not described by what it never touched");
+        // every particle and sound of the kit
         let fpx = fp();
         let mut paths: Vec<String> = fpx.items.iter().filter(|i| matches!(i.cat, Cat::AbilityVfx | Cat::Sound)).map(|i| i.path.clone()).collect();
         let full = ModFacts { paths: paths.iter().cloned().collect(), ..Default::default() };
         let r = grade(&fpx, &full, Archetype::Kit, &policy());
-        assert_eq!((r.letter, r.caps.len()), ("S", 0), "score {}", r.score);
-        // drop every flog particle: VFX is touched but no longer complete, so S is out of reach whatever the score
+        assert_eq!(r.description(), "effects, sound");
+        // drop every flog particle: half the abilities' effects
         paths.retain(|p| !p.contains("flog_"));
         let partial = ModFacts { paths: paths.into_iter().collect(), ..Default::default() };
         let r = grade(&fpx, &partial, Archetype::Kit, &policy());
-        assert_ne!(r.letter, "S");
-        assert!(r.caps.iter().any(|c| c.max == "A" && c.why.contains("Ability VFX")), "{:?}", r.caps.iter().map(|c| &c.why).collect::<Vec<_>>());
+        assert_eq!(r.description(), "some effects, sound");
+        // nothing of the hero's own measured
+        let r = grade(&fpx, &facts(&["sounds/lash/new_whip.vsnd_c"]), Archetype::Kit, &policy());
+        assert_eq!(r.description(), "nothing measured");
     }
 
     #[test]
-    fn a_variant_needs_every_visible_slot_for_s() {
+    fn a_variant_is_described_slot_by_slot_and_by_whatever_else_it_touches() {
         let slots = |covered: &[&str], missing: &[&str]| Some((covered.iter().map(|s| s.to_string()).collect(), missing.iter().map(|s| s.to_string()).collect()));
         let mut f = facts(&["models/heroes_wip/lash/materials/lash_body.vmat_c", "models/heroes_wip/lash/materials/lash_gear.vmat_c"]);
         f.material_slots = slots(&["lash_body", "lash_gear"], &[]);
         let r = grade(&fp(), &f, Archetype::Variant, &policy());
-        assert_eq!(r.letter, "S", "score {}", r.score);
-        assert!(!line(&r, "ui").counted && !line(&r, "scenes").counted, "a variant is not marked down for UI it never claimed");
-        f.material_slots = slots(&["lash_body", "lash_gear", "lash_glove"], &["lash_bg"]);
+        assert_eq!(r.description(), "look");
+        assert!(!line(&r, "ui").counted && !line(&r, "scenes").counted, "a variant is not described by UI it never claimed");
+        f.material_slots = slots(&["lash_body"], &["lash_bg", "lash_glove"]);
         let r = grade(&fp(), &f, Archetype::Variant, &policy());
-        assert_ne!(r.letter, "S");
-        assert!(r.caps.iter().any(|c| c.why.contains("every visible material slot")));
+        assert_eq!((r.description().as_str(), group(&r, Group::Look).counted.as_str()), ("some look", "materials on 1 of 3 visible slots"));
+        // a recolour that also reskins an ability's particles says so
+        f.paths.extend((0..2).map(|i| format!("particles/abilities/lash/strike_{i}.vpcf_c")));
+        assert_eq!(grade(&fp(), &f, Archetype::Variant, &policy()).description(), "some look, some effects");
     }
 }

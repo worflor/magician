@@ -1,15 +1,17 @@
 //! The grade record: a measured claim about separate properties of a mod, and the label that projects it.
 //!
 //! ```text
-//! <letter> <word>[ · NSFR | · FP?][ · stale(<last proven build>) | · unproven]
-//! not graded (<kind>)[ · NSFR | · FP?][ · stale(<build>) | · unproven]
+//! <Kind> (<groups>)[ · broken][ · NSFR | · FP?][ · stale(<last proven build>) | · unproven]
+//! not graded (<kind>)[ · broken][ · NSFR | · FP?][ · stale(<build>) | · unproven]
 //! ```
 //!
-//! Three axes that never touch each other: **depth** (the letter, within the archetype), **compliance** (fair play:
-//! pass, fail `NSFR`, unknown `FP?`) and **freshness** (proven on the target build, or the last build it was). The
-//! **release gate** is separate from the label: it lists what stops automated packaging or publishing. Whoever reads
-//! it years later must be able to explain any grade from the record alone, so every criterion, signal, rule, allowance,
-//! build and blocker behind the label is in it, with the policy's fingerprint and the toolchain that judged it.
+//! The description says what the mod is and what it makes its own: the kind (Echo, Costume, Variant, Kit) and the
+//! groups (look, effects, sound; `some <group>` when begun, left out while Valve's). The flags never touch it:
+//! **broken** (lint errors that are not fair play), **compliance** (fair play: pass, fail `NSFR`, unknown `FP?`) and
+//! **freshness** (proven on the target build, or the last build it was). The **release gate** is separate from the
+//! label: it lists what stops automated packaging or publishing. Whoever reads it years later must be able to explain
+//! any grade from the record alone, so every criterion, signal, rule, allowance, build and blocker behind the label is
+//! in it, with the policy's fingerprint and the toolchain that judged it.
 
 use crate::compliance::{self, FairPlay, State};
 use crate::footprint::Footprint;
@@ -19,7 +21,7 @@ use crate::lintfacts::LintFacts;
 use crate::policy::Policy;
 use crate::rubric::{self, Report};
 
-pub const SCHEMA: &str = "magician.grade/2";
+pub const SCHEMA: &str = "magician.grade/3";
 
 /// One pak of the mod, as judged.
 #[derive(Debug, Clone)]
@@ -135,8 +137,8 @@ pub struct Inputs<'a> {
 
 pub struct Record<'a> {
     pub i: Inputs<'a>,
-    /// `None` for a mod that is not graded.
-    pub depth: Option<Report>,
+    /// What the mod makes its own; `None` for a mod that is not graded.
+    pub description: Option<Report>,
     pub label: String,
     pub blockers: Vec<String>,
     pub warnings: Vec<String>,
@@ -146,6 +148,21 @@ impl<'a> Record<'a> {
     pub fn gate_passes(&self) -> bool {
         self.blockers.is_empty()
     }
+    /// Lint errors that are not fair play: the `broken` flag, as `magician check` reads it too.
+    pub fn broken(&self) -> bool {
+        self.i.lint.broken()
+    }
+}
+
+/// The marks after the description, in label order: `broken`, fair play's, freshness's.
+fn marks(i: &Inputs) -> Vec<String> {
+    let mut m = Vec::new();
+    if i.lint.broken() {
+        m.push("broken".to_string());
+    }
+    m.extend(i.fair_play.state.mark().map(str::to_string));
+    m.extend(i.freshness.mark());
+    m
 }
 
 fn codes(by: &std::collections::BTreeMap<&'static str, usize>) -> String {
@@ -156,17 +173,14 @@ fn first<T: AsRef<str>>(v: &[T]) -> String {
     v.first().map(|x| x.as_ref().to_string()).unwrap_or_default()
 }
 
-/// Judge: depth by the archetype identity chose, the label, and the release gate.
+/// Judge: what the mod makes its own, by the archetype identity chose, the label, and the release gate.
 pub fn build(i: Inputs) -> Record {
-    let depth = i.identity.kind.archetype().map(|a| rubric::grade(i.footprint, &i.facts, a, i.policy));
-    let mut label = match (&depth, &i.identity.not_graded) {
-        (Some(r), _) => format!("{} {}", r.letter, identity::word(i.identity.kind, r.letter)),
+    let description = i.identity.kind.archetype().map(|a| rubric::grade(i.footprint, &i.facts, a, i.policy));
+    let mut label = match (&description, &i.identity.not_graded) {
+        (Some(r), _) => format!("{} ({})", identity::word(i.identity.kind), r.description()),
         (None, kind) => format!("not graded ({})", kind.as_deref().unwrap_or("not a hero mod")),
     };
-    if let Some(m) = i.fair_play.state.mark() {
-        label.push_str(&format!(" · {m}"));
-    }
-    if let Some(m) = i.freshness.mark() {
+    for m in marks(&i) {
         label.push_str(&format!(" · {m}"));
     }
     let mut blockers = Vec::new();
@@ -217,7 +231,7 @@ pub fn build(i: Inputs) -> Record {
     if !i.shadowed.is_empty() {
         warnings.push(format!("{} file(s) are in more than one pak; the lowest pak number wins (e.g. {})", i.shadowed.len(), first(&i.shadowed)));
     }
-    Record { i, depth, label, blockers, warnings }
+    Record { i, description, label, blockers, warnings }
 }
 
 fn item_json(x: &compliance::Item) -> String {
@@ -231,28 +245,37 @@ fn item_json(x: &compliance::Item) -> String {
         .build()
 }
 
-/// A score to one decimal, rounded exactly as the text report rounds it (93.25 is 93.2 in both).
-fn tenth(x: f64) -> String {
-    num(format!("{x:.1}").parse::<f64>().unwrap_or(x))
-}
-
 /// The ten most useful missing items of a criterion, and how many there are.
 const MISSING_SHOWN: usize = 10;
 
+/// How a report paints a mark (`broken`, `NSFR`, `FP?`, `stale(N)`, `unproven`, `pass`): the CLI colours them on a
+/// terminal, everything else keeps the words as they are.
+pub type Paint<'p> = &'p dyn Fn(&str) -> String;
+
+/// The label with its marks painted.
+pub fn painted(label: &str, paint: Paint) -> String {
+    let mut parts = label.split(" · ");
+    let mut out = parts.next().unwrap_or("").to_string();
+    for m in parts {
+        out.push_str(" · ");
+        out.push_str(&paint(m));
+    }
+    out
+}
+
 impl<'a> Record<'a> {
-    /// Next steps: the largest weighted gains first, among the criteria that count.
-    pub fn next_steps(&self) -> Vec<(f64, &'static str, &'static str, Vec<String>)> {
-        let Some(r) = &self.depth else { return Vec::new() };
-        let total: f64 = r.lines.iter().filter(|l| l.counted).map(|l| l.weight).sum();
-        let mut gaps: Vec<(f64, &'static str, &'static str, Vec<String>)> = r
-            .lines
-            .iter()
-            .filter(|l| l.counted && l.coverage < 1.0 - 1e-9 && total > 0.0)
-            .map(|l| (100.0 * l.weight * (1.0 - l.coverage) / total, l.id, l.name, l.missing.iter().take(3).cloned().collect()))
-            .collect();
-        gaps.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.cmp(b.1)));
+    /// What is still to make its own: the criteria that count and are not covered, the largest part of their group
+    /// first, with their most useful missing items.
+    pub fn next_steps(&self) -> Vec<(&'static str, &'static str, &'static str, Vec<String>)> {
+        let Some(r) = &self.description else { return Vec::new() };
+        let share = |l: &rubric::Line| {
+            let total: f64 = r.lines.iter().filter(|x| x.counted && x.group == l.group).map(|x| x.weight).sum();
+            if total > 0.0 { l.weight * (1.0 - l.coverage) / total } else { 0.0 }
+        };
+        let mut gaps: Vec<(f64, &rubric::Line)> = r.lines.iter().filter(|l| l.counted && l.coverage < 1.0 - 1e-9).map(|l| (share(l), l)).filter(|(g, _)| *g > 0.0).collect();
+        gaps.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.id.cmp(b.1.id)));
         gaps.truncate(5);
-        gaps
+        gaps.into_iter().map(|(_, l)| (l.id, l.group.id(), l.name, l.missing.iter().take(3).cloned().collect())).collect()
     }
 
     pub fn json(&self) -> String {
@@ -280,29 +303,40 @@ impl<'a> Record<'a> {
             .int("orphans", i.lint.orphans as i64)
             .raw("allowed_by_code", Obj(i.lint.allowed_by_code.iter().map(|(c, n)| (c.to_string(), n.to_string())).collect()).build())
             .build();
-        let depth = match &self.depth {
+        let description = match &self.description {
             None => "null".to_string(),
             Some(r) => Obj::new()
-                .str("letter", r.letter)
-                .raw("score", tenth(r.score))
-                .str("uncapped_letter", r.uncapped)
-                .str("archetype_rubric", r.archetype.id())
+                .str("kind", identity::word(i.identity.kind))
+                .str("rubric", r.archetype.id())
+                .str("says", &r.description())
+                .raw(
+                    "groups",
+                    arr(r.groups.iter().map(|g| {
+                        Obj::new()
+                            .str("id", g.group.id())
+                            .str("state", g.state.id())
+                            .num("coverage", g.coverage)
+                            .strs("criteria", &r.lines.iter().filter(|l| l.group == g.group && l.counted).map(|l| l.id).collect::<Vec<_>>())
+                            .str("counted", &g.counted)
+                            .build()
+                    })),
+                )
                 .raw(
                     "criteria",
                     arr(r.lines.iter().map(|l| {
                         Obj::new()
                             .str("id", l.id)
+                            .str("group", l.group.id())
                             .num("weight", l.weight)
                             .bool("counted", l.counted)
                             .num("coverage", l.coverage)
-                            .num("points", l.weight * l.coverage)
                             .str("detail", &l.detail)
                             .strs("missing", &l.missing.iter().take(MISSING_SHOWN).collect::<Vec<_>>())
                             .int("missing_count", l.missing.len() as i64)
                             .build()
                     })),
                 )
-                .raw("caps", arr(r.caps.iter().map(|c| Obj::new().str("max", c.max).str("why", &c.why).build())))
+                .strs("notes", &r.notes)
                 .build(),
         };
         let identity = Obj::new()
@@ -330,7 +364,7 @@ impl<'a> Record<'a> {
             .bool("current", f.current())
             .raw("unbound", arr(f.unbound.iter().map(|b| b.to_string())))
             .build();
-        let next = arr(self.next_steps().into_iter().map(|(g, id, _, items)| Obj::new().raw("gain", tenth(g)).str("criterion", id).strs("items", &items).build()));
+        let next = arr(self.next_steps().into_iter().map(|(id, group, _, items)| Obj::new().str("criterion", id).str("group", group).strs("items", &items).build()));
         Obj::new()
             .str("schema", SCHEMA)
             .str("rules_version", rubric::RULES_VERSION)
@@ -341,7 +375,8 @@ impl<'a> Record<'a> {
             .raw("mod", mod_json)
             .raw("hero", Obj::new().str("key", &i.footprint.hero_key).str("name", &i.footprint.display).int("footprint_files", i.footprint.items.len() as i64).build())
             .raw("lint", lint)
-            .raw("depth", depth)
+            .bool("broken", self.broken())
+            .raw("description", description)
             .raw("identity", identity)
             .raw("fair_play", fair_play)
             .raw("freshness", freshness)
@@ -356,8 +391,8 @@ impl<'a> Record<'a> {
             .build()
     }
 
-    /// The human report.
-    pub fn text(&self) -> String {
+    /// The human report; `paint` colours the marks (the CLI's terminal colours, or the words unchanged).
+    pub fn text(&self, paint: Paint) -> String {
         let i = &self.i;
         let mut o = String::new();
         let mut line = |t: String| {
@@ -366,24 +401,22 @@ impl<'a> Record<'a> {
         };
         let paks: Vec<&str> = i.paks.iter().map(|p| p.name.as_str()).collect();
         line(format!("{} grade for {}  (build {}, footprint {} files, policy {})", i.footprint.display, paks.join(" + "), i.build, i.footprint.items.len(), i.policy.file.as_deref().unwrap_or("built-in")));
-        line(format!("  label: {}", self.label));
+        line(format!("  label: {}", painted(&self.label, paint)));
         line(String::new());
-        match &self.depth {
+        match &self.description {
             Some(r) => {
-                line(format!("depth: {} {:.1} ({} rubric{})", r.letter, r.score, r.archetype.id(), if r.letter != r.uncapped { format!("; {} without caps", r.uncapped) } else { String::new() }));
-                for l in &r.lines {
-                    let bar = |x: f64| {
-                        let n = (x * 20.0).round() as usize;
-                        format!("{}{}", "#".repeat(n.min(20)), ".".repeat(20 - n.min(20)))
-                    };
-                    let w = if l.counted { format!("{:>5.1}/{:<3.0}", l.weight * l.coverage, l.weight) } else { "  not counted".to_string() };
-                    line(format!("  {:<22} [{}] {w} {}", l.name, bar(l.coverage), l.detail));
+                line(format!("{}: {} ({} rubric)", identity::word(i.identity.kind), identity::means(i.identity.kind), r.archetype.id()));
+                for g in &r.groups {
+                    line(format!("  {:<8} {}", g.group.id(), g.counted));
                 }
-                for c in &r.caps {
-                    line(format!("  max {}: {}", c.max, c.why));
+                for n in &r.notes {
+                    line(format!("  note: {n}"));
                 }
             }
-            None => line(format!("depth: not graded: {}; there is no rubric for it yet", i.identity.not_graded.as_deref().unwrap_or("not a hero mod"))),
+            None => line(format!("not graded: {}; there is no rubric for it yet", i.identity.not_graded.as_deref().unwrap_or("not a hero mod"))),
+        }
+        if self.broken() {
+            line(format!("{}: {} lint error(s) that are not fair play ({}): something won't load in game", paint("broken"), i.lint.errors, codes(&i.lint.errors_by_code)));
         }
         line(String::new());
         line(format!("identity: {} ({} signal(s), {} for a new character: {})", i.identity.kind.id(), num(i.identity.score), num(i.identity.required), if i.identity.signals.is_empty() { "none".to_string() } else { i.identity.signals.join(", ") }));
@@ -391,7 +424,11 @@ impl<'a> Record<'a> {
             line(format!("  {k}: {v}"));
         }
         let fp = &i.fair_play;
-        line(format!("fair play: {}  (checks run: {})", fp.state.id(), if fp.checks_run.is_empty() { "none".to_string() } else { fp.checks_run.join(", ") }));
+        let state = match fp.state.mark() {
+            Some(m) => format!("{} {}", fp.state.id(), paint(m)),
+            None => paint(fp.state.id()),
+        };
+        line(format!("fair play: {state}  (checks run: {})", if fp.checks_run.is_empty() { "none".to_string() } else { fp.checks_run.join(", ") }));
         for u in &fp.unknown {
             line(format!("  not run: {} {}: {}", u.rules.join(", "), u.path.as_deref().unwrap_or(""), u.why));
         }
@@ -410,7 +447,10 @@ impl<'a> Record<'a> {
             "freshness: these bytes proven on {}; target {}{}{}",
             if f.proven.is_empty() { "no build".to_string() } else { f.proven.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(", ") },
             f.target,
-            if f.current() { " (current)" } else { "" },
+            match f.mark() {
+                None => " (current)".to_string(),
+                Some(m) => format!(" ({})", paint(&m)),
+            },
             f.unbound_note()
         ));
         line(format!("rights: {}{}", i.rights.id(), if i.rights_notes.is_empty() { String::new() } else { format!(" ({})", i.rights_notes) }));
@@ -428,11 +468,11 @@ impl<'a> Record<'a> {
         let steps = self.next_steps();
         if !steps.is_empty() {
             line(String::new());
-            line("Next steps (largest gains first):".into());
-            for (g, _, name, items) in steps {
-                line(format!("  +{g:.1}  {name}"));
+            line("Not yet its own (the largest part of its group first):".into());
+            for (_, group, name, items) in steps {
+                line(format!("  {name} ({group})"));
                 for m in items {
-                    line(format!("         - {m}"));
+                    line(format!("    - {m}"));
                 }
             }
         }
@@ -460,8 +500,10 @@ mod tests {
         for i in 0..4 {
             add(Cat::AbilityVfx, "strike", format!("particles/abilities/lash/strike_{i}.vpcf_c"));
             add(Cat::Sound, "strike", format!("sounds/abilities/lash/strike_{i}.vsnd_c"));
-            add(Cat::Voice, "vo:kill", format!("sounds/vo/lash/lash_kill_{i}.vsnd_c"));
             add(Cat::Animation, "clips:abilities", format!("models/heroes_staging/lash_v2/clips/ability_{i}.vnmclip_c"));
+        }
+        for i in 0..40 {
+            add(Cat::Voice, "vo:kill", format!("sounds/vo/lash/lash_kill_{i}.vsnd_c"));
         }
         add(Cat::Animation, "clips:ui", "models/heroes_staging/lash_v2/clips/ui_a.vnmclip_c".into());
         add(Cat::UiArt, "ui", "panorama/images/heroes/lash_card_psd.vtex_c".into());
@@ -507,9 +549,7 @@ mod tests {
         fn run<T>(self, then: impl FnOnce(&Record) -> T) -> T {
             let f = fp();
             let lint = lint_facts(self.findings.clone(), &[], self.depth);
-            let mut facts = rubric::ModFacts { paths: self.paths.into_iter().collect(), model_anim_changed: true, ..Default::default() };
-            facts.lint_errors = lint.errors;
-            facts.lint_warnings = lint.warnings;
+            let facts = rubric::ModFacts { paths: self.paths.into_iter().collect(), model_anim_changed: true, dropped_deps: lint.dropped_deps, ..Default::default() };
             let fair = judge(&self.findings, &[], self.depth, Applicable { models: facts.paths.contains(MODEL), particles: false, sounds: false }, &self.policy);
             let identity = decide(&self.signals, &self.policy);
             let r = build(Inputs {
@@ -544,48 +584,76 @@ mod tests {
     }
 
     #[test]
-    fn a_complete_cleared_current_costume_is_s_costume_and_passes_the_gate() {
+    fn a_complete_cleared_current_costume_says_so_and_passes_the_gate() {
         Case::complete().run(|r| {
-            assert_eq!(r.label, "S Costume");
+            assert_eq!(r.label, "Costume (look, effects, sound)");
             assert!(r.gate_passes(), "{:?}", r.blockers);
             let j = r.json();
-            assert!(j.starts_with("{\"schema\":\"magician.grade/2\",\"rules_version\":\"2.0.0\",\"toolchain\":\"magician test\",\"deadlock_build\":6864,"), "{j}");
-            assert!(j.contains("\"label\":\"S Costume\"}") && j.contains("\"release_gate\":{\"pass\":true,\"blockers\":[],\"warnings\":[]}"), "{j}");
+            assert!(j.starts_with("{\"schema\":\"magician.grade/3\",\"rules_version\":\"3.0.0\",\"toolchain\":\"magician test\",\"deadlock_build\":6864,"), "{j}");
+            assert!(j.contains("\"label\":\"Costume (look, effects, sound)\"}") && j.contains("\"release_gate\":{\"pass\":true,\"blockers\":[],\"warnings\":[]}"), "{j}");
+            assert!(j.contains("\"broken\":false,\"description\":{\"kind\":\"Costume\",\"rubric\":\"character\",\"says\":\"look, effects, sound\",\"groups\":[{\"id\":\"look\",\"state\":\"covered\",\"coverage\":1,\"criteria\":[\"model\",\"materials\",\"ui\",\"scenes\"],\"counted\":\"model, materials, UI art, scenes\"}"), "{j}");
+            assert!(!j.contains("\"letter\"") && !j.contains("\"score\":9") && !j.contains("\"caps\""), "no letter, no overall score: {j}");
             assert_eq!(j, r.json(), "the record is deterministic");
+            let t = r.text(&|m| m.to_string());
+            assert!(t.contains("Costume: the same character, a new model (character rubric)\n  look     model, materials, UI art, scenes\n  effects  ability VFX, animation\n  sound    kit sound, voice\n"), "{t}");
         });
     }
 
     #[test]
-    fn a_new_character_below_s_is_an_echolite_and_becomes_an_echo_at_s() {
+    fn a_new_character_is_an_echo_whatever_it_has_made_its_own() {
         let mut c = Case::complete();
         c.signals = renamed();
-        c.run(|r| assert_eq!(r.label, "S Echo"));
+        c.run(|r| assert_eq!(r.label, "Echo (look, effects, sound)"));
         let mut c = Case::complete();
         c.signals = renamed();
         c.paths.retain(|p| !p.contains("strike") && !p.contains("/vo/"));
         c.run(|r| {
-            assert!(r.label.ends_with(" Echolite") && !r.label.starts_with('S'), "{}", r.label);
+            assert_eq!(r.label, "Echo (look, some effects)");
+            let t = r.text(&|m| m.to_string());
+            assert!(t.contains("  effects  Valve's ability VFX, animation\n  sound    Valve's\n"), "{t}");
             assert!(r.json().contains("\"identity\":{\"kind\":\"new\",\"signals\":[\"renamed\",\"new_hero_art\"],\"score\":2,\"required\":2"), "{}", r.json());
         });
     }
 
     #[test]
-    fn fair_play_marks_the_label_without_touching_the_letter() {
+    fn lint_errors_flag_broken_and_leave_the_description_alone() {
+        let mut c = Case::complete();
+        c.findings = vec![finding("M030", "needs 'x'")];
+        c.run(|r| {
+            assert_eq!(r.label, "Costume (look, effects, sound) · broken");
+            assert!(r.broken() && r.json().contains("\"broken\":true"), "{}", r.json());
+            let t = r.text(&|m| format!("<{m}>"));
+            assert!(t.contains("  label: Costume (look, effects, sound) · <broken>\n"), "{t}");
+            assert!(t.contains("<broken>: 1 lint error(s) that are not fair play (M030 x1): something won't load in game"), "{t}");
+        });
+        // a dropped dependency is a warning: a plain note, not a flag
+        let mut c = Case::complete();
+        c.findings = vec![finding("M061", "drops 'x'")];
+        c.run(|r| {
+            assert_eq!(r.label, "Costume (look, effects, sound)");
+            assert!(r.text(&|m| m.to_string()).contains("  note: 1 dropped dependency (M061): effects or sounds of Valve's originals that no longer play\n"));
+            assert!(r.json().contains("\"notes\":[\"1 dropped dependency (M061)"), "{}", r.json());
+        });
+    }
+
+    #[test]
+    fn fair_play_marks_the_label_without_touching_the_description() {
         // NSFR: the egregious envelope (fair play enforced: it blocks the gate)
         let mut c = Case::complete();
         c.findings = vec![finding("M129", "x")];
         c.policy = enforced();
         c.run(|r| {
-            assert_eq!(r.label, "S Costume · NSFR");
+            assert_eq!(r.label, "Costume (look, effects, sound) · NSFR");
             assert!(r.blockers.iter().any(|b| b.starts_with("fair play: NSFR (M129")), "{:?}", r.blockers);
-            assert!(r.depth.as_ref().unwrap().caps.is_empty(), "no depth cap from fair play");
+            assert!(!r.broken(), "fair play is never broken");
+            assert!(r.text(&|m| format!("<{m}>")).contains("fair play: fail <NSFR>"));
         });
         // FP?: a check that could not run
         let mut c = Case::complete();
         c.findings = vec![finding("M144", "the model's meshes could not be read, so its silhouette and hitbox envelope were not judged (M124, M129, M140)")];
         c.policy = enforced();
         c.run(|r| {
-            assert_eq!(r.label, "S Costume · FP?");
+            assert_eq!(r.label, "Costume (look, effects, sound) · FP?");
             assert!(r.blockers.iter().any(|b| b.starts_with("fair play: unknown (M124, M129, M140 not run")), "{:?}", r.blockers);
             assert!(r.json().contains("\"fair_play_enforced\":true"), "{}", r.json());
         });
@@ -594,7 +662,7 @@ mod tests {
             let mut c = Case::complete();
             c.findings = vec![finding(code, "the model's meshes could not be read (M124)")];
             c.run(|r| {
-                assert_eq!(r.label, format!("S Costume · {mark}"), "the label still says it");
+                assert_eq!(r.label, format!("Costume (look, effects, sound) · {mark}"), "the label still says it");
                 assert!(r.gate_passes(), "{:?}", r.blockers);
                 assert!(r.warnings[0].starts_with(warning) && r.warnings[0].ends_with("not blocking: fair play is not enforced (fair_play.enforce = false)"), "{:?}", r.warnings);
                 assert!(r.json().contains("\"fair_play_enforced\":false"), "{}", r.json());
@@ -613,21 +681,22 @@ mod tests {
         let mut c = Case::complete();
         c.target = "6865";
         c.run(|r| {
-            assert_eq!(r.label, "S Costume · stale(6864)");
+            assert_eq!(r.label, "Costume (look, effects, sound) · stale(6864)");
             assert!(r.blockers.contains(&"freshness: not proven on 6865 (last proven on 6864)".to_string()), "{:?}", r.blockers);
             assert!(r.json().contains("\"freshness\":{\"proven\":[6864],\"last_proven\":6864,\"target\":6865,\"current\":false,\"unbound\":[]}"), "{}", r.json());
         });
         let mut c = Case::complete();
         c.proven = vec![];
         c.run(|r| {
-            assert_eq!(r.label, "S Costume · unproven");
+            assert_eq!(r.label, "Costume (look, effects, sound) · unproven");
+            assert!(r.text(&|m| format!("<{m}>")).contains("target 6864 (<unproven>)"));
             assert!(r.blockers.iter().any(|b| b.contains("no proven build on record")));
         });
-        // fair play comes before freshness in the label
+        // broken, then fair play, then freshness
         let mut c = Case::complete();
-        c.findings = vec![finding("M144", "could not be read (M124)")];
+        c.findings = vec![finding("M144", "could not be read (M124)"), finding("M030", "needs 'x'")];
         c.target = "6865";
-        c.run(|r| assert_eq!(r.label, "S Costume · FP? · stale(6864)"));
+        c.run(|r| assert_eq!(r.label, "Costume (look, effects, sound) · broken · FP? · stale(6864)"));
     }
 
     #[test]
@@ -692,16 +761,9 @@ mod tests {
         let mut c = Case::complete();
         c.depth = Depth::Light;
         c.run(|r| {
-            assert_eq!(r.label, "S Costume · FP?");
-            assert!(r.text().contains("not run: M124, M129, M130, M140"), "{}", r.text());
+            assert_eq!(r.label, "Costume (look, effects, sound) · FP?");
+            assert!(r.text(&|m| m.to_string()).contains("not run: M124, M129, M130, M140"), "{}", r.text(&|m| m.to_string()));
         });
-    }
-
-    #[test]
-    fn the_record_rounds_a_score_as_the_text_does() {
-        assert_eq!((tenth(93.25), format!("{:.1}", 93.25)), ("93.2".to_string(), "93.2".to_string()));
-        assert_eq!(tenth(94.58), "94.6");
-        assert_eq!(tenth(90.0), "90");
     }
 
     #[test]
@@ -711,8 +773,8 @@ mod tests {
         c.signals = Signals { other_kind: "HUD mod".into(), ..Default::default() };
         c.run(|r| {
             assert_eq!(r.label, "not graded (HUD mod)");
-            assert!(r.depth.is_none() && r.json().contains("\"depth\":null"), "{}", r.json());
-            assert!(r.text().contains("there is no rubric for it yet"));
+            assert!(r.description.is_none() && r.json().contains("\"description\":null"), "{}", r.json());
+            assert!(r.text(&|m| m.to_string()).contains("there is no rubric for it yet"));
         });
     }
 }

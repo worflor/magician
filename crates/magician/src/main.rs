@@ -150,18 +150,19 @@ Every command:
   magician grade <pak>... [--hero <hero> | --mod <mod.toml>] [--target BUILD] [--light | --findings FILE] [--allow FILE]...
                 [--addon-root DIR]... [--scene-root DIR]... [--gate] [--json] [--record-out FILE]
                                                 grade a hero mod (every pak it ships, together; the lower pak number wins
-                                                a shared path): depth (S-F within its archetype), identity, fair play
+                                                a shared path): what kind of mod it is and which of the hero's look,
+                                                effects and sound it makes its own, broken (lint errors), fair play
                                                 (NSFR, FP?), freshness (stale(N): the builds a proof holds these paks on), rights and
-                                                the release gate, as a label (`S Echo · stale(6864)`) and, with --json,
-                                                the record (magician.grade/2; --record-out writes it to a file too);
+                                                the release gate, as a label (`Echo (look, some effects) · stale(6864)`) and,
+                                                with --json, the record (magician.grade/3; --record-out writes it to a file too);
                                                 lints deep unless --light, or judges a lint run written by
                                                 `lint --findings-out` (what release does); UI scene map VPKs count
                                                 when carried beside a pak or under a --scene-root; exit 0 whatever
                                                 the grade, or 1 with --gate when the release gate has a blocker
-  magician rubric                               the grading criteria, weights per archetype, letters, caps and fair-play
-                                                classes of the policy in force
+  magician rubric                               the grading criteria, their groups, weights per archetype, the lines that
+                                                name a group, and the fair-play classes of the policy in force
   magician policy [--policy FILE]               every judgement value in force (fair-play limits, allowance limits,
-                                                gate, weights, letters, identity, coverage), where each came from, and
+                                                gate, weights, group lines, identity, coverage), where each came from, and
                                                 the fingerprint a grade records
   magician install <pakNN_dir.vpk> [--as pakNN_dir.vpk] [--mod NAME] [--force]
                                                 lint, back up gameinfo.gi, add the addons search path (idempotent),
@@ -1252,23 +1253,30 @@ fn cmd_mesh(args: &[String]) -> R {
     Ok(meshcmd::cmd_mesh(args, &game, &reference_root(), &policy)?)
 }
 
-/// `magician rubric`: the criteria and the effective weights, letters, caps and fair-play classes (the policy in force).
+/// `magician rubric`: the criteria, their groups, the effective weights and lines, and the fair-play classes (the
+/// policy in force).
 fn cmd_rubric(args: &[String]) -> R {
     let p = load_policy(args)?;
     say!("Grading rubric {} (policy {}, fingerprint {})", grade::rubric::RULES_VERSION, p.file.as_deref().unwrap_or("built-in"), &p.fingerprint()[..12]);
+    say!("A grade names the kind of mod and which of the hero's look, effects and sound it makes its own.");
+    say!("Kinds: new character -> Echo; same character, new model -> Costume; Valve's mesh kept -> Variant; no model -> Kit; not a hero mod -> not graded");
     say!("Criteria:");
-    for c in grade::CRITERIA {
-        say!("  {:<10} {:<22} {}", c.id, c.name, c.why);
+    for g in grade::Group::all() {
+        for c in grade::CRITERIA.iter().filter(|c| c.group == g) {
+            say!("  {:<8} {:<10} {:<22} {}", g.id(), c.id, c.name, c.why);
+        }
     }
+    say!(
+        "A group is named once its weighted coverage reaches {} (groups.covered), reads \"some <group>\" from {} (groups.touched; above nothing), and is left out while Valve's",
+        jsonout::num(p.groups.covered),
+        jsonout::num(p.groups.touched)
+    );
     for a in grade::Archetype::all() {
-        let (req, app) = a.surfaces();
+        let (_, app) = a.surfaces();
         let w: Vec<String> = p.weights(a).iter().map(|(id, w)| format!("{id} {w}{}", if app.contains(&id.as_str()) { "*" } else { "" })).collect();
-        say!("{} rubric: {}{}", a.id(), w.join(", "), if app.is_empty() { String::new() } else { "  (* counts once the mod touches it)".into() });
-        let _ = req;
+        say!("{} weights within each group: {}{}", a.id(), w.join(", "), if app.is_empty() { String::new() } else { "  (* counts once the mod touches it)".into() });
     }
-    say!("Letters: {}; below D is F", ["S", "A", "B", "C", "D"].iter().zip(p.letters).map(|(l, m)| format!("{l} >= {m}")).collect::<Vec<_>>().join(", "));
-    say!("Words: new character -> Echo at S, Echolite below; same character -> Costume; Valve's mesh kept -> Variant; no model -> Kit; not a hero mod -> not graded");
-    say!("Depth caps (the mod working, never fair play): ships skeleton/graph/data -> max D; lint errors that are not fair play -> max C; dropped deps -> max B; a variant or kit short of its S minimum -> max A");
+    say!("Flags: broken (lint errors that are not fair play, as `magician check` calls it), NSFR or FP? (fair play), stale(N) or unproven (freshness)");
     say!("Fair play: never allowable {}; advisory {}; M140 allowable up to {} u worst point and {}% of the visible surface", p.compliance.never.join(" "), p.compliance.advisory.join(" "), jsonout::num(p.m140_limits().0), jsonout::num(100.0 * p.m140_limits().1));
     say!(
         "Fair play is {}; rights are {}",
@@ -1372,8 +1380,8 @@ fn baseline_fingerprint(base: &Baseline) -> Result<String, String> {
     Ok(h.hex())
 }
 
-/// `magician grade`: depth, identity, fair play, freshness, rights and the release gate for one mod (every pak it
-/// ships), as a label and a record. Exit 0 whatever the grade (it is information); with `--gate`, exit 1 when the
+/// `magician grade`: what one mod (every pak it ships) makes its own of the hero, identity, broken, fair play,
+/// freshness, rights and the release gate, as a label and a record. Exit 0 whatever the grade (it is information); with `--gate`, exit 1 when the
 /// release gate has a blocker.
 fn cmd_grade(args: &[String]) -> R {
     let g = grade_run(args)?;
@@ -1392,6 +1400,8 @@ pub(crate) struct GradeOut {
     pub json: String,
     pub label: String,
     pub gate_passes: bool,
+    /// Lint errors that are not fair play: the grade's `broken` flag, and check's verdict.
+    pub broken: bool,
     pub blockers: Vec<String>,
     pub hero: String,
     pub fair_play: &'static str,
@@ -1530,10 +1540,7 @@ pub(crate) fn grade_run(args: &[String]) -> Result<GradeOut, Stop> {
         paths,
         model_materials,
         scene_maps: scene_maps.clone(),
-        lint_errors: lf.errors,
-        lint_warnings: lf.warnings,
         dropped_deps: lf.dropped_deps,
-        orphans: lf.orphans,
         material_slots,
     };
     // Freshness is asked of these paks' bytes: the builds a recorded proof holds every one of them on (proofs.rs).
@@ -1578,10 +1585,11 @@ pub(crate) fn grade_run(args: &[String]) -> Result<GradeOut, Stop> {
         write_output("--record-out", &out, &format!("{}\n", record.json()))?;
     }
     Ok(GradeOut {
-        text: record.text(),
+        text: record.text(&style::mark),
         json: record.json(),
         label: record.label.clone(),
         gate_passes: record.gate_passes(),
+        broken: record.broken(),
         blockers: record.blockers.clone(),
         hero: record.i.footprint.display.clone(),
         fair_play: record.i.fair_play.state.id(),

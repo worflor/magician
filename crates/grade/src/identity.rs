@@ -1,10 +1,9 @@
-//! Identity: what kind of mod this is, decided by signals and stored as data. The label word is a projection of
-//! identity and depth (`word`); identity never changes with the letter, so an Echolite becomes an Echo the moment its
-//! depth reaches S.
+//! Identity: what kind of mod this is, decided by signals and stored as data. The label's first word is identity's
+//! (`word`), whatever the mod makes its own.
 //!
 //! | Identity | Rubric | Word |
 //! |---|---|---|
-//! | new character (at least `identity.new_character_signals` signals) | character | Echo at S, Echolite below |
+//! | new character (at least `identity.new_character_signals` signals) | character | Echo |
 //! | same character | character | Costume |
 //! | same model: Valve's mesh kept, new materials | variant | Variant |
 //! | no model: VFX, sound, UI or voice | kit | Kit |
@@ -49,15 +48,25 @@ impl Kind {
     }
 }
 
-/// The label word for an identity at a letter.
-pub fn word(kind: Kind, letter: &str) -> &'static str {
+/// The label word for an identity.
+pub fn word(kind: Kind) -> &'static str {
     match kind {
-        Kind::New if letter == "S" => "Echo",
-        Kind::New => "Echolite",
+        Kind::New => "Echo",
         Kind::Same => "Costume",
         Kind::SameModel => "Variant",
         Kind::NoModel => "Kit",
         Kind::NotHero => "not graded",
+    }
+}
+
+/// What the word means, for the report.
+pub fn means(kind: Kind) -> &'static str {
+    match kind {
+        Kind::New => "a new character",
+        Kind::Same => "the same character, a new model",
+        Kind::SameModel => "Valve's mesh kept, new materials",
+        Kind::NoModel => "no model",
+        Kind::NotHero => "not a hero mod",
     }
 }
 
@@ -211,14 +220,14 @@ mod tests {
     }
 
     #[test]
-    fn a_new_character_and_echo_only_at_s() {
+    fn a_new_character_is_an_echo() {
         // head replaced, renamed, new hero art: three signals
         let s = Signals { model_replaced: true, geometry: geometry(4000, 120, 90000, 20000), renamed: vec!["replaces the name logo x".into()], portrait: (5, 6), ..Default::default() };
         let id = decide(&s, &p());
         assert_eq!(id.kind, Kind::New);
         assert_eq!(id.signals, vec!["head_replaced", "renamed", "new_hero_art"]);
         assert_eq!((id.score, id.required), (3.0, 2.0));
-        assert_eq!((word(id.kind, "S"), word(id.kind, "B")), ("Echo", "Echolite"));
+        assert_eq!(word(id.kind), "Echo");
         assert_eq!(id.kind.archetype(), Some(Archetype::Character));
     }
 
@@ -229,7 +238,7 @@ mod tests {
         let id = decide(&s, &p());
         assert_eq!(id.kind, Kind::Same);
         assert_eq!(id.signals, vec!["new_hero_art"]);
-        assert_eq!(word(id.kind, "S"), "Costume");
+        assert_eq!(word(id.kind), "Costume");
         assert!(id.evidence[0].1.contains("sit on Valve's head (Valve's head: 50% or more)"), "{:?}", id.evidence);
     }
 

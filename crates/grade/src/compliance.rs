@@ -8,7 +8,8 @@
 //! Each fair-play rule is one of three kinds (`rubric.rs` defaults, moved by a policy): never allowable (a finding
 //! fails fair play whatever an allowance says), advisory (reported, never a violation), or bounded (needs an
 //! allowance with a reason, and the allowance holds only within the rule's limit, which the record lists beside the
-//! measured value). A violation never lowers the letter: depth and compliance are separate axes.
+//! measured value). A violation never changes the description: what a mod makes its own and whether it is fair are
+//! separate.
 
 use crate::policy::Policy;
 use crate::rubric::{is_compliance, is_fair_play, UNCHECKED};
@@ -147,7 +148,7 @@ fn measures(code: &str, message: &str, p: &Policy) -> Option<Vec<Measure>> {
 }
 
 /// Fair play for a lint run: every finding before allowances, the allowances, the depth the run had, and what the mod
-/// ships. Allowances on rules that are not fair play are applied by the depth side, not here.
+/// ships. Allowances on rules that are not fair play are applied by `lintfacts`, not here.
 pub fn judge(findings: &[Finding], allowances: &[Allowance], depth: Depth, applicable: Applicable, p: &Policy) -> FairPlay {
     let mut unknown: Vec<Unknown> = Vec::new();
     let deep = matches!(depth, Depth::Deep);
@@ -360,7 +361,7 @@ mod tests {
     #[test]
     fn a_lost_bone_is_not_fair_play_but_a_changed_hitbox_is() {
         let r = judge(&[f("M062", MODEL, "bone 'pelvis' missing")], &[], Depth::Deep, MODELS, &Policy::default());
-        assert_eq!(r.state, State::Pass, "the depth side caps it as a lint error");
+        assert_eq!(r.state, State::Pass, "a lint error: the mod is broken, not unfair");
         let r = judge(&[f("M062", MODEL, "hitbox 'default/head_capsule' changed: 7.5 (Valve's 6.7)")], &[], Depth::Deep, MODELS, &Policy::default());
         assert_eq!(r.state, State::Fail);
     }

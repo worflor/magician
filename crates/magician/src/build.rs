@@ -6,7 +6,7 @@
 //!   meshes and wavs referenced by a document compile through that document.
 //! - Panorama PSDs only compile through a `panorama_image_list` vdata (the CSDK hero_image_template
 //!   pattern). The build writes a temporary list, compiles it and removes both the list and its `vdata_c`,
-//!   which nothing loads (lint M013 + M070, and a vdata caps the grade at D).
+//!   which nothing loads (lint M013 + M070, and the grade notes a vdata).
 //! - Compile-only outputs never ship: skeletons (`.vnmskel_c`, needed to compile clips), graphs, vdata, and
 //!   the compiler's own `materials/default/*` copies (lint M071).
 //! - **Stale outputs never ship**: a compiled file whose source is gone (a renamed texture, a dropped

@@ -26,7 +26,7 @@ fn policy_files() {
     let full = spelled(&grade::Policy::default());
     let seeds = [
         "# a stricter house line\n[fair_play]\nenforce = true\nhitbox_egregious_units = 15  # stricter\n[compliance]\nm140_max_worst_units = 12\nadvisory = [\"M081\", \"M130\"]\n[rights]\nenforce = false\n",
-        "[letters]\nS = 92\nA = 80\n[weights.kit]\nvfx = 30\nsound = 20\n",
+        "[groups]\ncovered = 0.9\ntouched = 0.1\n[weights.kit]\nvfx = 30\nsound = 20\n",
         full.as_str(),
     ];
     fuzz::run_text("policy", fuzz::DEFAULT_CASES * 2, &seeds, |t| {

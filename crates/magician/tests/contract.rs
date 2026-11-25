@@ -486,7 +486,7 @@ fn a_release_whose_grade_cannot_run_says_so_and_never_reports_an_old_one() {
     let out = d.join("out");
     std::fs::create_dir_all(&out).unwrap();
     // a previous release's record beside the pak
-    std::fs::write(out.join("grade.json"), "{\"schema\":\"magician.grade/2\",\"label\":\"an old grade\"}\n").unwrap();
+    std::fs::write(out.join("grade.json"), "{\"schema\":\"magician.grade/3\",\"label\":\"an old grade\"}\n").unwrap();
     let pak = out.join("pak10_dir.vpk").to_string_lossy().into_owned();
     let o = magician(&d, &["release", "a", "--hero", "hero_lash", "--csdk", &csdk.to_string_lossy(), "--no-compile", "--out", &pak, "--game", &game, "--json"]);
     // there is no Source 2 Viewer here, so grade cannot read the hero: the release says that, exit 2

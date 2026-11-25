@@ -88,7 +88,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M052", name: "vpk-empty", severity: Severity::Error,
         in_game: "An empty VPK changes nothing." },
     Rule { code: "M013", name: "build-artifact", severity: Severity::Warn,
-        in_game: "A build input or toolchain byproduct (a panorama image list, a nested VPK, a raw .kv3, a compiler cache) that the game never loads from an addon. It adds size, and a vdata among them caps the grade at D. magician build leaves these out." },
+        in_game: "A build input or toolchain byproduct (a panorama image list, a nested VPK, a raw .kv3, a compiler cache) that the game never loads from an addon. It adds size, and a vdata among them is noted in the grade. magician build leaves these out." },
     Rule { code: "M062", name: "model-contract", severity: Severity::Error,
         in_game: "A replaced model lost or moved a bone, attachment or hitbox of Valve's, or added a hitbox. Effects and weapons attach to the wrong place (or the origin), animation breaks, and changed hitboxes change what bullets hit: a fair-play break." },
     Rule { code: "M063", name: "sound-cue-reduced", severity: Severity::Error,

@@ -6,7 +6,7 @@
 //! evidence after it, then what to do next:
 //!
 //! ```text
-//! maid-lash: RE-PROVE  S Costume · stale(6864)  (build 6865)
+//! maid-lash: RE-PROVE  Costume (look, effects, sound) · stale(6864)  (build 6865)
 //!   lint    0 errors, 272 warnings, 19 allowed (deep)
 //!   ...
 //! ```
@@ -86,19 +86,20 @@ pub fn cmd_check(args: &[String]) -> R {
     drop(hint);
     match graded {
         Some(Ok(g)) => {
-            let lint_state = if g.lint_errors > 0 { "broken" } else if g.lint_warnings > 0 { "warn" } else { "ok" };
+            // broken is the grade's own word for lint errors that are not fair play (`LintFacts::broken`)
+            let lint_state = if g.broken { "broken" } else if g.lint_warnings > 0 { "warn" } else { "ok" };
             // fair play stops lint and install only when the policy enforces it, and then it is a gate blocker
-            broken |= g.lint_errors > 0 || g.blockers.iter().any(|b| b.starts_with("fair play"));
+            broken |= g.broken || g.blockers.iter().any(|b| b.starts_with("fair play"));
             items.push(Item {
                 what: "lint",
                 state: lint_state,
-                text: format!("{} error(s), {} warning(s), {} allowed ({}; fair play {})", g.lint_errors, g.lint_warnings, g.lint_allowed, g.lint_depth, g.fair_play),
+                text: format!("{} error(s), {} warning(s), {} allowed ({}; fair play {})", g.lint_errors, g.lint_warnings, g.lint_allowed, g.lint_depth, style::mark(match g.fair_play { "fail" => "NSFR", "unknown" => "FP?", x => x })),
                 json: jsonout::Obj::new().str("state", lint_state).int("errors", g.lint_errors as i64).int("warnings", g.lint_warnings as i64).int("allowed", g.lint_allowed as i64).str("depth", g.lint_depth).str("fair_play", g.fair_play).build(),
             });
             items.push(Item {
                 what: "grade",
                 state: if g.gate_passes { "ok" } else { "warn" },
-                text: format!("{} for {}; release gate {}", g.label, g.hero, if g.gate_passes { "pass".to_string() } else { format!("blocked: {}", g.blockers.join("; ")) }),
+                text: format!("{} for {}; release gate {}", style::label(&g.label), g.hero, if g.gate_passes { "pass".to_string() } else { format!("blocked: {}", g.blockers.join("; ")) }),
                 json: jsonout::Obj::new().str("state", if g.gate_passes { "ok" } else { "blocked" }).str("label", &g.label).bool("gate", g.gate_passes).strs("blockers", &g.blockers).build(),
             });
             label = Some(g.label.clone());
@@ -284,7 +285,7 @@ pub fn cmd_check(args: &[String]) -> R {
         outln!("{doc}");
     } else {
         let tone = match verdict { "BROKEN" => Tone::Bad, "RE-PROVE" => Tone::Warn, _ => Tone::Good };
-        say!("{}: {}  {}(build {build})", ctx.label(), style::paint(verdict, tone), label.as_deref().map(|l| format!("{l}  ")).unwrap_or_default());
+        say!("{}: {}  {}(build {build})", ctx.label(), style::paint(verdict, tone), label.as_deref().map(|l| format!("{}  ", style::label(l))).unwrap_or_default());
         for i in &items {
             say!("  {:<6} {} {}", i.what, style::word(i.state, 6), i.text);
         }
