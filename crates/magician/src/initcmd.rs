@@ -209,11 +209,19 @@ pub fn cmd_init(args: &[String]) -> R {
     } else if pos.is_empty() {
         let v = paks_in(&cwd)?;
         if v.is_empty() {
-            let downloads: Vec<String> = std::fs::read_dir(&cwd).map_err(|e| e.to_string())?.flatten().map(|e| e.path()).filter(|p| archive::is_archive(p)).filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
+            let mut downloads: Vec<String> = std::fs::read_dir(&cwd).map_err(|e| e.to_string())?.flatten().map(|e| e.path()).filter(|p| archive::is_archive(p)).filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
+            downloads.sort();
             return Err(Stop::Usage(if downloads.is_empty() {
                 format!("no pak here to describe ({} has no .vpk): `magician init <pak or archive>` or `magician init <addon folder>`", cwd.display())
             } else {
-                format!("no pak here, but {} here: `magician init \"{}\"` takes the paks out of it into a folder of their own", downloads.join(", "), downloads[0])
+                // every download here, as one mod: the files of one release page usually sit together
+                let all: Vec<String> = downloads.iter().map(|d| format!("\"{d}\"")).collect();
+                format!(
+                    "no pak here, but {} here: `magician init {}` takes the paks out of {} into a folder of their own, as one mod (name one mod's downloads at a time when they are several mods)",
+                    downloads.join(", "),
+                    all.join(" "),
+                    if downloads.len() == 1 { "it" } else { "them" }
+                )
             }));
         }
         v
@@ -326,6 +334,7 @@ pub fn cmd_init(args: &[String]) -> R {
     // The hero: as given, else from the files.
     let table = game_dir(args).ok().and_then(|g| Heroes::from_game(&g).ok());
     let hero_note;
+    let mut also: Vec<String> = Vec::new();
     match (flag(args, "--hero"), &table) {
         (Some(h), Some(t)) => {
             let hero = t.resolve(&h).map_err(Stop::Usage)?;
@@ -340,6 +349,7 @@ pub fn cmd_init(args: &[String]) -> R {
         (None, Some(t)) => match t.infer(files.iter().map(String::as_str)) {
             Some(i) if i.clear() => {
                 hero_note = describe(&i);
+                also = other_heroes(&i);
                 draft.model = Some(i.hero.model.clone()).filter(|m| files.iter().any(|f| f.trim_end_matches("_c") == m));
                 draft.hero = Some(i.hero.key.clone());
             }
@@ -354,6 +364,9 @@ pub fn cmd_init(args: &[String]) -> R {
     say!("wrote {}", out.display());
     say!("  slug   {}{}", draft.slug, if flag(args, "--slug").is_some() { " (--slug)" } else { " (from the folder's name)" });
     say!("  hero   {hero_note}");
+    for a in &also {
+        say!("  also   {a}");
+    }
     for f in &from_lines {
         say!("  from   {f}");
     }
@@ -381,6 +394,17 @@ pub fn cmd_init(args: &[String]) -> R {
 
 fn describe(i: &Inference) -> String {
     format!("{}: {} of {} files are its own", i.hero.label(), i.files, i.of)
+}
+
+/// A line for each other hero whose files the mod ships: what a mod for one hero changes in another.
+fn other_heroes(i: &Inference) -> Vec<String> {
+    i.others
+        .iter()
+        .map(|(hero, files)| {
+            let more = if files.len() > 3 { format!(" and {} more", files.len() - 3) } else { String::new() };
+            format!("{} file(s) of {hero}: {}{more}; the mod changes that hero too", files.len(), files.iter().take(3).cloned().collect::<Vec<_>>().join(", "))
+        })
+        .collect()
 }
 
 #[cfg(test)]

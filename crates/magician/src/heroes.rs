@@ -153,16 +153,23 @@ impl Heroes {
         let heroes: Vec<(&Hero, String, Vec<String>)> = self.list.iter().filter(|h| h.playable).map(|h| (h, h.model_dir(), h.tokens())).collect();
         let mut votes: BTreeMap<&str, (usize, usize)> = BTreeMap::new(); // key -> (score, files)
         let mut files = 0usize;
+        // each file and the heroes it points at, with how strongly, for the files that are another hero's
+        let mut by_file: Vec<(String, Vec<(&str, usize)>)> = Vec::new();
         for p in paths {
             files += 1;
             let p = norm(p);
+            let mut its: Vec<(&str, usize)> = Vec::new();
             for (h, dir, tokens) in &heroes {
                 let score = if !dir.is_empty() && p.starts_with(dir.as_str()) { 3 } else if tokens.iter().any(|t| grade::footprint::has_token(&p, t)) { 1 } else { 0 };
                 if score > 0 {
                     let v = votes.entry(h.key.as_str()).or_default();
                     v.0 += score;
                     v.1 += 1;
+                    its.push((h.key.as_str(), score));
                 }
+            }
+            if !its.is_empty() {
+                by_file.push((p, its));
             }
         }
         let mut ranked: Vec<(&str, usize, usize)> = votes.into_iter().map(|(k, (s, n))| (k, s, n)).collect();
@@ -170,7 +177,19 @@ impl Heroes {
         let (key, score, n) = *ranked.first()?;
         let hero = self.list.iter().find(|h| h.key == key)?.clone();
         let runner_up = ranked.get(1).map(|&(k, s, _)| (k.to_string(), s));
-        Some(Inference { hero, files: n, of: files, score, runner_up })
+        // A file that points at another hero and not at this one is that hero's: the mod changes that hero too.
+        let mut others: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (p, its) in by_file {
+            if its.iter().any(|(k, _)| *k == key) {
+                continue;
+            }
+            if let Some((k, _)) = its.iter().max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(a.0))) {
+                if let Some(h) = self.list.iter().find(|h| h.key == *k) {
+                    others.entry(h.label()).or_default().push(p);
+                }
+            }
+        }
+        Some(Inference { hero, files: n, of: files, score, runner_up, others: others.into_iter().collect() })
     }
 }
 
@@ -184,6 +203,9 @@ pub struct Inference {
     pub score: usize,
     /// The next hero and its score, when another one got votes.
     pub runner_up: Option<(String, usize)>,
+    /// Files that are another hero's and not this one's, by that hero (`label`): `soundevents/hero/atlas.vsndevts_c`
+    /// in a skin for someone else changes Abrams too.
+    pub others: Vec<(String, Vec<String>)>,
 }
 
 impl Inference {
@@ -246,5 +268,16 @@ pub(crate) mod tests {
         assert!(h.infer(["materials/ui/generic.vtex_c"]).is_none());
         assert!(h.infer(std::iter::empty()).is_none());
         assert_eq!(h.list[3].tokens(), vec!["magician".to_string()], "magician_v2 is the magician folder");
+        assert!(i.others.is_empty());
+    }
+
+    #[test]
+    fn a_file_of_another_hero_in_a_mod_is_named_with_that_hero() {
+        // a Lash skin that also ships Lady Geist's sound events changes her too
+        let h = table();
+        let files = ["models/heroes_wip/lash/lash.vmdl_c", "particles/abilities/lash/lash_slam.vpcf_c", "soundevents/hero/geist.vsndevts_c", "materials/default/default_mask.vtex_c"];
+        let i = h.infer(files).unwrap();
+        assert_eq!(i.hero.key, "hero_lash");
+        assert_eq!(i.others, vec![("hero_ghost (Lady Geist)".to_string(), vec!["soundevents/hero/geist.vsndevts_c".to_string()])]);
     }
 }
