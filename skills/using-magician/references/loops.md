@@ -116,7 +116,7 @@ magician uninstall <file> | --mod NAME | --all
 - It never replaces another mod's file, a file it didn't install, or one changed since; the message names the owner and a free slot for `--as`. Don't reach for `--force`.
 - It backs up `gameinfo.gi` once per build and adds the addons line idempotently. Uninstall removes only ledger files; a pak someone else put in `addons/` stays.
 - After installing, `install --status` should show the crc you meant. Deadlock Mod Manager renumbers paks it didn't install; Magician follows a moved pak by its crc and `install --status` says `(the ledger says pakNN_dir.vpk: renamed by another tool)`. Report the move. An update of a moved pak is refused with the `--as` that replaces it in place: use that rather than installing a second copy.
-- A running Source 2 Viewer MCP session keeps the addon paks mapped and install fails with `os error 1224`; stop the viewer (`tools/s2v_mcp.ps1 stop`) first.
+- A running Source 2 Viewer MCP session keeps the addon paks mapped and install fails with `os error 1224`; stop the viewer (`python tools/s2v_mcp.py stop`) first.
 
 ## Install a pak for someone to look at
 

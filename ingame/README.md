@@ -41,6 +41,7 @@ python -I ingame/mod_session.py qa   --mod <mod folder> --out <dir>             
 | `gamelock.py status\|acquire\|bind\|may-drive\|release` | The game lock (below). |
 | `crashdump.py --latest` | Minidump without a debugger: exception, module+offset, a stack scan and the strings on the stack. |
 | `gamepaths.py game\|console_log\|reference\|work\|game_lock\|magician` | Prints a resolved location (for a shell script; importable from Python). |
+| `prove_harness.py [--out DIR] [--menu]` | The whole harness once, on a real game, with no mod involved: what the system offers, the seat, the launch, the console probe, a capture, the stop and the seat given back, into `harness-report.md` with the frame. Exit 0 passed, 1 a step failed, 2 the machine lacks a piece. The first thing to run on a new Linux desktop or a Steam Deck. |
 | `gameos.py` | What this machine's harness can do: processes, display backend, Steam (above). Tests: `python test_gameos.py`. |
 | `qa_run.ps1 -Mod <mod folder> [-Scenarios a,b] [-Wait]` | An older PowerShell entry point that runs `mod_session.py qa` (`magician session qa` is the same on any system), into a dated folder under `<reference>/work/<slug>/ingame/`. |
 

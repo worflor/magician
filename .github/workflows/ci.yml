@@ -56,7 +56,7 @@ jobs:
         run: |
           rustup component add clippy
           sudo apt-get update -q
-          sudo apt-get install -y -q xvfb libx11-6 libxtst6
+          sudo apt-get install -y -q xvfb libx11-6 libxtst6 ffmpeg
       - name: Build
         run: cargo build --release --workspace
       - name: Test
@@ -75,3 +75,5 @@ jobs:
           done
           echo "== ingame/test_gameos.py (on Xvfb)"
           (cd ingame && xvfb-run -a -s "-screen 0 1280x1024x24" python test_gameos.py)
+          echo "== cinema/test_capture.py (on Xvfb)"
+          (cd cinema && xvfb-run -a -s "-screen 0 1280x1024x24" python test_capture.py)

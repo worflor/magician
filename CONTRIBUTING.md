@@ -79,8 +79,8 @@ qa/ harness/      offline visual QA and Blender render scripts; qa/heroes/haze.j
 cinema/           the optional, dev-only film kit for trailers and stills (pak90, never installed during QA or play)
 tools/            bundle.py (player release bundles with mod-interchange.json) and source.py (a static mod source from
                   bundles), behind `magician bundle` and `magician source`; make-release.ps1 (the release files: the asset for this platform, VERSION, SHA256SUMS; Windows PowerShell 5.1 or PowerShell 7), scene_install.ps1 / .py (the player-side
-                  scene installers bundles ship), scene_lump.py (re-dress a UI scene map), and two Windows dev tools:
-                  rip-heroes.ps1 (hero glbs for reference, never committed) and s2v_mcp.ps1 (the Source 2 Viewer MCP launcher); test_bundle.py,
+                  scene installers bundles ship), scene_lump.py (re-dress a UI scene map), rip_heroes.py (hero glbs
+                  for reference, never committed) and s2v_mcp.py (the Source 2 Viewer MCP launcher), each with a .ps1 caller; test_bundle.py,
                   test_source.py and test_scene_install.py hold their guards
 docs/             PDD.md, TDD.md, STATUS.md, PATCH-DAY.md, reference/
 ```
@@ -103,6 +103,7 @@ python ingame/test_mod_session.py    # the session driver; its install and resto
 python ingame/test_logdiff.py    # baselines by build and scene, and what is and is not compared
 python ingame/test_reprove.py    # patch day in game: the plan, the states and accept, on a fake session
 python cinema/test_replay.py     # the free-camera film's shot list and demo-end check, offline
+python cinema/test_capture.py    # the film kit's grabs and recording on X11, against its own window (Xvfb and ffmpeg)
 python -I tools/test_bundle.py   # the bundler's guards (needs the release binary, not the game)
 python -I tools/test_source.py   # the mod-source writer, offline
 python -I tools/test_scene_install.py  # both player installers and magician on good and malformed patches, offline
