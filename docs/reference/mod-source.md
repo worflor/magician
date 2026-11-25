@@ -56,9 +56,10 @@ magician source source.json [--out DIR] [--base-url URL] [--taxonomy FILE] [--pr
 
 It writes `dmm-source.json` (the URL players add; also `.well-known/dmm-source.json` when the source is at the root of
 its origin), `catalog.json`, `mods/<id>.json`, `mods/<id>/releases.json`, `media/<id>/*.jpg`, `files/<zip>` (when
-downloads live on the same host), `index.html`, a page per mod (`<id>/index.html`), `feed.xml`, `sitemap.xml` and `.nojekyll`. URLs inside the tree are relative, so the folder works
-wherever it is served. It writes only files it wrote before (listed in `.dmm-source-files`) or new ones, never over
-anything else, so the folder can be a git repository with its own README. Same inputs, same bytes.
+downloads live on the same host), `index.html`, a page per mod (`<id>/index.html`), `feed.xml`, `sitemap.xml` and
+`.nojekyll`. URLs inside the tree are relative, so the folder works wherever it is served. It writes only files it
+wrote before (listed in `.dmm-source-files`) or new ones, never over anything else, so the folder can be a git
+repository with its own README. Same inputs, same bytes.
 
 DMM's repository has an offline checker for static sources with relative URLs:
 `node examples/mod-source/check.mjs <out>`. A tree whose downloads live on another host is outside what it checks;
@@ -101,47 +102,38 @@ download.
 
 Each page carries schema.org structured data (JSON-LD) built from what the listing already says, so a search engine
 or an agent reads the mod's name, author, version, dates, pictures, download and checksum without guessing. A mod
-is a `SoftwareApplication`, the type search engines read for something downloaded and installed: `downloadUrl`,
-`fileSize`, `softwareVersion`, `releaseNotes` and `installUrl` (the Install with DMM link) are its own properties. The
-game is its `softwareRequirements`, a `VideoGame`. The zip is a `MediaObject` under `encoding`, the type that has a
-`sha256`. `datePublished` is the first release's date, `dateModified` the current one's. A `BreadcrumbList` repeats
-the page's breadcrumb, and the front page is a `CollectionPage` whose `ItemList` names every mod's page. The builds a
-mod was proven on are on the page and not in the data: schema.org has no property for "tested on", and
-`softwareRequirements` would say the mod needs that build. None of it makes a rich result on its own (Google's
-software result wants ratings, which the store does not have); it is there to be understood.
+is a `SoftwareApplication` with its `downloadUrl`, `fileSize`, `softwareVersion`, `releaseNotes` and `installUrl`
+(the Install with DMM link); the game is its `softwareRequirements`, and the zip a `MediaObject` under `encoding`,
+the type that has a `sha256`. `datePublished` is the first release's date, `dateModified` the current one's. The
+front page is a `CollectionPage` listing every mod's page. The builds a mod was proven on are on the page and not in
+the data: schema.org has no property for "tested on", and `softwareRequirements` would say the mod needs that build.
 
 A link says what it is with `kind`. `"same"` is the mod itself on another site (its Nexus Mods page) and becomes
 `sameAs`, which is how a search engine learns the pages are one work; `"video"` is a video of it (a trailer), a
 `VideoObject` the mod is the `subjectOf`. A link without a kind is related material. All three are plain anchors on
-the page with the label as their text, so give it the words a reader needs (`Trailer`, `Nexus Mods`). The bundle's
-own `link`, when it points off the store, is `sameAs` too, as the description already says the mod is "also on"
-it. A video link has no thumbnail or upload date, so Google's rich-results test notes it as an incomplete video; the
-relation is still read.
+the page with the label as their text, so give it the words a reader needs. The bundle's own `link`, when it points
+off the store, is `sameAs` too.
 
 ```json
 "links": [{"label": "Trailer", "url": "https://youtu.be/...", "kind": "video"},
-          {"label": "Nexus Mods", "url": "https://www.nexusmods.com/deadlock/mods/20", "kind": "same"}]
+          {"label": "Nexus Mods", "url": "https://www.nexusmods.com/deadlock/mods/123", "kind": "same"}]
 ```
 
-`authors` maps an author, as `bundle.json` names them, to their own site: `"authors": {"woflo": "https://woflo.dev/"}`.
-The mod's page links the name with `rel="author"` and the data gives the `Person` its `url`.
+`authors`, beside `mods` in the spec, maps an author, as `bundle.json` names them, to their own site
+(`"authors": {"you": "https://example.com/"}`): the mod's page links the name with `rel="author"` and the data gives
+the `Person` its `url`.
 
 `sitemap.xml` lists the front page and every mod's page, each with the date of its newest release. A store served
-under a path does not own its domain's `robots.txt`, so the site's owner adds one line to the one at the root, which
-crawlers read to find a sitemap anywhere on the host:
+under a path does not own its domain's `robots.txt`, so the site's owner adds one line to the one at the root (or
+submits the sitemap in Google Search Console and Bing Webmaster Tools):
 
 ```
-Sitemap: https://woflo.dev/deadlock-skins/sitemap.xml
+Sitemap: https://example.com/deadlock-skins/sitemap.xml
 ```
 
-(or submits it in Google Search Console and Bing Webmaster Tools). A sitemap under a path may list only pages under
-it, which is all this one lists. The head of each page also links the JSON it is a view of (`rel="alternate"`,
-`application/json`: the catalog from the front page, the listing from a mod's page) beside the Atom feed, and gives
-the cover's width and height to Open Graph. Every word is in the HTML without scripts; the gallery's script only
-swaps the big picture when a thumbnail is clicked, and without it a thumbnail is a link to its picture.
-
-No `llms.txt`: it is a proposal Google has said it does not read, and one under a path is not where the proposal's
-readers look. The pages, the data and `catalog.json` already say everything it would.
+The head of each page also links the JSON it is a view of (`rel="alternate"`: the catalog from the front page, the
+listing from a mod's page) beside the Atom feed. Every word is in the HTML without scripts; the gallery's script only
+swaps the big picture when a thumbnail is clicked.
 
 ## What DMM shows of a source
 

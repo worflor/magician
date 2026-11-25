@@ -21,9 +21,8 @@ will do). From there the tool can:
 
 Making the page public is the Publish button on the site.
 
-**Not known until it is tried against the real service:** whether these calls are accepted on a page that is still a
-draft or unpublished, and whether the page lookup by address (below) answers for one. The schema does not say. If
-they are refused, the step that failed is named with Nexus's own words; publish the page on the site, then run again.
+The schema does not say whether every call is accepted on a page that is not published yet. If one is refused, the
+step that failed is named with Nexus's own words; publish the page on the site, then run again.
 
 **Generative AI.** Since 3 November 2026 every mod page on Nexus Mods must declare whether generative AI was used in
 it, with Nexus's labels (AI Generated Content; AI Assisted, with a note of the tools and where they were used; AI
@@ -140,5 +139,9 @@ again, a version already there, a page's first file made from its address and ne
 text sent only with `--page` and only the fields given, the dry run sending nothing, the missing key, the gate's
 refusal and its override, the 255-character cut, plain `http` and redirects refused, and the key in no output.
 
-Not yet: anything against the real Nexus Mods. The first real run will say whether a draft page takes these calls,
-whether the parts of a real upload behave as the schema reads, and how Nexus splits a changelog into entries.
+On Nexus Mods itself: one page, [Maid Lash](https://www.nexusmods.com/deadlock/mods/20), whose first file, summary,
+description and changelog the tool put there. That run changed three things the schema had not told: Nexus answers
+the call that makes a file with the id of its first version, so the file's id is read back from the page's file
+list; a part's time limit is for a stall, not for the whole part, since a large part on a slow uplink takes minutes;
+and a file name outside letters, digits, spaces and `_ ' ( ) . -` is refused by Nexus only after the whole upload,
+so it is caught before anything is sent, in the dry run too.
