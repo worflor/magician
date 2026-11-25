@@ -1,8 +1,6 @@
 # Magician MCP server
 
-Magician's CLI as structured tools for AI agents: call a function, get JSON, instead of parsing CLI text. It is the agent-facing half of Magician's headless contract (README, "Driving it from a script").
-Python standard library only (3.8+); it implements MCP itself (JSON-RPC 2.0 over stdio: `initialize`, `ping`,
-`tools/list`, `tools/call`), and every tool runs the release binary as a subprocess.
+Magician's CLI as structured tools for AI agents: call a function, get JSON, instead of parsing CLI text. It is the agent-facing half of Magician's headless contract (README, "Driving it from a script"). It is Python standard library only (3.8 or newer; CI runs it on 3.11), implements MCP itself (JSON-RPC 2.0 over stdio: `initialize`, `ping`, `tools/list`, `tools/call`), and every tool runs the release binary as a subprocess.
 
 ## Register it
 
@@ -19,14 +17,13 @@ Add this to the `.mcp.json` of the project (or to the `mcpServers` object of you
 }
 ```
 
-From a terminal the same server is `python C:\path\to\magician\mcp\server.py`; any MCP client that speaks stdio can run it.
-Nothing in this repo edits a settings file; registering is your call.
+From a terminal the same server is `python C:\path\to\magician\mcp\server.py`; any MCP client that speaks stdio can run it. Nothing in the repository edits a settings file: registering it is yours to do.
 
-The server uses `target\release\magician.exe` (or `target\mcp-build\release\magician.exe` if that is newer). Set
-`MAGICIAN_BIN` in the entry's `"env"` to pin another binary. Build with `cargo build --release`. Logs go to
-`mcp\logs\` (`MAGICIAN_MCP_LOGS` moves them).
+The server runs `target\release\magician.exe`, or `target\mcp-build\release\magician.exe` when that one is newer; `MAGICIAN_BIN` in the entry's `"env"` pins another binary. Build it with `cargo build --release`. Each call's output goes to a log file under `mcp\logs` (`MAGICIAN_MCP_LOGS` moves them).
 
 ## Tools
+
+Seventeen tools:
 
 | Tool | Arguments | Returns |
 |---|---|---|
@@ -48,31 +45,19 @@ The server uses `target\release\magician.exe` (or `target\mcp-build\release\magi
 | `dump` | `vpk`, `path`, `block`, `max_chars` | KV3 block text (or a texture header), `truncated` |
 | `verify` | `vpk`, `summary` | `decoded`, `carry_mark`, `pooled` (z, p_below), `report` |
 
-Every tool takes an optional `timeout` (seconds). Results carry `run` (`exit_code`, `meaning`: clean, broken, usage error, refused or re-prove, `timed_out`, `seconds`, `log`).
-Failures come back as `isError: true` with `{"ok": false, "error": ...}`; a lint with errors is a normal result
-with `ok: false`.
+Every tool takes an optional `timeout` (seconds). Results carry `run` (`exit_code`, `meaning`: clean, broken, usage error, refused or re-prove, `timed_out`, `seconds`, `log`). Failures come back as `isError: true` with `{"ok": false, "error": ...}`; a lint with errors is a normal result with `ok: false`.
 
 ## Long-running commands
 
-`release`, `build` and `lint` (especially `deep`) run as subprocesses with a timeout (defaults: release and build
-1800 s, lint 300 s, grade 600 s). On timeout the whole process tree is killed and the call returns an error naming
-the log. Release and build never wait on another build's lock (`--no-wait`): they fail at once and say who holds it.
-The full output is always in the log file; the result carries the summary and the path.
+Every tool runs with a timeout (defaults: `release` and `build` 1800 s, `check` 900 s, `grade` and `patchday` 600 s, `lint` 300 s). On timeout the whole process tree is killed and the call returns an error naming the log. `release` and `build` never wait on another build's lock (`--no-wait`): they fail at once and say who holds it. The full output is always in the log file; the result carries the summary and the path.
 
 ## Safety
 
-No tool installs, uninstalls or launches the game, and the server refuses any sub-command outside its allow-list
-(`install` is reachable only as the read-only `--status`). Installing stays CLI-only, for a human or a pipeline to
-run on purpose: `magician install`, `magician uninstall`, `ingame\launch.ps1`. Arguments that start with `-` are
-refused so a path cannot smuggle in a flag.
+No tool installs, uninstalls or launches the game, and the server refuses any sub-command outside its allow-list (`install` is reachable only as the read-only `--status`). Those steps stay CLI calls that a person or a pipeline makes on purpose: `magician install`, `magician uninstall`, `magician session`, `magician reprove`. An argument that starts with `-` is refused, so a path cannot smuggle in a flag.
 
 ## JSON from the CLI
 
-`lint`, `grade`, `drift`, `patchday`, `release` and `rules` take `--json` and print one JSON document with a `schema`
-string on stdout, and nothing else; the server reads that document from stdout and keeps stderr in the log. `mesh`
-writes its verdict with `--json-out FILE`. The rest have no JSON form and the server reads their output (`cloth`,
-`refs`, `ls`, `verify`, `install --status`, and `policy`, which is tab-separated), so a change to those layouts needs
-a change here.
+`check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `release` and `rules` run with `--json`, which prints one JSON document with a `schema` string on stdout and nothing else; the server reads that document and keeps stderr in the log. `mesh` writes its verdict with `--json-out FILE`. The rest have no JSON form and the server reads their text (`cloth`, `refs`, `ls`, `dump`, `verify`, `install --status`, and `policy`, which is tab-separated), so a change to those layouts needs a change here.
 
 ## Test
 
@@ -80,8 +65,4 @@ a change here.
 python mcp\test_server.py [path\to\small\pakNN_dir.vpk]
 ```
 
-Starts the server, lists the tools, calls `rules`, `policy` (a good one and a bad file), `lint` (light and deep),
-`grade` (a pak with nothing of the hero: not graded, the gate blocked), `patchday` and `ls`, and checks the JSON shape,
-the error paths and that no install tool exists. Without an argument (or `MAGICIAN_TEST_PAK`) it packs a one-file pak
-of its own; the lint, grade and patchday checks need the game (grade the Source 2 Viewer CLI too) and are skipped, with
-a line saying so, when it isn't found.
+Starts the server, lists the tools, calls `rules`, `doctor`, `policy` (a good one and a bad file), `lint` (light and deep), `grade` (a pak with nothing of the hero: not graded, the gate blocked), `check`, `patchday` and `ls`, and checks the JSON shape, the error paths and that no install tool exists. Without an argument (or `MAGICIAN_TEST_PAK`) it packs a one-file pak of its own; the lint, grade, check and patchday calls need the game (grade the Source 2 Viewer CLI too) and are skipped, with a line saying so, when it isn't found.

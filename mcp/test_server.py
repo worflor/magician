@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Starts the MCP server, lists the tools, calls `rules`, `policy`, `lint`, `grade`, `patchday` and `ls`, checks the JSON.
+"""Starts the MCP server, lists the tools, calls `rules`, `doctor`, `policy`, `lint`, `grade`, `check`, `patchday` and `ls`,
+checks the JSON.
 
     python mcp/test_server.py [path\to\small\pakNN_dir.vpk]
 
 Without a pak (argument or MAGICIAN_TEST_PAK) it packs a one-file pak of its own with `magician pack`. Linting needs
-the game installed; without it the lint checks are skipped and the rest still runs. Standard library only. Exit 0 when every check passes.
+the game installed; without it the lint, grade, check and patchday checks are skipped and the rest still runs. Standard library only. Exit 0 when every check passes.
 """
 import json
 import os
