@@ -1,0 +1,52 @@
+name: release
+
+# A `v*` tag builds the toolkit for each platform with tools/make-release.ps1 and attaches the files `magician update`
+# reads: an asset per platform, SHA256SUMS and VERSION. The script uploads nothing; this workflow does.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      MAGICIAN_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the release files
+        shell: pwsh
+        run: ./tools/make-release.ps1 -Out dist -Tag "${{ github.ref_name }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: parts
+      - name: Gather the files and checksum them together
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Get-ChildItem parts -Recurse -File | Where-Object { $_.Name -like "magician-*" } | Copy-Item -Destination dist
+          # VERSION is the same on every platform (version, commit, and the fingerprints of what judges): take the first
+          Copy-Item (Get-ChildItem parts -Recurse -File -Filter VERSION | Select-Object -First 1).FullName dist/VERSION
+          ./tools/make-release.ps1 -Out dist -SumsOnly
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/magician-*
+            dist/SHA256SUMS
+            dist/VERSION
