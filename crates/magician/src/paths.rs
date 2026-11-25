@@ -258,7 +258,7 @@ pub fn addon_name(a: &str) -> Result<(), String> {
 }
 
 /// Where a mod's own allowance files are, from its `mod.toml`: `addon/magician.allow` beside it (the layout
-/// `model-replacements/<slug>/addon/`), `magician.allow` beside it, then `content/citadel_addons/<addon>/magician.allow`
+/// `magician new` writes), `magician.allow` beside it, then `content/citadel_addons/<addon>/magician.allow`
 /// in the CSDK for the addon its slug names (`maid-lash` is `maid_lash`) and every `[mod] owners` addon. Each file
 /// once, however many of these lead to it (the CSDK addon is often a junction to the mod's own `addon/`). Returns the
 /// files found and every place looked.

@@ -212,7 +212,9 @@ Every command:
                                                 under other names in [mod] owners = [...]), `proven on N of M`, and per
                                                 era whether the engine changed too (`data only` / `engine too`, from
                                                 engine.tsv; it never changes the verdict); exit 1 broken, 4 re-prove,
-                                                0 clear
+                                                0 clear. The mods: each --mod, else every mod under MAGICIAN_MODS (or
+                                                `mods =`), else the nearest folder, from the working one upward, with
+                                                mod.toml files one or two levels below it
   magician prove <mod.toml> [--evidence DIR] [--build <build>] [--date YYYY-MM-DD] [--pak FILE]... [--json]
                                                 after the in-game pass was looked at: record a proof of the mod's bytes in
                                                 proofs.tsv beside the mod.toml (the build, the date, every file the install
