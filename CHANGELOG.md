@@ -4,9 +4,9 @@ Newest first. Dates are when the capability was proven, not when the code was wr
 
 Each release's entry says whether the lint rules, the grading rubric or the built-in policy changed (`magician update --describe` shows the fingerprints), because that is what `magician update --check` tells a user to re-run `lint` and `grade` for. An entry that says nothing about them says they did not.
 
-## Unreleased
+## 0.1.0 (2026-11-25)
 
-Everything since 0.1.0. **Judgement changed in all three places: the lint rules (80 now, lint judgement revision 2), the grading rubric (3.1.0) and the built-in policy. Re-run `lint`, `grade` and `check` on every mod.** Those changes come first; what is new follows, by what it is for.
+The first public release. **If you ran a copy from before it, judgement has changed in all three places: the lint rules (80 now, lint judgement revision 2), the grading rubric (3.1.0) and the built-in policy. Re-run `lint`, `grade` and `check` on every mod.** Those changes come first; what is new follows, by what it is for, and the foundation it was built on is last.
 
 ### Judgement changed
 
@@ -108,7 +108,7 @@ Proof:
 - Every reader of bytes or text someone else made is fuzzed, a short run in every `cargo test`. It found, among others, buffers sized from header fields in LZ4, KV3, zstd, the VPK tree and meshoptimizer, and `prove`, `grade` and `patchday` deciding `mod.toml` sections three slightly different ways.
 - The workspace builds under one lint set (unsafe code denied, no `unwrap` in the readers, overflow checks in every profile), and `.github/workflows/ci.yml` runs the Rust and Python suites on Windows and Linux runners.
 
-## 0.1.0 (2026-11)
+### The foundation
 
 - `vpk`, `resource` (block table, RERL, native KV3 v4/v5 with LZ4, texture headers and pixels), `mesh` (compiled model meshes, meshoptimizer v0/v1, glb proof), `geom` (geometry kernel), `lint` (rule catalogue with a breaking fixture per rule, mesh family M100-M139), `grade` (hero footprint and overhaul rubric), `expr` (DynamicParams range proof), `mark` (the maker's mark: `sign`, `verify`), the findings cache, `magician` CLI (baseline, scan, dump, kv, index, drift, lint, mesh, pack, build, release, install, footprint, grade).
 - Idempotent install step with a `gameinfo.gi` backup per build and an install ledger.
