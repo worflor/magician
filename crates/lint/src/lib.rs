@@ -182,7 +182,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M135", name: "texture-parity", severity: Severity::Warn,
         in_game: "A replaced texture has fewer mips, another format or another size than Valve's file: Valve's panels and materials draw it at Valve's sizes, so it aliases or shows block artefacts." },
     Rule { code: "M136", name: "albedo-range", severity: Severity::Warn,
-        in_game: "Over 10% of the new materials' area sits outside Valve's own albedo range for this hero: the piece reads brighter or darker than everything Valve drew, flattening or blooming in the game's lighting." },
+        in_game: "Over 10% of the new materials' area sits outside Valve's own albedo range for this model: the piece reads brighter or darker than everything Valve drew, flattening or blooming in the game's lighting." },
     Rule { code: "M137", name: "albedo-absolute", severity: Severity::Error,
         in_game: "Over 5% of the area is absolute black (under 0.003 linear) or white (over 0.80): blacks lose every fold and read as holes, whites flatten and bloom (Valve's art guide: no absolute white or black)." },
     Rule { code: "M138", name: "alpha-coverage-drift", severity: Severity::Warn,
@@ -467,6 +467,8 @@ pub fn lint(input: &Input) -> Vec<Finding> {
 
     // Replacement-vs-addition and drift need a game baseline.
     if let Some(base) = input.base {
+        // the heroes with a voice folder, read once and only for a mod that ships a line no event plays
+        let mut voices: Option<Vec<String>> = None;
         for f in &input.files {
             let p = f.path.as_str();
             let ext = ext_of(p).to_ascii_lowercase();
@@ -475,7 +477,11 @@ pub fn lint(input: &Input) -> Vec<Finding> {
             }
             let replaces = base.contains(p);
             if !replaces && !referenced.contains(p) && !p.starts_with("materials/default/") {
-                out.push(finding("M031", Some(p), "neither replaces a game file nor is referenced by the mod".into()));
+                let others = p.starts_with("sounds/vo/").then(|| line_of_others(p, base, voices.get_or_insert_with(|| voice_folders(base)))).flatten();
+                out.push(finding("M031", Some(p), match others {
+                    Some((hero, q)) => format!("neither replaces a game file nor is referenced by the mod: a line Valve records for other heroes ({q}), not for {hero}, so no sound event plays it"),
+                    None => "neither replaces a game file nor is referenced by the mod".into(),
+                }));
             }
             if let Some(then) = input.built_against {
                 match (then.get(p), base.get(p)) {
@@ -506,6 +512,31 @@ pub fn debug_marker(path: &str) -> Option<&'static str> {
         let bare = tok.trim_end_matches(|c: char| c.is_ascii_digit());
         let bare = if bare.len() >= 3 { bare } else { tok };
         DEBUG_MARKERS.iter().copied().find(|m| *m == bare)
+    })
+}
+
+/// The folders under `sounds/vo/` the game has: one per hero voice, sorted.
+fn voice_folders(base: &Baseline) -> Vec<String> {
+    let mut v: Vec<String> = base.files.keys().filter_map(|p| p.strip_prefix("sounds/vo/")?.split_once('/').map(|(h, _)| h.to_string())).collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
+/// A voice line of one hero that the game has for other heroes and not for this one: the line is named as Valve
+/// names it, so it reads as a line, but no sound event of this hero plays it (`fencer_ping_see_yamato` beside
+/// `astro_ping_see_yamato`). The hero's folder and the first other hero's file with that line, in folder order.
+fn line_of_others(p: &str, base: &Baseline, voices: &[String]) -> Option<(String, String)> {
+    let rest = p.strip_prefix("sounds/vo/")?;
+    let (hero, tail) = rest.split_once('/')?;
+    let (sub, file) = match tail.rsplit_once('/') {
+        Some((s, f)) => (format!("{s}/"), f),
+        None => (String::new(), tail),
+    };
+    let line = file.strip_prefix(hero)?.strip_prefix('_')?;
+    voices.iter().filter(|h| h.as_str() != hero).find_map(|h| {
+        let q = format!("sounds/vo/{h}/{sub}{h}_{line}");
+        base.contains(&q).then(|| (hero.to_string(), q.trim_end_matches("_c").to_string()))
     })
 }
 

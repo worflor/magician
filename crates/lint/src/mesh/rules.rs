@@ -521,7 +521,7 @@ pub fn judge(ours: &Census, valve: Option<&Census>, fp: &FairPlay) -> Out {
                     p.iter().take(4).map(|x| format!("{} {:.0}%", x.0.rsplit('/').next().unwrap_or(&x.0), 100.0 * pick(x) / x.1)).collect::<Vec<_>>().join(", ")
                 };
                 if outside > ALBEDO_OUTSIDE {
-                    out.push(("M136", format!("{:.0}% of our new materials' area is outside Valve's albedo range for this hero [{lo:.4}, {hi:.4}] linear (0.5th-99.5th percentile): below {}; above {}", 100.0 * outside, list(&|x| x.2), list(&|x| x.3))));
+                    out.push(("M136", format!("{:.0}% of our new materials' area is outside Valve's albedo range for this model [{lo:.4}, {hi:.4}] linear (0.5th-99.5th percentile): below {}; above {}", 100.0 * outside, list(&|x| x.2), list(&|x| x.3))));
                 }
                 let black: f64 = all.iter().filter(|x| x.0 < ALBEDO_BLACK).map(|x| x.1).sum::<f64>() / total;
                 let white: f64 = all.iter().filter(|x| x.0 > ALBEDO_WHITE).map(|x| x.1).sum::<f64>() / total;
