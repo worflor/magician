@@ -136,7 +136,9 @@ Every command:
                                                 one, the same bytes, recompiled (only the compiler's record differs) or
                                                 different, with the blocks that differ; exit 0 when no file differs in
                                                 what it holds, 1 when one does
-  magician refs <vpk> <path>                    what a compiled resource depends on, and whether each resolves
+  magician refs <vpk> <path>                    what a compiled resource depends on, and whether each resolves (a path
+                                                in a pak, here and for dump, mesh and cloth, can be given as its source:
+                                                models/x.vmdl for models/x.vmdl_c)
   magician dump <vpk> <path> [--block TAG]      a compiled file's KV3 (DATA by default) as text, or a texture header
   magician dump --text FILE                     re-print a KV3 text file (e.g. a decompile) in the same form, to diff
   magician index [--game DIR] [--out FILE]      build the users index (who uses each game file) for shared-file lint
@@ -821,12 +823,34 @@ fn cmd_ls(args: &[String]) -> R {
     Ok(ExitCode::SUCCESS)
 }
 
+/// A path inside a pak as a person may type it: as the pak has it, in lowercase, or as the source the file was
+/// compiled from (`models/x.vmdl` for `models/x.vmdl_c`), with `\` for `/`. What the pak has wins; else as typed.
+pub(crate) fn pak_path(has: &dyn Fn(&str) -> bool, typed: &str) -> String {
+    let clean = typed.replace('\\', "/");
+    for p in [clean.clone(), clean.to_ascii_lowercase(), lint::deep::compiled(&clean)] {
+        if has(&p) {
+            return p;
+        }
+    }
+    clean
+}
+
+/// The message for a path a pak does not hold, with how to see what it does hold.
+pub(crate) fn not_in(path: &str, vp: &Path) -> String {
+    format!("{path} not in {} (`magician ls {}` lists its files)", vp.display(), quoted_arg(&vp.display().to_string()))
+}
+
+/// An argument as a shell takes it: in double quotes when it has a space.
+pub(crate) fn quoted_arg(a: &str) -> String {
+    if a.contains(' ') { format!("\"{a}\"") } else { a.to_string() }
+}
+
 fn cmd_refs(args: &[String]) -> R {
     let p = positional(args);
     let vp = Path::new(p.first().ok_or("refs <vpk> <path>")?);
-    let path = p.get(1).ok_or("refs <vpk> <path>")?;
     let v = open(vp)?;
-    let e = v.find(path).ok_or_else(|| format!("{path} not in {}", vp.display()))?;
+    let path = &pak_path(&|x| v.find(x).is_some(), p.get(1).ok_or("refs <vpk> <path>")?);
+    let e = v.find(path).ok_or_else(|| not_in(path, vp))?;
     let data = v.read(e).map_err(|e| e.to_string())?;
     let r = resource::parse(&data).map_err(|e| e.to_string())?;
     let blocks: Vec<_> = r.blocks.iter().map(|b| b.tag_str()).collect();
@@ -849,9 +873,9 @@ fn cmd_dump(args: &[String]) -> R {
     }
     let p = positional(args);
     let vp = Path::new(p.first().ok_or("dump <vpk> <path> [--block TAG]")?);
-    let path = p.get(1).ok_or("dump <vpk> <path> [--block TAG]")?;
     let v = open(vp)?;
-    let e = v.find(path).ok_or_else(|| format!("{path} not in {}", vp.display()))?;
+    let path = &pak_path(&|x| v.find(x).is_some(), p.get(1).ok_or("dump <vpk> <path> [--block TAG]")?);
+    let e = v.find(path).ok_or_else(|| not_in(path, vp))?;
     let data = v.read(e).map_err(|e| e.to_string())?;
     if let Some(t) = resource::texture::info(&data) {
         say!("{path}: {}x{}x{} {} (format {}, {} mips, flags {:#x}, {} bytes)", t.width, t.height, t.depth, t.format_name(), t.format, t.mips, t.flags, data.len());
@@ -987,10 +1011,14 @@ fn print_lint(o: &LintOut) -> R {
     if json_mode() {
         out!("{}", jsonout::lint_run(r, build, vpk, deep));
     }
-    for x in &r.kept {
-        let at = x.path.as_deref().unwrap_or("(vpk)");
-        say!("{} {} {:<26} {at}
-        {}", sev_label(x.severity), x.code, x.name, x.message);
+    // A block of one rule on one file prints its head once; a run of numbered siblings is one line (`shown`).
+    let mut last: Option<(&str, String)> = None;
+    for x in shown(&r.kept) {
+        if last.as_ref() != Some(&(x.code, x.path.clone())) {
+            say!("{} {} {:<26} {}", sev_label(x.severity), x.code, x.name, x.path);
+        }
+        say!("        {}", x.message);
+        last = Some((x.code, x.path));
     }
     if !r.allowed.is_empty() {
         say!("allowed ({}):", r.allowed.len());
@@ -1043,6 +1071,121 @@ pub(crate) fn rule_tally(findings: &[lint::Finding]) -> Vec<Tally> {
     }).collect();
     v.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.count.cmp(&a.1.count)).then(a.1.code.cmp(b.1.code)));
     v.into_iter().map(|(_, t)| t).collect()
+}
+
+/// One entry of a lint report as a person reads it: a finding, or a run of one rule's findings on one file.
+#[derive(Debug, PartialEq)]
+pub(crate) struct Shown {
+    pub code: &'static str,
+    pub name: &'static str,
+    pub severity: Severity,
+    pub path: String,
+    pub message: String,
+}
+
+/// A message cut at its numbers: the text between them, and the numbers.
+fn split_numbers(m: &str) -> (Vec<&str>, Vec<&str>) {
+    let (mut text, mut nums, mut start, mut in_num) = (Vec::new(), Vec::new(), 0, false);
+    for (i, c) in m.char_indices() {
+        if c.is_ascii_digit() != in_num {
+            if in_num { nums.push(&m[start..i]) } else { text.push(&m[start..i]) }
+            start = i;
+            in_num = !in_num;
+        }
+    }
+    if in_num { nums.push(&m[start..]) } else { text.push(&m[start..]) }
+    (text, nums)
+}
+
+/// The lint report's entries. The record (`--json`, `--json-out`) keeps every finding as it is; the text shows a run
+/// of one rule on one file that differs only in one number counting up as one line (`needs '.../swing_long_01..25
+/// .vsnd_c' (25 findings)`), and says once, under the run, an explanation that several of its findings end with.
+pub(crate) fn shown(kept: &[lint::Finding]) -> Vec<Shown> {
+    let at = |f: &lint::Finding| f.path.clone().unwrap_or_else(|| "(vpk)".into());
+    let mut out: Vec<Shown> = Vec::new();
+    let mut i = 0;
+    while i < kept.len() {
+        // the block: consecutive findings of one rule on one file
+        let mut j = i + 1;
+        while j < kept.len() && kept[j].code == kept[i].code && kept[j].path == kept[i].path && kept[j].severity == kept[i].severity {
+            j += 1;
+        }
+        let block = &kept[i..j];
+        // an explanation three or more of them end with ("...; <why>") is said once, after them
+        let mut tails: std::collections::BTreeMap<&str, usize> = Default::default();
+        for f in block {
+            if let Some((_, t)) = f.message.rsplit_once("; ") {
+                if t.len() >= 40 {
+                    *tails.entry(t).or_default() += 1;
+                }
+            }
+        }
+        let shared: Option<&str> = tails.into_iter().filter(|(_, n)| *n >= 3).max_by_key(|(_, n)| *n).map(|(t, _)| t);
+        let mut messages: Vec<String> = block
+            .iter()
+            .map(|f| match (shared, f.message.rsplit_once("; ")) {
+                (Some(s), Some((head, t))) if t == s => format!("{head} (*)"),
+                _ => f.message.clone(),
+            })
+            .collect();
+        // runs that differ in one number counting up by one
+        let mut k = 0;
+        let mut lines: Vec<String> = Vec::new();
+        while k < messages.len() {
+            let (text, nums) = split_numbers(&messages[k]);
+            let mut end = k + 1;
+            let mut pos: Option<usize> = None;
+            while end < messages.len() {
+                let (t2, n2) = split_numbers(&messages[end]);
+                if t2 != text || n2.len() != nums.len() {
+                    break;
+                }
+                let differ: Vec<usize> = (0..nums.len()).filter(|&x| nums[x] != n2[x]).collect();
+                let prev = split_numbers(&messages[end - 1]).1;
+                let p = match (differ.as_slice(), pos) {
+                    ([p], None) => *p,
+                    ([p], Some(q)) if *p == q => q,
+                    _ => break,
+                };
+                let up = |a: &str, b: &str| a.len() == b.len() && a.parse::<u64>().ok().map(|x| x + 1) == b.parse::<u64>().ok();
+                if !up(prev[p], n2[p]) {
+                    break;
+                }
+                pos = Some(p);
+                end += 1;
+            }
+            match pos {
+                Some(p) if end - k >= 3 => {
+                    let last = split_numbers(&messages[end - 1]).1[p].to_string();
+                    let mut m = String::new();
+                    for (x, t) in text.iter().enumerate() {
+                        m.push_str(t);
+                        if let Some(n) = nums.get(x) {
+                            if x == p {
+                                m.push_str(&format!("{n}..{last}"));
+                            } else {
+                                m.push_str(n);
+                            }
+                        }
+                    }
+                    lines.push(format!("{m} ({} findings)", end - k));
+                    k = end;
+                }
+                _ => {
+                    lines.push(std::mem::take(&mut messages[k]));
+                    k += 1;
+                }
+            }
+        }
+        if let Some(s) = shared {
+            lines.push(format!("(*) {s}"));
+        }
+        for m in lines {
+            out.push(Shown { code: block[0].code, name: block[0].name, severity: block[0].severity, path: at(&block[0]), message: m });
+        }
+        i = j;
+    }
+    out
 }
 
 /// One line of a tally: `M030 dangling-ref x53, M062 model-contract x10`.
@@ -2557,6 +2700,53 @@ mod exclude_tests {
         assert_eq!(order, vec![("M030", 1, 1), ("M064", 3, 2), ("M031", 1, 1), ("M060", 1, 1)]);
         assert_eq!(tally_line(&t.iter().take(2).collect::<Vec<_>>()), "M030 dangling-ref x1, M064 sound-louder x3");
         assert_eq!(t.iter().map(|t| t.count).sum::<usize>(), run.len(), "every finding is counted once");
+    }
+
+    #[test]
+    fn a_path_in_a_pak_can_be_typed_as_its_source() {
+        let pak = ["models/heroes_wip/x/x.vmdl_c", "README.txt"];
+        let has = |p: &str| pak.contains(&p);
+        assert_eq!(pak_path(&has, "models/heroes_wip/x/x.vmdl"), "models/heroes_wip/x/x.vmdl_c");
+        assert_eq!(pak_path(&has, "Models\\heroes_wip\\x\\x.vmdl_c"), "models/heroes_wip/x/x.vmdl_c");
+        assert_eq!(pak_path(&has, "README.txt"), "README.txt", "what the pak has wins, capitals and all");
+        assert_eq!(pak_path(&has, "models/y.vmdl"), "models/y.vmdl", "a path the pak lacks is left as typed");
+        assert!(not_in("models/y.vmdl", Path::new("my mod.vpk")).ends_with("(`magician ls \"my mod.vpk\"` lists its files)"));
+    }
+
+    #[test]
+    fn a_run_of_numbered_siblings_is_one_line_and_a_shared_explanation_is_said_once() {
+        let f = |code: &str, path: &str, m: &str| {
+            let r = lint::rule(code);
+            lint::Finding { code: r.code, name: r.name, severity: r.severity, path: Some(path.into()), message: m.into() }
+        };
+        let mut run: Vec<lint::Finding> = (1..=25).map(|i| f("M030", "soundevents/hero/x.vsndevts_c", &format!("needs 'sounds/melee/swing_long_{i:02}.vsnd_c'"))).collect();
+        run.push(f("M030", "soundevents/hero/x.vsndevts_c", "needs 'sounds/other.vsnd_c'"));
+        let why = "that is Valve's attachment with its axes in another order: the export turned it";
+        for (n, at) in [("aim", "0,46,0"), ("zipline", "10,90,10"), ("root_aim", "0,46,0")] {
+            run.push(f("M062", "models/x.vmdl_c", &format!("attachment '{n}' changed: at {at}; {why}")));
+        }
+        run.push(f("M062", "models/x.vmdl_c", "attachment 'mask' changed: at 2,4,0"));
+        // two of a number counting up are left as they are; so is a number that skips
+        run.push(f("M061", "models/x.vmdl_c", "original referenced 'fx_01.vsnap_c'"));
+        run.push(f("M061", "models/x.vmdl_c", "original referenced 'fx_02.vsnap_c'"));
+        run.push(f("M061", "models/y.vmdl_c", "original referenced 'fx_01.vsnap_c'"));
+        run.push(f("M061", "models/y.vmdl_c", "original referenced 'fx_03.vsnap_c'"));
+        run.push(f("M061", "models/y.vmdl_c", "original referenced 'fx_04.vsnap_c'"));
+        let s: Vec<String> = shown(&run).into_iter().map(|x| format!("{} {}: {}", x.code, x.path, x.message)).collect();
+        assert_eq!(s, vec![
+            "M030 soundevents/hero/x.vsndevts_c: needs 'sounds/melee/swing_long_01..25.vsnd_c' (25 findings)".to_string(),
+            "M030 soundevents/hero/x.vsndevts_c: needs 'sounds/other.vsnd_c'".into(),
+            "M062 models/x.vmdl_c: attachment 'aim' changed: at 0,46,0 (*)".into(),
+            "M062 models/x.vmdl_c: attachment 'zipline' changed: at 10,90,10 (*)".into(),
+            "M062 models/x.vmdl_c: attachment 'root_aim' changed: at 0,46,0 (*)".into(),
+            "M062 models/x.vmdl_c: attachment 'mask' changed: at 2,4,0".into(),
+            format!("M062 models/x.vmdl_c: (*) {why}"),
+            "M061 models/x.vmdl_c: original referenced 'fx_01.vsnap_c'".into(),
+            "M061 models/x.vmdl_c: original referenced 'fx_02.vsnap_c'".into(),
+            "M061 models/y.vmdl_c: original referenced 'fx_01.vsnap_c'".into(),
+            "M061 models/y.vmdl_c: original referenced 'fx_03.vsnap_c'".into(),
+            "M061 models/y.vmdl_c: original referenced 'fx_04.vsnap_c'".into(),
+        ]);
     }
 
     #[test]
