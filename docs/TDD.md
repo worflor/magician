@@ -139,47 +139,52 @@ Deep lint of a hero model is about 8 s cold and 1 s cached; a whole patch-day ch
 
 ## Grading
 
-A grade is a record of separate properties (schema `magician.grade/2`, `record.rs`) and a label projected from it:
+A grade is a record of separate properties (schema `magician.grade/3`, `record.rs`) and a label projected from it:
 
 ```text
-<letter> <word>[ · NSFR | · FP?][ · stale(<last proven build>) | · unproven]
-not graded (<kind>)[ · NSFR | · FP?][ · stale(<build>) | · unproven]
+<Kind> (<groups>)[ · broken][ · NSFR | · FP?][ · stale(<last proven build>) | · unproven]
+not graded (<kind>)[ · broken][ · NSFR | · FP?][ · stale(<build>) | · unproven]
 ```
+
+`<groups>` names look, effects and sound in that order: the group when covered, `some <group>` when begun, nothing while Valve's (`nothing measured` when no group has anything of the mod's own).
 
 - **Identity** (`identity.rs`) decides the archetype from signals, stored as data: `head_replaced` (our head-weighted vertices against Valve's head, `evidence::compare_models`), `renamed` (the mod's localisation names the hero anew, or a replaced name logo for a `mod.toml` name that does not keep the hero's), `new_hero_art` (the portrait and card art), `voice_identity` (declared in `mod.toml`, half a signal). Two make a new character, which needs its model replaced. A replaced model that keeps Valve's mesh, or Valve's model with new materials, is a variant; no model is a kit; a mod that touches nothing of the hero is not graded.
 
   | Identity | Rubric | Word |
   |---|---|---|
-  | new character | character | Echo at S, Echolite below |
+  | new character | character | Echo |
   | same character | character | Costume |
   | same model | variant | Variant |
   | no model | kit | Kit |
   | not a hero mod | none | not graded (map, HUD or music mod) |
 
-- **Depth** (`rubric.rs`): each archetype has required criteria and applicable ones that count once touched, weights totalling 100, and an S minimum (a variant covers every visible material slot of Valve's model; a kit at least two of VFX, sound, UI and voice, each complete). Coverage is per group. Depth caps are about the mod working only: protected files max D, lint errors that are not fair play max C, dropped dependencies max B, a missed S minimum max A. Files byte-identical to Valve's at the same path earn nothing.
-- **Compliance** (`compliance.rs`): pass, fail (NSFR) or unknown (FP?). The fair-play rules are M062 (hitboxes only), M063, M081, M082, M124, M129, M130, M131, M140; each is never allowable, advisory, or bounded (an allowance holds within the limit the rule's own measure is checked against: M140's worst point and visible share, read back from its message by `mesh::rules::envelope_measures`). A light lint over a model, or any M144, makes the rules it names unknown. Fair-play findings and M144 never count toward craft or the depth caps.
+- **Description** (`rubric.rs`): eight criteria, each in one group: look (model, materials, UI art, scenes), effects (ability VFX, animation), sound (kit sound, voice). Each archetype has required criteria and applicable ones that count once touched (a variant adds VFX, animation, sound and voice once it touches them; a kit counts only what it touches), and weights that say how much each counts within its group. A group's coverage is the weighted mean of its counted criteria; at `groups.covered` (0.8) it is named, above nothing and at `groups.touched` (0) it is `some`, else left out. Coverage is per group of files (an ability, a moment), and a band with fewer files in the hero's footprint than its target is full at what the hero has. Each group's line says what was counted: a covered criterion by name, an untouched one as Valve's, a partial one by its count (`UI art 11 of 13`, `VFX for 4 of 4 abilities (2 in part) and the weapon`). Files byte-identical to Valve's at the same path count for nothing.
+- **broken** is `LintFacts::broken`: a lint error that is not fair play, allowed or not. `check` reads the same function for its verdict. Shipping a skeleton, graph or data file (an M070 error at a game path, so broken too) and unallowed M061 dropped dependencies are notes in the report and in `description.notes`.
+- **Compliance** (`compliance.rs`): pass, fail (NSFR) or unknown (FP?). The fair-play rules are M062 (hitboxes only), M063, M081, M082, M124, M129, M130, M131, M140; each is never allowable, advisory, or bounded (an allowance holds within the limit the rule's own measure is checked against: M140's worst point and visible share, read back from its message by `mesh::rules::envelope_measures`). A light lint over a model, or any M144, makes the rules it names unknown. Fair-play findings and M144 never make a mod broken.
 - **Freshness** is asked of the paks graded: the builds a recorded proof (`proofs.tsv` beside the `--mod`) holds every one of them on, against the target build (installed, or `--target`). Builds `[proven] builds` lists for other bytes or without a record are carried in the record as `unbound` and in the blocker's words, and count for nothing.
 - **Rights** is a person's verdict in `mod.toml` (`[rights] state`: unreviewed, cleared, denied).
 - **Enforcement**: fair play and rights are lenient by default and enforced with one switch each in the policy. `fair_play.enforce = false` reports every fair-play finding and M144 as a warning (`compliance::severity`, applied to the lint run that `lint`, `build`, `release`, `install`, `grade` and `mesh` act on), so nothing stops on them alone; `true` makes every one that can fail fair play or leave it unknown (all but the advisory rules) an error. `rights.enforce` decides whether `unreviewed` blocks the gate. The label and the record say the same either way; the record's policy object carries both switches.
 - **Release gate**: blockers are lint errors that are not fair play, files byte-identical to Valve's, not proven on the target, and rights denied; fair play unknown, NSFR and unreviewed rights are blockers when enforced and warnings when not.
 - **Allowances**: every `--allow` and `--addon-root` file; with neither, `grade --mod` reads the mod's own (`paths::mod_allowances`: `addon/magician.allow` and `magician.allow` beside the `mod.toml`, then the CSDK addon of its slug and of each `[mod] owners` entry, each file once). The record's `allowance_files` names each file read with its SHA-256 and where it was found, or says none was.
 
-The record also carries the toolchain and commit, the build, SHA-256 fingerprints of the baseline (its canonical text and the rig sidecar), of every pak and of the policy, every criterion, cap, signal with its evidence, check run or not run, violation, allowance with value and limit, and advisory, and the next steps. Its fields are in a fixed order and its numbers print one way, so the same inputs give the same bytes.
+The record also carries the toolchain and commit, the build, SHA-256 fingerprints of the baseline (its canonical text and the rig sidecar), of every pak and of the policy, the kind, every group with its state, coverage and what was counted, every criterion with its measured coverage, the notes, every signal with its evidence, check run or not run, violation, allowance with value and limit, and advisory, and the next steps. Its fields are in a fixed order and its numbers print one way, so the same inputs give the same bytes.
 
 Decisions taken in building it, where the design left them open:
 
 - A replaced name logo is a rename only when the mod's name (`[identity] name`, else `[mod] name`) does not keep the hero's: Maid Lash ships a new `lash` logo and is still Lash. A localisation that renames the hero counts on its own.
 - `head_replaced` compares our LOD0 vertices weighted most to `head` or a bone below it with Valve's, within 0.1 units; under half on Valve's head is a new head (a new head 16%, Maid Lash 78%). The same comparison over the whole mesh tells a variant (98% or more on Valve's) from a costume.
 - A new character needs its model replaced: a rename and new art on Valve's model are a kit, not a new body.
-- M081 (brighter particles) and M130 (the wide envelope below the taste tier) are advisory: a brighter cue is not a hidden one, and M130 fires on both reference skins' cloth. M062 counts as fair play only for hitboxes; a lost bone or attachment is the mod not working, a depth cap.
-- A variant's and a kit's score is over the criteria in their scope (applicable ones count once touched), so their craft weight is lower than the character rubric's 15: a clean pak with one sound in it is a fragment of a kit, not half of one. A kit's scope is padded to two departments with the heaviest untouched ones at zero.
+- M081 (brighter particles) and M130 (the wide envelope below the taste tier) are advisory: a brighter cue is not a hidden one, and M130 fires on both reference skins' cloth. M062 counts as fair play only for hitboxes; a lost bone or attachment is the mod not working: broken.
+- A character's voice counts even untouched, so a new character with its own kit sound and Valve's voice reads `some sound`; a kit is described only by what it touches, so a sound kit reads `Kit (sound)`.
+- The default lines were set on real mods: every group of the reference mods that a person would call the mod's own measured 0.90 or more, every group with a part still Valve's (a voice, most often) 0.71 or less. `groups.touched` is 0, so `some` means begun and left out means Valve's.
+- The label carries no letter and the record no overall score: the criteria's coverage is there for anyone who wants to weigh it.
 - A mod with no proven build on record reads `unproven` in the label, beside `stale(N)` for one proven on an older build.
 - `grade` lints deep by default, since fair play needs the mesh rules; `--light` is the quick look and reads `FP?` for a model.
-- Files byte-identical to Valve's at the same path earn nothing in depth and block the gate.
+- Files byte-identical to Valve's at the same path count for nothing in the description and block the gate.
 - The record's paths are file names, not absolute paths, so the same paks graded on two machines give the same bytes; a grade on the same inputs is byte-for-byte reproducible (a test holds it on Maid Lash).
 - `release` does not exit on the gate: a fresh release is never proven yet, and its rights are a person's call. `grade --gate` is the check a publishing step runs.
 
-**Policy** (`grade::policy`, `lint::policy`): every judgement number is a key of a plain-text policy file, defaulting to its constant. The keys are listed with their ranges by `magician policy`; a file is read strictly (unknown section or key, wrong kind of value, out of range, set twice, weights not totalling 100, tiers out of order: a usage error with the line). The fingerprint is SHA-256 of every effective `key = value` line, so a file that spells out the defaults has the default fingerprint.
+**Policy** (`grade::policy`, `lint::policy`): every judgement number is a key of a plain-text policy file, defaulting to its constant. The keys are listed with their ranges by `magician policy`; a file is read strictly (unknown section or key, wrong kind of value, out of range, set twice, a touched line at or above the covered one, tiers out of order, the retired `[letters]`: a usage error with the line). The fingerprint is SHA-256 of every effective `key = value` line, so a file that spells out the defaults has the default fingerprint.
 
 ## Mesh rules
 

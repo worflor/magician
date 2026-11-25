@@ -24,7 +24,7 @@ The runbook is [PATCH-DAY.md](PATCH-DAY.md). Every new capability should make so
 
 - **Determinism.** The same mod against the same build gives the same findings in the same order. `pack` gives the same bytes. A cache may make a run faster; it never makes it different.
 - **Exit codes that mean something.** 0 clean, 1 broken (someone must act), 2 usage error, 3 refused on purpose, 4 loads but must be re-proven in game, 5 an update is available (`update --check` only). A wrapper decides what to do from the code before it reads a word. `--help` on any command only prints its usage; an option nobody knows is an error, not a guess.
-- **Text a script can read.** Stable labels (`ok`, `RE-PROVE`, `BROKEN`, rule codes like `M062`, `S Echo · NSFR`), one finding per line, the evidence on the line. One JSON document with a `schema` string wherever a machine is the main reader (`--json`).
+- **Text a script can read.** Stable labels (`ok`, `RE-PROVE`, `BROKEN`, rule codes like `M062`, `Echo (look, effects) · NSFR`), one finding per line, the evidence on the line. One JSON document with a `schema` string wherever a machine is the main reader (`--json`).
 - **Specific findings.** A finding names the file, the rule, and what happens in the game: "the original asset shows instead", "the skin vanishes", "enemies shoot cloth that cannot be hit". "Something looks off" is not a finding.
 - **Honesty about limits.** What a rule can't see is said where the rule is. Unchecked is never clean: a bounded search says where it stopped. Unverified in-game behaviour is marked UNVERIFIED.
 - **Nothing a caller has to know twice.** What a mod's own `mod.toml` already says (its paks, hero, allowances, last proven build) is never asked for again: run inside its folder, a bare verb is enough. Every answer filled in this way is said, with where it came from, and anything given explicitly wins. A typo is answered with what it most likely meant; `magician` alone says what to run next. The same commands and the same JSON serve a script; the help only gets shorter for a person.
@@ -36,8 +36,8 @@ The runbook is [PATCH-DAY.md](PATCH-DAY.md). Every new capability should make so
 - **Valve's file is the reference.** A mod is judged against Valve's own file at the same path. What Valve already does is design, not a defect.
 - **Fair play is a lint category.** Mods are cosmetic. A skin that makes a hero harder to read, smaller than its hitboxes, quieter than its cues or easier to lose in a fight is broken, whatever it looks like.
 - **Never weaken a rule to make a mod pass.** Accept a finding per site, in writing, with a reason that stays visible.
-- **A grade is a measured claim, in parts that don't bleed into each other.** Depth (the letter) says how completely a mod fulfils its archetype; compliance says whether it is fair to play with; freshness says whether these bytes are proven on this build. A superb overhaul a few units too wide reads `S Costume · NSFR`, not like a sloppy one. The label is a projection of a record that holds every measurement behind it.
-- **Depth is completeness, not taste.** S means "it did it all", never "it looks great", and letters compare within an archetype: an S Kit and an S Echo are both champions of their division. Echo is the one crowned name and there is no shallow Echo. A mod with no rubric yet is "not graded", never a fake F.
+- **A grade is a measured claim, in parts that don't bleed into each other.** The description says what kind of mod it is and what it makes its own; `broken` says whether it loads; compliance says whether it is fair to play with; freshness says whether these bytes are proven on this build. A superb overhaul a few units too wide reads `Costume (look, effects, sound) · NSFR`, not like a sloppy one. The label is a projection of a record that holds every measurement behind it.
+- **A grade describes, it does not rank.** A mod that reskins one ability is not a lesser mod than a full character; it is a different one, and `Kit (some effects)` says which. The words name what the mod made its own, never whether the art is good. A mod with no rubric yet is "not graded", never a made-up description.
 - **Unknown is not a pass.** A fair-play check that could not run is `FP?` until it runs, never a quiet pass; the release gate lists it, and blocks on it when fair play is enforced.
 - **The build is the era.** Facts about one build come from that build's baseline, not from constants in the code.
 - **Own the reading.** Formats are decoded here, without external crates, and checked against an independent reader. A round trip through our own decoder proves nothing.
@@ -58,8 +58,8 @@ The runbook is [PATCH-DAY.md](PATCH-DAY.md). Every new capability should make so
 - A convenience that writes into the game install without the ledger.
 - A default that is a guess: a command that picks a pak, a hero or an owner without saying which and from where, or folds in one that only looks like it belongs.
 - A reader that stops reading (`| head`) turning into a crash, or a progress line or colour code in what a script reads.
-- A grade that rises because the mod ships more files, not because it covers more of the hero, or Valve's own files shipped back to it.
-- A fair-play failure that lowers the letter, or a letter that hides one.
+- A grade that names more because the mod ships more files, not because it covers more of the hero, or because of Valve's own files shipped back to it.
+- A fair-play failure that changes the description, or a description that hides one.
 - A judgement number that changes and leaves no trace in the record.
 - A green result presented as proof when nobody has looked at the frames.
 
