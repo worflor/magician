@@ -1,8 +1,8 @@
 # Launch Deadlock for in-game testing and wait until the main menu is live.
 #
-#   powershell -ExecutionPolicy Bypass -File toolkit\ingame\launch.ps1            # windowed borderless 1920x1080
+#   powershell -ExecutionPolicy Bypass -File ingame\launch.ps1            # windowed borderless 1920x1080
 #   ... -Width 3840 -Height 2160      # a window larger than the monitor (the cinema kit's supersampling; UNVERIFIED)
-#   ... -Extra "+map hero_testing"
+#   ... -Extra "+map new_player_basics"
 #
 # -condebug writes game\citadel\console.log, which console.py reads back. No -dev: on build 6864 it crashes
 # client.dll (null read) when hero_testing loads.

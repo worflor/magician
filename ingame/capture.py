@@ -3,9 +3,11 @@
     python -I capture.py shot  <out.png>                      # one frame
     python -I capture.py burst <out_dir> --frames 24 --fps 12  # a sequence, for motion review (half res; --full)
     python -I capture.py sheet <in_dir> <out.png> --cols 6     # contact sheet of a burst
+    python -I capture.py crop  <in.png> <out.png> x0 y0 x1 y1 [--zoom 2]
 
-Copies the window's client area off the desktop (works for windowed and borderless; exclusive fullscreen
-can come back black, so launch with -windowed or -noborder). Zero dependencies: ctypes for GDI, zlib for PNG.
+Reads the window's own client area through PrintWindow, so a window on top of the game does not get into the frame;
+when PrintWindow fails it copies the area off the desktop instead. Works windowed and borderless; exclusive
+fullscreen can come back black, so launch.ps1 starts the game borderless. Zero dependencies: ctypes for GDI, zlib for PNG.
 """
 import ctypes
 import ctypes.wintypes as wt

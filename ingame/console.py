@@ -1,7 +1,7 @@
 """Drive Deadlock's developer console from outside (retail has no netcon or -netconport).
 
-    python -I console.py "map hero_testing" "selecthero hero_lash"     # each argument is one command
-    python -I console.py --wait-log "OnGameStateChanged: GameInProgress" 120 "map hero_testing"
+    python -I console.py "map new_player_basics" "selecthero hero_haze"   # each argument is one command
+    python -I console.py --wait-log "OnGameStateChanged: GameInProgress" 120 "map new_player_basics"
     python -I console.py --script scenario.txt                           # one command per line; see below
     python -I console.py --tail 30                                       # last lines of console.log
 
@@ -20,6 +20,7 @@ Scenario lines: a console command, or a directive:
                                is the console key, so a scenario can open the console without knowing its bind)
     @down <key[+key]>          game keys down and left down (release with @up): motion for a screen recording
     @up <key[+key]>
+    @hold, @mouse, @wheel, @entity, @turntable, @orbit: see ingame/README.md
     # comment
 
 One user of the game at a time: before typing, the game lock (gamelock.py) is taken for --holder NAME (else
