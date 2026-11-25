@@ -43,7 +43,7 @@ Exit codes: 0 published (or already there), 1 a step failed, 2 usage (bad argume
 that does not hold together), 3 refused (the release gate, a version already there with other bytes, a file of that
 name already on the page).
 """
-import hashlib, json, math, os, re, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request, zipfile
+import hashlib, io, json, math, os, re, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request, zipfile
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, TOOLS)
@@ -244,12 +244,18 @@ def nexus_block(spec, spec_path, base):
         if not text:
             raise usage(f"{spec_path}: nexus.{k} {p} is blank, and Nexus refuses a blank {field}")
         texts[field] = (p, text)
+    # Nexus takes a file name of letters, digits, spaces and _ ' ( ) . - only (its schema's pattern); anything else is a
+    # 422 after the whole upload, so it is caught here, in the dry run too
+    name = one_line(n.get("name") or spec["name"])
+    if not re.fullmatch(r"[a-zA-Z0-9 _'().-]+", name):
+        bad = "".join(sorted(set(re.sub(r"[a-zA-Z0-9 _'().-]", "", name))))
+        raise usage(f"{spec_path}: Nexus refuses the file name {name!r} (it has {bad!r}; letters, digits, spaces and _ ' ( ) . - only): set nexus.name")
     return {
         "mod_id": str(n["mod_id"]) if n.get("mod_id") is not None else None,
         "page": page,
         "file_id": str(n["file_id"]) if n.get("file_id") is not None else None,
         "category": cat,
-        "name": one_line(n.get("name") or spec["name"]),
+        "name": name,
         "description_full": n.get("description") or spec["description"],
         "switches": {k: n.get(k, False) for k in SWITCHES},
         "optional": {k: n[k] for k in OPTIONAL_SWITCHES if k in n},
@@ -404,7 +410,9 @@ def put_part(url, data, number, total):
     pause = RETRY_PAUSE
     for attempt in range(1, PART_TRIES + 1):
         try:
-            _, hdrs, _ = request("PUT", url, step, data, {"Content-Type": "application/octet-stream", "Content-Length": str(len(data))},
+            # a file-like body goes out in small blocks, so the time limit is per block (a stall), not for the whole
+            # part: a 50 MB part on a slow uplink takes minutes and is not a failure
+            _, hdrs, _ = request("PUT", url, step, io.BytesIO(data), {"Content-Type": "application/octet-stream", "Content-Length": str(len(data))},
                                  timeout=PART_TIMEOUT, ok=(200, 201, 204))
             etag = (hdrs.get("ETag") or "").replace('"', "").strip()
             if not etag:
