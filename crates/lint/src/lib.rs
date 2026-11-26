@@ -514,7 +514,7 @@ pub fn lint(input: &Input) -> Vec<Finding> {
         }
     }
 
-    deep_rules(input, &mut out);
+    deep_rules(input, &referenced, &mut out);
     stale_leftovers(input, &mut out);
     dev_leftovers(input, &debug_referrer, &mut out);
 
@@ -717,7 +717,7 @@ fn stale_leftovers(input: &Input, out: &mut Vec<Finding>) {
 }
 
 /// Rules that read inside compiled files and compare replacements with Valve's originals.
-fn deep_rules(input: &Input, out: &mut Vec<Finding>) {
+fn deep_rules(input: &Input, referenced: &HashSet<String>, out: &mut Vec<Finding>) {
     let t_all = std::time::Instant::now();
     let fp = input.fair_play;
     use resource::kv3::Value;
@@ -741,7 +741,11 @@ fn deep_rules(input: &Input, out: &mut Vec<Finding>) {
     // computed (or read from the findings cache) up front, the models side by side, and the file loop below
     // only reports them in file order.
     let game_id = format!("{}|{}", input.base.map_or("", |b| b.build.as_str()), input.game.map_or(String::new(), |g| g.identity()));
-    let models: Vec<&ModFile> = input.files.iter().filter(|f| ext_of(&f.path).eq_ignore_ascii_case("vmdl_c")).collect();
+    // A model the game never loads (it replaces nothing and nothing in the mod names it: M031) is not on anyone's
+    // screen, so nothing the model rules say of it can happen in game, fair play included (a community skin left a
+    // copy of its hero under panorama/, 6871).
+    let loads = |p: &str| input.base.is_none() || replaces(p) || referenced.contains(p);
+    let models: Vec<&ModFile> = input.files.iter().filter(|f| ext_of(&f.path).eq_ignore_ascii_case("vmdl_c") && loads(&f.path)).collect();
     let model_results: HashMap<&str, Vec<(&'static str, String)>> = par::map(&models, |f| {
         (f.path.as_str(), model_findings(input, f, &by_path, &game_id))
     })

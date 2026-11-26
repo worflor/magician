@@ -795,6 +795,27 @@ fn m140_hitbox_taste_tier() {
 }
 
 #[test]
+fn a_model_the_game_never_loads_is_not_judged_by_the_model_rules() {
+    // Real case (6871, a community skin): a copy of the hero under panorama/ that nothing names and no game file is.
+    // M031 says it never loads; M129 said it was a bit much, a fair-play failure no allowance waives, on a model no one
+    // sees. Named by a particle, the same model draws in game and is judged.
+    let train = with(vec![boxd([31.0, -1.0, 20.0], [33.0, 1.0, 22.0], CLOTH, 1)]);
+    let copy = "panorama/images/heroes/hero_names/lash_default.vmdl_c";
+    let fx = "particles/abilities/lash/lash_ult.vpcf_c";
+    let mut g = game();
+    with_game(&mut g, &[MODEL, fx]);
+    let run = |files: Vec<ModFile>| {
+        let mut fake = Fake::default();
+        fake.files.insert(MODEL.into(), ::mesh::synth::model(&valve()));
+        lint(&Input { vpk_name: "pak03_dir.vpk".into(), files, base: Some(&g), built_against: None, original_refs: no_originals(), game: Some(&fake), deep: true, fair_play: &policy::DEFAULT })
+    };
+    let alone = run(vec![file(copy, ::mesh::synth::model(&train)), file(&format!("{CLOTH}_c"), hero_vmat())]);
+    assert!(has(&alone, "M031", "") && !alone.iter().any(|x| x.code.starts_with("M1")), "{alone:#?}");
+    let named = run(vec![file(copy, ::mesh::synth::model(&train)), file(&format!("{CLOTH}_c"), hero_vmat()), file(fx, res(&["panorama/images/heroes/hero_names/lash_default.vmdl"]))]);
+    assert!(has(&named, "M129", "bit much"), "{named:#?}");
+}
+
+#[test]
 fn m129_share_beyond_ten_is_egregious() {
     // a broad panel 11-12 units out (worst point under 18) over about 4% of the visible surface
     let f = run_ours(&with(vec![boxd([25.0, -6.0, 20.0], [25.2, 6.0, 30.0], CLOTH, 1)]));
