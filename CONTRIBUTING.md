@@ -120,6 +120,7 @@ python -I tools/test_publish.py  # the Nexus Mods upload against a fake Nexus on
 python -I tools/test_scene_install.py  # both player installers and magician on good and malformed patches, offline
 python cinema/test_scene.py      # the film kit's language and encode, offline (needs ffmpeg)
 python cinema/test_session.py    # the film kit's seat hand-back, on a fake clock
+python harness/test_hud_topbar.py  # the top-bar portrait sheet on synthetic cards, offline (needs Pillow)
 ```
 
 The Python tests and tools that run the program find the release build where cargo put it (`CARGO_TARGET_DIR`, else `target/`); `MAGICIAN_BIN=<a program>` names another. The program finds its toolkit above itself, else in the checkout it was built from.

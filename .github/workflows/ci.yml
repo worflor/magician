@@ -36,7 +36,7 @@ jobs:
           $tests = "ingame/test_gamelock.py", "ingame/test_gameos.py", "ingame/test_takes.py", "ingame/test_mod_session.py",
                    "ingame/test_logdiff.py", "ingame/test_reprove.py", "cinema/test_session.py", "cinema/test_replay.py",
                    "mcp/test_server.py", "tools/test_bundle.py", "tools/test_scene_install.py", "tools/test_source.py",
-                   "tools/test_publish.py"
+                   "tools/test_publish.py", "harness/test_hud_topbar.py"
           foreach ($t in $tests) {
             Write-Host "== $t"
             python $t
@@ -70,7 +70,8 @@ jobs:
           python -m pip install --quiet pillow
           for t in ingame/test_gamelock.py ingame/test_takes.py ingame/test_mod_session.py ingame/test_logdiff.py \
                    ingame/test_reprove.py cinema/test_session.py cinema/test_replay.py mcp/test_server.py \
-                   tools/test_bundle.py tools/test_scene_install.py tools/test_source.py tools/test_publish.py; do
+                   tools/test_bundle.py tools/test_scene_install.py tools/test_source.py tools/test_publish.py \
+                   harness/test_hud_topbar.py; do
             echo "== $t"
             (cd "$(dirname "$t")" && python "$(basename "$t")")
           done

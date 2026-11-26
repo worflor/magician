@@ -228,7 +228,7 @@ It is found like every other location: `--policy FILE`, then `MAGICIAN_POLICY`, 
 Compile-clean is not proof. A mod is done when it has been seen working in the game.
 
 - [`ingame/`](ingame/README.md) drives the retail game: launch, type console commands as hardware scancodes, capture the window, diff the console log against a vanilla run of the same build, read crash dumps. `magician session` is one session for any mod with a `mod.toml`: the seat, its pak, the launch, its hero, scenarios and timed takes, a SourceTV take filmed from free cameras, the stop and the hand-back, contact sheets. `magician reprove` runs those sessions for every mod a game update left unproven. A game lock keeps two pipelines from driving one game at once, and binds the game to the holder that launched it, so nobody types into or stops another's.
-- `qa/` and `harness/` check and render models offline in Blender: x-ray, lookdev, motion and hole detection, contact sheets.
+- `qa/` and `harness/` check and render models offline in Blender: x-ray, lookdev, motion and hole detection, contact sheets. Two of them judge HUD art at the size the game draws it: `harness/hud_native_scale.py` the ability icons in the real bar, `harness/hud_topbar.py` a hero card in the top bar among Valve's.
 - [`cinema/`](cinema/README.md) is an optional, dev-only film kit for trailers and stills: a scene file becomes an animatic, then a frame-exact render from a SourceTV take of the retail game. Nothing else depends on it, and it is never installed during QA or play.
 
 A mod's scenarios, QA configs and scene patches live with the mod; this repository carries worked examples on a stock hero (Haze).

@@ -30,6 +30,15 @@ The hero page is Esc, SWAP HERO: the roster. Hovering a card loads that hero's `
 - **The silhouette card.** The dark cut-paper silhouette behind the hero is a world mesh of the map, `worldnodes/n0_lr0_c0_s_cb_nomerge<N>_hero_picker_shadow.vmdl_c`: a flat card in world space under an identity node transform, with `materials/ui/hero_picker_shadow.vmat` (pbr, unlit, translucent, a grunge translucency mask `materials/ui/shadow_grunge_trans` scrolled at 4x, and `F_JITTER_VERTICES` at 2 units for the paper wobble). A model compiled at that path and shipped in the scene VPK replaces it. ModelDoc imports an OBJ Y-up: OBJ (a, b, c) compiles to Source (c, a, b).
 - Team-reveal maps are gone (the folder is empty).
 
+## The match HUD
+
+What the in-match HUD draws of a hero, read from build 6868's layout and styles (decompiled from `panorama/`) and checked against 1080p captures. `harness/hud_topbar.py` and `harness/hud_native_scale.py` draw a mod's art exactly so.
+
+- **The top-bar portrait is the hero card.** Each top-bar slot holds a `CitadelHeroBadge` of class `TopBar` (`citadel_hud_top_bar_player.xml`), and the badge draws `m_strIconHeroCard` (its `Gloat` and `Critical` forms in their moments), not `m_strTopBarVertical`; no layout on 6868 was found that draws the vertical in a match. The bottom-left health panel (`hud_health.xml`) has no portrait.
+- **Its size.** `CitadelHeroBadge` is 88 x 120 px; `.HeroImageContainer` is 80 % of that width; `#HeroImage` has `scaling="contain"`. So the 280 x 380 card is drawn 70 x 95 px at 1080p (a capture measured the dome of one card 64 px wide in it), and Panorama scales by screen height: 94 x 128 at 1440p. Valve's cards are BGRA8888 with 9 Box mips, so the bar samples a mip near that size.
+- **Its frame.** `#HeroImage` takes `opacity-mask: hero_badges/hero_image_mask_psd.vtex` (square shoulders above, a half circle below), over `.HeroImageBackground`, a disc of the team colour: `team1Color` #D4860B, `team2Color` #4D75C3 (`citadel_base_styles.css`), #B02727 when the player's health is low and #90FFE3 on a kill streak (`hero_badge.css`). A card is judged at that size, on those colours, beside Valve's: a bust that leaves the face a third of the card's width reads in the bar as a pale shape with a small dark spot.
+- **The local player's slot** shows a lit panel of the team colour behind the portrait instead of the disc, and the soul bar lies over the portrait's left edge (seen in captures; not drawn by `hud_topbar.py`).
+
 ## Formats
 
 | Area | Fact |
