@@ -39,6 +39,14 @@ What the in-match HUD draws of a hero, read from build 6868's layout and styles 
 - **Its frame.** `#HeroImage` takes `opacity-mask: hero_badges/hero_image_mask_psd.vtex` (square shoulders above, a half circle below), over `.HeroImageBackground`, a disc of the team colour: `team1Color` #D4860B, `team2Color` #4D75C3 (`citadel_base_styles.css`), #B02727 when the player's health is low and #90FFE3 on a kill streak (`hero_badge.css`). A card is judged at that size, on those colours, beside Valve's: a bust that leaves the face a third of the card's width reads in the bar as a pale shape with a small dark spot.
 - **The local player's slot** shows a lit panel of the team colour behind the portrait instead of the disc, and the soul bar lies over the portrait's left edge (seen in captures; not drawn by `hud_topbar.py`).
 
+The ability bar, as it looks on screen (build 6871, 1920 x 1080 captures of four heroes, HUD on, read by Lamplighter's screen reader; the styles are `hud_ability_icon_active.css`):
+
+- **Ready.** Each signature ability is an off-white disc, about 68 px across at 1080p, with the ability's glyph (`m_strAbilityImage`, a white-on-alpha `.psd` texture) drawn dark on it (`wash-color: offBlack`). The glyph square is about 51 px. The four discs sit on a shallow arc, about 89 px apart: the outer two about 13 px lower than the inner two, centres near x = 826, 915, 1004, 1093 at 1080p. The player's key for each sits in a small badge under its disc. Panorama scales the bar with screen height.
+- **Cooling down.** The disc turns dark and see-through (the scene shows through it). The part of the cooldown already elapsed is a lighter wedge growing clockwise from 12 o'clock (the mask is mirrored, `scaleX(-1)`). The seconds left are in white digits in the middle.
+- **Not ready.** While another ability is being cast or channelled, the other discs go dark with no wedge and no digits (`ability_not_ready`).
+- **Active.** A toggled or channelled ability's disc turns lavender for as long as it lasts, for example Seven's Storm Cloud.
+- **A cast.** The whole bar dims for about a quarter of a second as an ability goes off. The caster's own cooldown shows on the next frame or two, 40 to 105 ms after the key press.
+
 ## Formats
 
 | Area | Fact |
