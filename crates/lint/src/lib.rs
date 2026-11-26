@@ -226,6 +226,24 @@ pub fn rule(code: &str) -> &'static Rule {
     RULES.iter().find(|r| r.code == code).expect("unknown rule code")
 }
 
+/// Where a player meets what a rule finds, in the order a report lists them: on the hero, in its effects and sound,
+/// on other heroes, in the frame rate, in whether the game loads it at all, and in the pak alone (nothing a player
+/// sees). Fair play is judged apart and is not grouped here.
+pub const SEEN: &[&str] = &["on the hero", "effects, sound", "other heroes", "frame cost", "loading", "the pak"];
+
+/// The `SEEN` group of a rule code.
+pub fn seen(code: &str) -> &'static str {
+    let n: u32 = code.strip_prefix('M').and_then(|x| x.parse().ok()).unwrap_or(0);
+    match n {
+        33 | 61..=64 | 72 | 81..=83 | 134 => "effects, sound",
+        90 | 91 => "other heroes",
+        120 | 122 | 123 | 127 | 128 | 146 => "frame cost",
+        1 | 2 | 10 | 20 | 21 | 30 | 32 | 40 | 41 | 50..=52 | 70 | 71 => "loading",
+        11..=13 | 31 | 60 | 100 | 144 => "the pak",
+        _ => "on the hero",
+    }
+}
+
 fn finding(code: &'static str, path: Option<&str>, message: String) -> Finding {
     let r = rule(code);
     Finding { code: r.code, name: r.name, severity: r.severity, path: path.map(str::to_string), message }

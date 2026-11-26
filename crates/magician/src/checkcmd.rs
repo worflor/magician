@@ -116,7 +116,7 @@ pub fn cmd_check(args: &[String]) -> R {
             items.push(Item {
                 what: "lint",
                 state: lint_state,
-                text: format!("{} error(s), {} warning(s), {} allowed ({}; fair play {})", g.lint_errors, g.lint_warnings, g.lint_allowed, g.lint_depth, style::mark(match g.fair_play { "fail" => "NSFR", "unknown" => "FP?", x => x })),
+                text: format!("{} error(s), {} warning(s), {} allowed ({}; fair play {})", g.lint_errors, g.lint_warnings, g.lint_allowed, g.lint_depth, match g.fair_play { "fail" => format!("{}, not safe for ranked", style::mark("NSFR")), "unknown" => format!("{}, not checked", style::mark("FP?")), x => style::mark(x) }),
                 json: jsonout::Obj::new().str("state", lint_state).int("errors", g.lint_errors as i64).int("warnings", g.lint_warnings as i64).int("allowed", g.lint_allowed as i64).str("depth", g.lint_depth).str("fair_play", g.fair_play).build(),
             });
             items.push(Item {
@@ -168,14 +168,19 @@ pub fn cmd_check(args: &[String]) -> R {
         }
     }
 
-    // The lint line's findings by rule: what is not fair play by severity, then fair play, which the policy judges apart.
+    // The lint line's findings by rule: errors first, then the warnings by where a player meets them (on the hero,
+    // effects and sound, other heroes, frame cost, loading, the pak alone), then fair play, which the policy judges apart.
     let tally = rule_tally(&kept);
     let fair = |t: &&Tally| kept.iter().any(|f| f.code == t.code && grade::rubric::is_compliance(f.code, &f.message));
     let mut by_rule: Vec<(&str, String)> = Vec::new();
-    for (what, pick) in [("errors", Severity::Error), ("warnings", Severity::Warn)] {
-        let these: Vec<&Tally> = tally.iter().filter(|t| t.severity == pick && !fair(t)).collect();
+    let errors: Vec<&Tally> = tally.iter().filter(|t| t.severity == Severity::Error && !fair(t)).collect();
+    if !errors.is_empty() {
+        by_rule.push(("errors", tally_line(&errors)));
+    }
+    for seen in lint::SEEN {
+        let these: Vec<&Tally> = tally.iter().filter(|t| t.severity == Severity::Warn && !fair(t) && lint::seen(t.code) == *seen).collect();
         if !these.is_empty() {
-            by_rule.push((what, tally_line(&these)));
+            by_rule.push((seen, tally_line(&these)));
         }
     }
     // Fair play's advisory rules (M081 by default) are reported and never a violation: a row of their own, so a
@@ -195,6 +200,7 @@ pub fn cmd_check(args: &[String]) -> R {
             .str("code", t.code)
             .str("name", t.name)
             .str("severity", sev_label(t.severity).trim())
+            .str("seen", lint::seen(t.code))
             .bool("fair_play", fair(&t))
             .bool("advisory", fair(&t) && advisory(&t))
             .int("count", t.count as i64)
@@ -360,7 +366,7 @@ pub fn cmd_check(args: &[String]) -> R {
             say!("  {:<6} {} {}", i.what, style::word(i.state, 6), i.text);
             if i.what == "lint" {
                 for (what, line) in &by_rule {
-                    say!("         {what:<9} {line}");
+                    say!("         {what:<14} {line}");
                 }
             }
         }

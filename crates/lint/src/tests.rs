@@ -1298,3 +1298,11 @@ fn m149_a_texture_slot_valves_material_has_and_ours_dropped() {
     assert_eq!(m.severity, Severity::Warn);
     assert!(!codes(&run_game(vec![file(MAT, valve_mat)], &g, &fake)).contains("M149"), "Valve's own slots, all there");
 }
+
+#[test]
+fn every_rule_is_seen_somewhere_a_report_names() {
+    for r in RULES {
+        assert!(SEEN.contains(&seen(r.code)), "{}", r.code);
+    }
+    assert_eq!((seen("M110"), seen("M061"), seen("M090"), seen("M123"), seen("M030"), seen("M031")), ("on the hero", "effects, sound", "other heroes", "frame cost", "loading", "the pak"));
+}
