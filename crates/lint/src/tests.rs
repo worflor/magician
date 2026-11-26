@@ -1355,3 +1355,24 @@ fn m031_counts_what_panorama_names_in_its_own_text() {
     let unnamed = run(vec![sheet("#Heal { }"), file(image, res(&[]))], Some(&g), None);
     assert!(unnamed.iter().any(|x| x.code == "M031" && x.path.as_deref() == Some(image)), "{unnamed:?}");
 }
+#[test]
+fn m081_reads_the_radius_an_initializer_writes() {
+    // Real case (6871, a community skin, the smoke at a cast): Valve's constant radius is 2 and an InitFloat on the
+    // default output field (the radius) draws 30 to 40; the copy leaves the constant out (5) and draws 5 to 10. It
+    // read as 2.5x Valve's size; it is a quarter of it.
+    let smoke = |constant: &str, max: f64| {
+        kv(&format!(
+            r#"{{ _class = "CParticleSystemDefinition" {constant}
+                m_Initializers = [ {{ _class = "C_INIT_InitFloat" m_InputValue = {{ m_nType = "PF_TYPE_RANDOM_BIASED" m_flRandomMin = 1.0 m_flRandomMax = {max} }} }},
+                                   {{ _class = "C_INIT_InitFloat" m_nOutputField = 4 m_InputValue = {{ m_nType = "PF_TYPE_RANDOM_UNIFORM" m_flRandomMax = 360.0 }} }} ]
+                m_Renderers = [ {{ _class = "C_OP_RenderSprites" }} ] }}"#
+        ))
+    };
+    let valve = deep::particle_profile(&smoke("m_flConstantRadius = 2.0", 40.0));
+    assert_eq!(valve.radius, 40.0, "the initializer's radius, not the constant's 2 nor the rotation's 360");
+    let ours = deep::particle_profile(&smoke("", 10.0));
+    assert!(deep::particle_energy(&ours, &valve, &policy::DEFAULT).is_empty());
+    // the true catch: the same smoke drawn at up to 80 is twice Valve's size
+    let big = deep::particle_profile(&smoke("", 80.0));
+    assert!(deep::particle_energy(&big, &valve, &policy::DEFAULT).iter().any(|m| m.contains("radius 80")), "{:?}", deep::particle_energy(&big, &valve, &policy::DEFAULT));
+}

@@ -114,7 +114,13 @@ pub fn particle_profile(v: &Value) -> ParticleProfile {
             }
         });
     }
-    let mut radius = float_input(v.get("m_flConstantRadius")).unwrap_or(5.0);
+    // A particle is born at the system's constant radius (5 when the file leaves it out) unless an initializer writes
+    // the radius: `C_INIT_RandomRadius`, or a `C_INIT_InitFloat` whose output field is the radius (field 3, which the
+    // compiler leaves out as the default). Then the constant is never drawn. A Valve smoke with a constant of 2 and an
+    // InitFloat of 30 to 40 read as radius 2; a community copy with no constant and an InitFloat of 5 to 10 read as 5,
+    // "2.5 times the size" of a cloud a quarter of Valve's (6871). Operators that set the radius later count too.
+    let mut born: Option<f64> = None;
+    let mut later: f64 = 0.0;
     let mut scale: f64 = 1.0;
     for list in ["m_Initializers", "m_Operators"] {
         for op in v.get(list).map(Value::as_array).unwrap_or(&[]) {
@@ -126,8 +132,14 @@ pub fn particle_profile(v: &Value) -> ParticleProfile {
             if let Some(a) = op.get("m_nAlphaMax").and_then(Value::as_f64) {
                 max_a = max_a.max(a);
             }
-            if let Some(r) = float_input(op.get("m_flRadiusMax")) {
-                radius = radius.max(r);
+            let writes_radius = matches!(class(op), "C_INIT_InitFloat" | "C_OP_SetFloat") && op.get("m_nOutputField").and_then(Value::as_f64).unwrap_or(3.0) == 3.0;
+            let set = float_input(op.get("m_flRadiusMax")).or_else(|| writes_radius.then(|| float_input(op.get("m_InputValue"))).flatten());
+            if let Some(r) = set {
+                if list == "m_Initializers" {
+                    born = Some(born.map_or(r, |b| b.max(r)));
+                } else {
+                    later = later.max(r);
+                }
             }
             if class(op).contains("InterpolateRadius") {
                 for k in ["m_flStartScale", "m_flEndScale"] {
@@ -137,6 +149,7 @@ pub fn particle_profile(v: &Value) -> ParticleProfile {
         }
     }
     p.energy = max_y * (max_a / 255.0) * strength;
+    let radius = born.unwrap_or_else(|| float_input(v.get("m_flConstantRadius")).unwrap_or(5.0)).max(later);
     p.radius = radius * scale;
     for c in v.get("m_Children").map(Value::as_array).unwrap_or(&[]) {
         if let Some(s) = c.get("m_ChildRef").and_then(Value::as_str).filter(|s| !s.is_empty()) {
