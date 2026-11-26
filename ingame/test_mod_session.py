@@ -85,6 +85,30 @@ class Mod(unittest.TestCase):
         self.assertTrue(T.parse_events("0:+w 1:-w"))
 
 
+class Sheets(unittest.TestCase):
+    def test_a_turntable_shot_frame_by_frame_gets_a_contact_sheet(self):
+        import capture
+        d = tempfile.mkdtemp()
+        try:
+            run = os.path.join(d, "turntable_run")
+            os.makedirs(run)
+            px = lambda b: bytes([b, 0, 0, 255]) * (12 * 8)
+            for k, deg in enumerate(range(0, 360, 45)):
+                capture.write_png(os.path.join(run, f"turntable_{deg:03d}.png"), 12, 8, px(30 * k))
+            capture.write_png(os.path.join(run, "close.png"), 12, 8, px(0))           # a single shot: not a sequence
+            capture.write_png(os.path.join(run, "pair_000.png"), 12, 8, px(0))        # two frames: not a turntable
+            capture.write_png(os.path.join(run, "pair_090.png"), 12, 8, px(0))
+            self.assertEqual(S.turn_sets(d), [(run, "turntable", 8)])
+            made = S.sheets(d)
+            sheet = os.path.join(run, "turntable_sheet.png")
+            self.assertEqual(made, [sheet])
+            w, h, _ = capture.read_png_rgb(sheet)
+            self.assertEqual((w, h), (4 * 12, 2 * 8), "eight views, four to a row")
+            self.assertEqual(S.turn_sets(d), [(run, "turntable", 8)], "the sheet itself is not a frame")
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class Status(unittest.TestCase):
     def test_rows_and_the_mods_slot(self):
         rows = S.status_rows(STATUS)

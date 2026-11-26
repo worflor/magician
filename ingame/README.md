@@ -14,7 +14,7 @@ Everything it asks of the operating system is in `gameos.py`, one module with a 
 
 Every script finds the game, the reference folder and the game lock through `gamepaths.py`, which resolves them exactly as the `magician` program does (`DEADLOCK_GAME`, `MAGICIAN_REFERENCE`, the config file, then Steam; `magician paths` shows the answers). Output goes under `<reference>/work/`. The console key is the player's own bind, read from `citadel/cfg/user_keys_0_slot0.vcfg` (`MAGICIAN_CONSOLE_KEY` or `--key` override it; grave when nothing is bound).
 
-**The one driver of a mod's session is `mod_session.py`.** It takes the seat, installs the mod's pak, launches, waits for the map, selects the mod's hero, runs scenarios and timed takes, films a SourceTV take from free cameras, stops the game, gives the seat back once the game has exited, and cuts contact sheets, for any mod with a `mod.toml`. `magician session <verb> ...` runs it with the same arguments and exit code; the forms below call the script directly:
+**The one driver of a mod's session is `mod_session.py`.** It takes the seat, installs the mod's pak, launches, waits for the map, selects the mod's hero, runs scenarios and timed takes, films a SourceTV take from free cameras, stops the game, gives the seat back once the game has exited, and cuts contact sheets (one per burst, per film, and per turntable or orbit shot frame by frame, `<tag>_sheet.png` beside its frames), for any mod with a `mod.toml`. `magician session <verb> ...` runs it with the same arguments and exit code; the forms below call the script directly:
 
 ```
 python -I ingame/mod_session.py all  --mod <mod folder> --out <dir> angles motion        # one session, start to finish

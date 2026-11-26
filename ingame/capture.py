@@ -3,6 +3,7 @@
     python -I capture.py shot  <out.png>                      # one frame
     python -I capture.py burst <out_dir> --frames 24 --fps 12  # a sequence, for motion review (half res; --full)
     python -I capture.py sheet <in_dir> <out.png> --cols 6     # contact sheet of a burst
+                               [--prefix TAG_]                 # only the shots named TAG_<n>.png (a turntable)
     python -I capture.py crop  <in.png> <out.png> x0 y0 x1 y1 [--zoom 2]
 
 On Windows it reads the window's own client area through PrintWindow, so a window on top of the game does not get
@@ -109,8 +110,10 @@ def burst(out_dir, frames, fps):
     print(f"BURST {out_dir} {frames} frames {ow}x{oh}, {grabbed[-1][0]:.2f}s")
 
 
-def sheet(in_dir, out, cols, scale):
-    files = sorted(f for f in os.listdir(in_dir) if f.endswith(".png"))
+def sheet(in_dir, out, cols, scale, prefix=""):
+    files = sorted(f for f in os.listdir(in_dir) if f.endswith(".png") and f.startswith(prefix) and not f.endswith("_sheet.png") and (not prefix or f[len(prefix):-4].isdigit()))
+    if not files:
+        sys.exit(f"capture: no {prefix}*.png frames in {in_dir}")
     imgs = [read_png_rgb(os.path.join(in_dir, f)) for f in files]
     scale = scale or max(1, imgs[0][0] // 480)   # default: ~480 px cells whatever the frame size
     w, h = imgs[0][0] // scale, imgs[0][1] // scale
@@ -176,6 +179,6 @@ if __name__ == "__main__":
         write_png(a[2], W, H, bytes(bgra))
         print(f"CROP {a[2]} {W}x{H}")
     elif a[0] == "sheet":
-        sheet(a[1], a[2], opt("--cols", 6), opt("--scale", 0))
+        sheet(a[1], a[2], opt("--cols", 6), opt("--scale", 0), a[a.index("--prefix") + 1] if "--prefix" in a else "")
     else:
         sys.exit(__doc__)

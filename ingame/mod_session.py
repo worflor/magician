@@ -548,12 +548,34 @@ def burst_dirs(out):
     return sorted(found)
 
 
+def turn_sets(out):
+    """Shot sequences under `out` that a turntable or an orbit wrote one frame at a time (`@shot <tag>_<degrees>`, as
+    turntable.py and orbit.py print them): (folder, tag, frames), for those of three frames or more."""
+    found = []
+    for root, dirs, files in os.walk(out):
+        if "restore" in os.path.relpath(root, out).split(os.sep):
+            continue
+        tags = {}
+        for f in files:
+            m = re.fullmatch(r"(.+)_(\d{3})\.png", f)
+            if m and not re.fullmatch(r"f\d{3,}\.png", f):
+                tags.setdefault(m.group(1), []).append(f)
+        found += [(root, t, len(fs)) for t, fs in sorted(tags.items()) if len(fs) >= 3]
+    return sorted(found)
+
+
 def sheets(out):
     made = []
     for d in burst_dirs(out):
         sheet = d.rstrip("\\/") + "_sheet.png"
         r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "capture.py"), "sheet", d, sheet, "--cols", "6"],
                            capture_output=True, text=True)
+        if r.returncode == 0:
+            made.append(sheet)
+    for d, tag, n in turn_sets(out):
+        sheet = os.path.join(d, f"{tag}_sheet.png")
+        r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "capture.py"), "sheet", d, sheet, "--cols", "4" if n <= 8 else "6",
+                            "--prefix", f"{tag}_"], capture_output=True, text=True)
         if r.returncode == 0:
             made.append(sheet)
     films = sorted(glob.glob(os.path.join(out, "film", "*.mkv")))
