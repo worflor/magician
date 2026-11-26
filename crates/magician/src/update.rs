@@ -12,7 +12,8 @@
 //! | `SHA256SUMS` | the SHA-256 of every asset, one `<hex>  <name>` line each (the `sha256sum` form) |
 //! | `VERSION` | what the release is, in the flat `key = value` form of the config file (below) |
 //!
-//! `VERSION` carries the release's `version`, `commit` and `date`, and the fingerprints of what does the judging: the
+//! `VERSION` carries the release's `version`, `commit`, `date` and `time` (the commit's committer time in Unix seconds,
+//! which orders two commits of one version; a `VERSION` from before it has only the date), and the fingerprints of what does the judging: the
 //! grading rubric's rules version (`rubric`), the fingerprint of the built-in policy (`policy`), and the lint rule set
 //! (`lint_rules`, the count, and `lint_fingerprint`, a SHA-256 over every rule's code, name and severity). Comparing
 //! those with the running build's is how `--check` says whether updating would change what a grade or a lint says.
@@ -64,6 +65,8 @@ pub struct Release {
     pub version: String,
     pub commit: String,
     pub date: String,
+    /// The commit's committer time, Unix seconds. `None` in a `VERSION` written before releases carried it.
+    pub time: Option<u64>,
     pub rubric: Option<String>,
     pub policy: Option<String>,
     pub lint_rules: Option<String>,
@@ -79,6 +82,7 @@ impl Release {
             version: env!("CARGO_PKG_VERSION").into(),
             commit: env!("MAGICIAN_GIT").into(),
             date: env!("MAGICIAN_GIT_DATE").into(),
+            time: env!("MAGICIAN_GIT_TIME").parse().ok(),
             rubric: Some(grade::rubric::RULES_VERSION.into()),
             policy: Some(grade::Policy::default().fingerprint()),
             lint_rules: Some(lint::RULES.len().to_string()),
@@ -93,6 +97,9 @@ impl Release {
         line("version", &self.version);
         line("commit", &self.commit);
         line("date", &self.date);
+        if let Some(t) = self.time {
+            line("time", &t.to_string());
+        }
         for (k, v) in [("rubric", &self.rubric), ("policy", &self.policy), ("lint_rules", &self.lint_rules), ("lint_fingerprint", &self.lint_fingerprint)] {
             if let Some(v) = v {
                 line(k, v);
@@ -109,6 +116,7 @@ impl Release {
             version: need("version")?,
             commit: need("commit")?,
             date: get("date").unwrap_or_else(|| "unknown".into()),
+            time: get("time").and_then(|t| t.parse().ok()),
             rubric: get("rubric"),
             policy: get("policy"),
             lint_rules: get("lint_rules"),
@@ -122,6 +130,7 @@ impl Release {
             .str("version", &self.version)
             .str("commit", &self.commit)
             .str("date", &self.date)
+            .raw("time", self.time.map_or("null".to_string(), |t| t.to_string()))
             .raw("rubric", o(&self.rubric))
             .raw("policy", o(&self.policy))
             .raw("lint_rules", o(&self.lint_rules))
@@ -179,8 +188,9 @@ fn same_commit(a: &str, b: &str) -> bool {
 }
 
 /// Where this build stands against the latest release, and why: the version first, then the commit. Two commits of
-/// one version are ordered by their dates (a release's `date` is its commit's); on the same day, or with a date that
-/// is not known, a different commit counts as an update, since the order can't be told.
+/// one version are ordered by their commit times, so two made the same day are told apart; a `VERSION` written before
+/// releases carried the time falls back to its date. On the same day with no time, or with neither known, a different
+/// commit counts as an update, since the order can't be told.
 pub fn compare(local: &Release, latest: &Release) -> (State, String) {
     use std::cmp::Ordering::{Equal, Greater, Less};
     match version_order(&local.version, &latest.version) {
@@ -193,6 +203,13 @@ pub fn compare(local: &Release, latest: &Release) -> (State, String) {
     if same_commit(&local.commit, &latest.commit) {
         let note = if local.commit.ends_with("-dirty") { ", built from a tree with local changes" } else { "" };
         return (State::Current, format!("the latest release, commit {}{note}", latest.commit));
+    }
+    if let (Some(a), Some(b)) = (local.time, latest.time) {
+        match b.cmp(&a) {
+            Greater => return (State::Behind, format!("commit {} ({}) is older than the latest release's {} ({}, a later commit)", local.commit, local.date, latest.commit, latest.date)),
+            Less => return (State::Ahead, format!("commit {} ({}) is newer than the latest release's {} ({}, an earlier commit)", local.commit, local.date, latest.commit, latest.date)),
+            Equal => {}
+        }
     }
     let day = |d: &str| d.len() == 10 && d.as_bytes()[4] == b'-' && d.as_bytes()[7] == b'-';
     if day(&local.date) && day(&latest.date) {
@@ -582,6 +599,24 @@ mod tests {
         assert_eq!(compare(&here, &rel("0.1.0", "bbbbbbbbbbbb", "unknown")).0, State::Behind);
         // a build that does not know its commit can't be told from the release
         assert_eq!(compare(&rel("0.1.0", "unknown", "unknown"), &rel("0.1.0", "unknown", "unknown")).0, State::Behind);
+    }
+
+    #[test]
+    fn two_commits_of_one_day_are_ordered_by_their_commit_times() {
+        let at = |commit: &str, time: Option<u64>| Release { time, ..rel("0.1.0", commit, "2026-11-25") };
+        // a source build one commit past the release, made the same day: ahead, not "an update is available"
+        let (s, why) = compare(&at("bbbbbbbbbbbb", Some(1_764_100_000)), &at("aaaaaaaaaaaa", Some(1_764_090_000)));
+        assert_eq!(s, State::Ahead, "{why}");
+        assert_eq!(compare(&at("aaaaaaaaaaaa", Some(1_764_090_000)), &at("bbbbbbbbbbbb", Some(1_764_100_000))).0, State::Behind);
+        // a VERSION from before the time was written: the date decides, and on one day nothing orders them
+        let (s, why) = compare(&at("bbbbbbbbbbbb", Some(1_764_100_000)), &at("aaaaaaaaaaaa", None));
+        assert_eq!(s, State::Behind);
+        assert!(why.contains("do not order them"), "{why}");
+        assert_eq!(compare(&at("bbbbbbbbbbbb", Some(1_764_100_000)), &Release { time: None, ..rel("0.1.0", "aaaaaaaaaaaa", "2026-11-01") }).0, State::Ahead);
+        // the time reads back from the text, and an old VERSION without it still reads
+        let me = Release { time: Some(1_764_100_000), ..rel("0.1.0", "bbbbbbbbbbbb", "2026-11-25") };
+        assert_eq!(Release::parse(&me.text()).unwrap().time, Some(1_764_100_000));
+        assert_eq!(Release::parse("version = 0.1.0\ncommit = abc\ndate = 2026-11-25\n").unwrap().time, None);
     }
 
     #[test]

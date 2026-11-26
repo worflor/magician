@@ -120,6 +120,10 @@ impl Release {
         let mut v = with_key(&describe(), "version", &self.version);
         v = with_key(&v, "commit", &self.commit);
         v = with_key(&v, "date", &self.date);
+        // the commit time agrees with the date: midnight of it, as Unix seconds (2099-01-01 for every fixture)
+        if self.date == "2099-01-01" {
+            v = with_key(&v, "time", "4070908800");
+        }
         for (k, val) in &self.keys {
             v = with_key(&v, k, val);
         }
