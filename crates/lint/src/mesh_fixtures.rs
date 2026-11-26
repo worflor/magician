@@ -900,6 +900,22 @@ fn m138_m139_alpha_coverage() {
     assert!(!has(&f, "M138", "") && !has(&f, "M139", ""), "{f:#?}");
 }
 
+#[test]
+fn m135_silent_on_a_morph_atlas_shipped_with_its_model() {
+    // Real case (6871, a third skin): a replaced face's morph atlas is 186x186 where Valve's is 388x388, because the
+    // compiler packs that model's own morph targets. Shipped with the model it is right; alone it is Valve's model
+    // reading another atlas, and still judged.
+    let atlas = "models/heroes_wip/lash/lash/head_vmorf.vtex_c";
+    let mut g = game();
+    with_game(&mut g, &[atlas, MODEL]);
+    let mut fake = Fake::default();
+    fake.files.insert(atlas.into(), resource::synth_with(&[], &[(*b"DATA", resource::texture::synth_header(388, 388, 28))]));
+    let alone = run_game(vec![file(atlas, tex(186, 186, 28))], &g, &fake);
+    assert!(has(&alone, "M135", "186x186"), "{alone:#?}");
+    let with_model = run_game(vec![file(atlas, tex(186, 186, 28)), file(MODEL, res(&[]))], &g, &fake);
+    assert!(!has(&with_model, "M135", ""), "{with_model:#?}");
+}
+
 
 #[test]
 fn mesh_family_cost_is_bounded() {

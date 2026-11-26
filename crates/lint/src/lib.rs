@@ -189,7 +189,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M134", name: "particle-prop-unlit", severity: Severity::Warn,
         in_game: "A lit opaque pbr.vfx material drawn by a particle's C_OP_RenderModels without NPR or self-illum: particle models get no normal lighting, so it renders black." },
     Rule { code: "M135", name: "texture-parity", severity: Severity::Warn,
-        in_game: "A replaced texture has fewer mips, another format or another size than Valve's file: Valve's panels and materials draw it at Valve's sizes, so it aliases or shows block artefacts." },
+        in_game: "A replaced texture has fewer mips, another format or another size than Valve's file: Valve's panels and materials draw it at Valve's sizes, so it aliases or shows block artefacts. A model's morph atlas (`_vmorf`) shipped with its own model is not judged: the compiler sizes it to that model's morphs, and only that model reads it." },
     Rule { code: "M136", name: "albedo-range", severity: Severity::Warn,
         in_game: "Over 10% of the new materials' area sits outside Valve's own albedo range for this model: the piece reads brighter or darker than everything Valve drew, flattening or blooming in the game's lighting." },
     Rule { code: "M137", name: "albedo-absolute", severity: Severity::Error,
@@ -829,7 +829,12 @@ fn deep_rules(input: &Input, out: &mut Vec<Finding>) {
                         out.push(finding("M073", Some(p), format!("{}x{} {}", t.width, t.height, t.format_name())));
                     }
                 }
-                if replaces(p) {
+                // A model's morph atlas (`<model>/<set>_vmorf.vtex_c`) is the compiler's packing of that model's
+                // morph targets, sized by them and read by that model alone: shipped with its own model it is no
+                // picture Valve draws at Valve's size (9 on a third skin, 6871). Without its model, Valve's model
+                // reads it, and it is judged.
+                let own_morphs = p.strip_suffix(".vtex_c").is_some_and(|q| q.ends_with("_vmorf")) && p.rsplit_once('/').is_some_and(|(dir, _)| by_path.contains_key(format!("{dir}.vmdl_c").as_str()));
+                if replaces(p) && !own_morphs {
                     if let (Some(t), Some(v)) = (t, game_read(p).as_deref().and_then(deep::tex_info)) {
                         if let Some((code, m)) = mesh::rules::texture_parity(p, &t, &v) {
                             out.push(finding(code, Some(p), m));
