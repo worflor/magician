@@ -4,6 +4,13 @@ Newest first. Dates are when the capability was proven, not when the code was wr
 
 Each release's entry says whether the lint rules, the grading rubric or the built-in policy changed (`magician update --describe` shows the fingerprints), because that is what `magician update --check` tells a user to re-run `lint` and `grade` for. An entry that says nothing about them says they did not.
 
+## Unreleased
+
+Judgement unchanged: the same lint rules, grading rubric and built-in policy as 0.1.0.
+
+- `magician cloth` ends each chain's row with how it moves: the rebound of its median free node (frequency and damping ratio, in the solver model M141 judges by) and the steady offset of its most-pressed leashed node under the hero's fall against its leash. A chain several times over its leash moves and stops dead in game, which its clips alone do not show.
+- Builds clean under Rust 1.100 with warnings as errors, and two Linux tests no longer assume older system tools.
+
 ## 0.1.0 (2026-11-25)
 
 The first public release. **If you ran a copy from before it, judgement has changed in all three places: the lint rules (80 now, lint judgement revision 2), the grading rubric (3.1.0) and the built-in policy. Re-run `lint`, `grade` and `check` on every mod.** Those changes come first; what is new follows, by what it is for, and the foundation it was built on is last.
