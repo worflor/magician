@@ -501,6 +501,8 @@ pub struct Contact {
     pub skin_mismatch: f64,
     /// The shell it rests on (nearest other shell at the sampled vertices) and that shell's dominant bone.
     pub substrate: Option<usize>,
+    /// Where it rests: the mean of the sampled vertices within reach of a substrate (the mismatch's own samples).
+    pub rest_at: V3,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1283,6 +1285,7 @@ impl Census {
             let median = gaps.get(gaps.len() / 2).copied().unwrap_or(f64::INFINITY);
             // skin mismatch against the nearest substrate surface (within 1 unit)
             let (mut mis, mut nmis) = (0.0, 0usize);
+            let mut rest_sum = [0.0; 3];
             let mut sub_votes: HashMap<usize, usize> = HashMap::new();
             for &v in verts.iter().step_by(stride) {
                 let p = self.topo.pos[v as usize];
@@ -1311,6 +1314,7 @@ impl Census {
                 if !wa.is_empty() && !wb.is_empty() {
                     mis += 0.5 * l1;
                     nmis += 1;
+                    rest_sum = v3::add(rest_sum, p);
                 }
             }
             let substrate = sub_votes.into_iter().max_by_key(|x| (x.1, std::cmp::Reverse(x.0))).map(|x| x.0);
@@ -1323,6 +1327,7 @@ impl Census {
                 grounded: false,
                 skin_mismatch: if nmis > 0 { mis / nmis as f64 } else { 0.0 },
                 substrate,
+                rest_at: if nmis > 0 { v3::scale(rest_sum, 1.0 / nmis as f64) } else { [0.0; 3] },
             };
             (contact, adj_si)
         });

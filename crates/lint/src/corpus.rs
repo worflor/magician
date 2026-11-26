@@ -15,6 +15,8 @@
 //!   line (`orion_effort_dash_02` against `fencer_effort_dash_02`): how often one Valve voice reads as a hidden cue
 //!   against another.
 //! - **attachments** (M062): which attachment names every Valve hero model carries, and which only some do.
+//! - **folds and crossings** (M109, M110): each hero's visible fold and crossing line in units of its size, against
+//!   the line the rule draws at the most any Valve hero has: none of Valve's heroes may be over it.
 
 use crate::cloth;
 use std::collections::BTreeMap;
@@ -74,6 +76,18 @@ pub fn cloth_census(models: &[(String, Vec<u8>)]) -> (Vec<(String, cloth::Airbor
         format!("{fires} of Valve's own groups are lighter than the hero's fall and too loose to hang in the air: the measure cannot tell a floating piece from Valve's design, so it is not a rule")
     };
     (rows, Calibration { rule: "cloth", measure: "airborne lift (median node)", fires, of, worst: if of == 0 { 0.0 } else { worst }, worst_at, reading })
+}
+
+/// M109 or M110 over Valve's heroes: (model path, the hero's measure in units of its size), judged at `line`.
+pub fn line_calibration(rule: &'static str, measure: &'static str, rows: &[(String, f64)], line: f64) -> Calibration {
+    let fires = rows.iter().filter(|(_, x)| *x > line).count();
+    let (worst_at, worst) = rows.iter().max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)).map_or((String::new(), 0.0), |(p, x)| (file_name(p).to_string(), *x));
+    let reading = if fires == 0 {
+        format!("no Valve hero is over the line ({line}); the most is {worst:.2}: a model past it crosses more than Valve builds any hero")
+    } else {
+        format!("{fires} of Valve's heroes are over the line ({line}), the most {worst:.2}: the line is below Valve's own construction and must move to the most (rules.rs)")
+    };
+    Calibration { rule, measure, fires, of: rows.len(), worst, worst_at, reading }
 }
 
 /// The line a voice file speaks, without the hero: `sounds/vo/orion/emote/orion_effort_dash_02.vsnd_c` is
@@ -197,6 +211,15 @@ mod tests {
         assert_eq!((c.fires, c.of), (2, 6), "aa against bb and cc; nothing else is under 0.8x");
         assert!(c.reading.contains("the voice, not a cue"), "{}", c.reading);
         assert!((c.worst - 0.4 / 0.82).abs() < 1e-9 && c.worst_at.starts_with("emote/pain_01: aa"), "{c:?}");
+    }
+
+    #[test]
+    fn a_line_below_a_valve_hero_says_it_must_move() {
+        let rows = vec![("models/a/a.vmdl_c".to_string(), 3.0), ("models/b/b.vmdl_c".to_string(), 4.8)];
+        let c = line_calibration("M109", "fold line", &rows, 4.81);
+        assert_eq!((c.fires, c.of, c.worst_at.as_str()), (0, 2, "b.vmdl_c"));
+        let c = line_calibration("M109", "fold line", &rows, 4.0);
+        assert!(c.fires == 1 && c.reading.contains("must move"), "{c:?}");
     }
 
     #[test]

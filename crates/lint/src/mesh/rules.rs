@@ -25,10 +25,20 @@ pub const VOID_UNBACKED_SHARE: f64 = 0.25;
 pub const VOID_RISK_LENGTH: f64 = 2.0;
 /// Valve's own opening matches ours when its centre is this close and it is at least half as big.
 pub const MATCH_DIST: f64 = 8.0;
-/// Surfaces apart by more than this at bind are not resting on each other (SKIN-FLAWS A7, 3 mm).
-pub const FLOAT_GAP: f64 = 0.12;
-/// Crossing layers deeper than this are a visible clip (1 mm).
+/// A piece hovers visibly when the gap to its nearest surface is a fair-play pixel (`views::VIEW_UNIT`, 6 mm) or
+/// more, and it has a pixel's area to show. SKIN-FLAWS A7 first drew the line at 3 mm; of the 141 pieces past 3 mm on 30 of
+/// Valve's heroes (6871), 108 stand under 6 mm off what they sit on, a gap no camera in the game resolves.
+pub const FLOAT_GAP: f64 = views::VIEW_UNIT;
+pub const FLOAT_MIN_AREA: f64 = views::VIEW_UNIT * views::VIEW_UNIT;
+/// A crossing counts once one layer sits this deep in the other (1 mm).
 pub const CROSS_DEPTH: f64 = 0.04;
+/// M109 and M110: the most visible fold line (a shell through itself) and crossing line (two shells, over 1 mm deep),
+/// counting sites over 1 unit long, that any of Valve's 43 playable heroes has at bind (6871), in units of the model's
+/// own size (the square root of its surface, so a prop a particle scales down is judged as its hero would be):
+/// Frank's folds and Hornet's crossings. The median hero has 0.4 and 18.8. A model past these crosses more than
+/// Valve builds any hero.
+pub const FOLD_RATE_VALVE: f64 = 4.81;
+pub const CROSS_RATE_VALVE: f64 = 52.5;
 /// Coplanar overlap worth a flicker (SKIN-FLAWS A6: more than 1 cm^2).
 pub const ZFIGHT_AREA: f64 = 0.155;
 /// H1 policy (the author, 2026-11-19): "some overflow where it's tasteful, not 'ok that's a bit much lol'".
@@ -102,6 +112,9 @@ pub fn weighted_pct(s: &mut [(f64, f64)], q: f64) -> f64 {
 
 /// float32 keeps 8 quanta across a part's smallest dimension (scene3d coordinate-precision).
 pub const MIN_QUANTA: f64 = 8.0;
+/// M112 speaks only where float32's step is a visible fraction of the fair-play pixel (`views::VIEW_UNIT`): an
+/// eighth of it, 0.03 units, which a coordinate reaches at about 260,000 units from the origin.
+pub const PRECISION_VISIBLE_STEP: f64 = views::VIEW_UNIT / MIN_QUANTA;
 
 fn f1(x: f64) -> String {
     format!("{x:.1}")
@@ -124,8 +137,67 @@ pub fn valve_own(o: &Census, valve: Option<&Census>, i: usize) -> bool {
     s.materials.iter().all(|m| v.materials.contains_key(m)) && v.shells.iter().any(|t| t.tris == s.tris && v3::dist(t.bounds.center(), s.bounds.center()) < 1.0)
 }
 
+/// The same pieces in Valve's model (every material Valve's) crossing at the same place: Valve's design.
+fn valve_cross(o: &Census, valve: Option<&Census>, c: &super::census::Cross) -> bool {
+    let mats = |i: usize| &o.shells[i].materials;
+    valve.is_some_and(|v| mats(c.a).iter().chain(mats(c.b)).all(|m| v.materials.contains_key(m)) && v.crosses.iter().any(|x| v3::dist(x.bounds.center(), c.bounds.center()) < MATCH_DIST))
+}
+
+/// A model's size for M109 and M110: the square root of its surface.
+pub fn model_size(o: &Census) -> f64 {
+    o.shells.iter().map(|s| s.area).sum::<f64>().sqrt().max(1e-9)
+}
+
+/// M109's sites: visible folds of a shell through itself over 1 unit long that are not Valve's own, longest first.
+pub fn folds<'a>(o: &'a Census, valve: Option<&Census>) -> Vec<&'a super::census::Cross> {
+    let mut v: Vec<_> = o.crosses.iter().filter(|c| c.a == c.b && c.visible_pairs > 0 && c.length > 1.0 && !valve_own(o, valve, c.a) && !valve_cross(o, valve, c)).collect();
+    v.sort_by(|a, b| b.length.partial_cmp(&a.length).unwrap_or(std::cmp::Ordering::Equal));
+    v
+}
+
+/// M110's sites: visible crossings of two shells over 1 unit long and 1 mm deep that are not Valve's own, longest
+/// first.
+pub fn crossings<'a>(o: &'a Census, valve: Option<&Census>) -> Vec<&'a super::census::Cross> {
+    let mut v: Vec<_> = o
+        .crosses
+        .iter()
+        .filter(|c| c.a != c.b && c.visible_pairs > 0 && c.length > 1.0 && c.depth_a_in_b.max(c.depth_b_in_a) > CROSS_DEPTH)
+        .filter(|c| !(valve_cross(o, valve, c) || valve_own(o, valve, c.a) && valve_own(o, valve, c.b)))
+        .collect();
+    v.sort_by(|a, b| b.length.partial_cmp(&a.length).unwrap_or(std::cmp::Ordering::Equal));
+    v
+}
+
 /// Mismatch with the substrate above which a resting piece separates in motion.
 pub const SKIN_MISMATCH: f64 = 0.5;
+/// A piece and its substrate on bones a joint connects, resting on each other this close (units) to that joint's
+/// pivot, meet at a hinge: the bend turns one about the point where they touch, so it slides there and does not lift
+/// off (a hand at its sleeve's cuff, a foot at its shin).
+pub const HINGE_REACH: f64 = 3.0;
+
+/// The distance from `p` to the nearest pivot between bones `a` and `b`: the origin of every bone on the chain from
+/// each up to the bone they share (that one's own origin turns both alike). None when the skeleton does not hold both.
+pub fn hinge_distance(sk: &::mesh::model::Skeleton, a: &str, b: &str, p: V3) -> Option<f64> {
+    let (ia, ib) = (sk.index(a)?, sk.index(b)?);
+    let chain = |mut i: usize| {
+        let mut c = vec![i];
+        while let Some(&q) = sk.parents.get(i) {
+            if q < 0 || q as usize >= sk.names.len() || c.len() > sk.names.len() {
+                break;
+            }
+            i = q as usize;
+            c.push(i);
+        }
+        c
+    };
+    let (ca, cb) = (chain(ia), chain(ib));
+    let shared = ca.iter().position(|x| cb.contains(x))?;
+    let top = ca[shared];
+    let world = sk.world();
+    ca.iter().take(shared).chain(cb.iter().take_while(|&&x| x != top))
+        .map(|&i| { let t = world[i].1; v3::dist(p, [t[0] as f64, t[1] as f64, t[2] as f64]) })
+        .fold(None, |m: Option<f64>, d| Some(m.map_or(d, |m| m.min(d))))
+}
 
 /// The cut-body openings M106 reports: skin openings of at least 1 u2 that see through (cover
 /// ignored) or are visible now, and that Valve's model does not share at the same place.
@@ -324,33 +396,49 @@ pub fn judge(ours: &Census, valve: Option<&Census>, fp: &FairPlay) -> Out {
         out.push(("M108", format!("[{}] and [{}] share a plane over {} u2 near {}: they flicker", lbl(z.a), lbl(z.b), f1(z.area), at(z.worst_at))));
     }
     // M109 self-intersection and M110 shell crossings, visible ones, with depth.
-    let valve_cross = |c: &super::census::Cross| -> bool {
-        // the same pieces in Valve's model (both shells on Valve's materials) crossing there too
-        let mats = |i: usize| &o.shells[i].materials;
-        valve.is_some_and(|v| {
-            mats(c.a).iter().chain(mats(c.b)).all(|m| v.materials.contains_key(m))
-                && v.crosses.iter().any(|x| v3::dist(x.bounds.center(), c.bounds.center()) < MATCH_DIST)
-        })
-    };
-    let mut folds: Vec<&super::census::Cross> = o.crosses.iter().filter(|c| c.a == c.b && c.visible_pairs > 0 && c.length > 1.0 && !own(c.a) && !valve_cross(c)).collect();
-    folds.sort_by(|a, b| b.length.partial_cmp(&a.length).unwrap_or(std::cmp::Ordering::Equal));
-    for c in folds.iter().take(10) {
-        out.push(("M109", format!("[{}] folds through itself: {} crossing triangle pairs, {} units of crossing line near {}: the layers flicker along the fold", lbl(c.a), c.pairs, f1(c.length), at(c.bounds.center()))));
-    }
-    if folds.len() > 10 {
-        out.push(("M109", format!("{} more self-intersecting shells (see `magician mesh`)", folds.len() - 10)));
-    }
-    let mut crossing: Vec<&super::census::Cross> = o.crosses.iter().filter(|c| c.a != c.b && c.visible_pairs > 0 && c.depth_a_in_b.max(c.depth_b_in_a) > CROSS_DEPTH).filter(|c| !(valve_cross(c) || own(c.a) && own(c.b))).collect();
-    crossing.sort_by(|a, b| b.depth_a_in_b.max(b.depth_b_in_a).partial_cmp(&a.depth_a_in_b.max(a.depth_b_in_a)).unwrap_or(std::cmp::Ordering::Equal));
-    for c in crossing.iter().take(12) {
-        let (inner, outer, d) = if c.depth_a_in_b >= c.depth_b_in_a { (c.a, c.b, c.depth_a_in_b) } else { (c.b, c.a, c.depth_b_in_a) };
+    // Valve builds every hero from pieces that pass through each other at bind: on 6871 each of the 43 playable
+    // heroes has visible crossings 5 units deep or more (about 250 shell pairs a hero), with the same spread of
+    // crossing length as a skin's. One crossing cannot tell a clip from Valve's construction, so M109 and M110 judge
+    // how much of the model is crossing: the visible crossing line in units of the model's size (the square root of
+    // its surface), against the most any of Valve's heroes has. Valve's own pieces where Valve's model crosses there
+    // too are not counted.
+    let per = |len: f64| len / model_size(o);
+    let folds = folds(o, valve);
+    let fold_len: f64 = folds.iter().map(|c| c.length).sum();
+    if per(fold_len) > FOLD_RATE_VALVE {
+        let worst: Vec<String> = folds.iter().take(3).map(|c| format!("[{}] {} units near {}", lbl(c.a), f1(c.length), at(c.bounds.center()))).collect();
         out.push((
-            "M110",
-            format!("[{}] passes {} units into [{}] at bind ({} crossing pairs, {} units of crossing line, z {:.0}..{:.0}): a visible clip that flickers along the line", lbl(inner), if d >= 4.99 { "5 or more".to_string() } else { format!("{d:.2}") }, lbl(outer), c.pairs, f1(c.length), c.bounds.min[2], c.bounds.max[2]),
+            "M109",
+            format!(
+                "{} shells fold through themselves: {} units of visible fold line, {:.1} times the model's size (the square root of its surface), more than any of Valve's heroes ({FOLD_RATE_VALVE} at most): the layers flicker along the folds. The most: {}",
+                folds.len(),
+                f1(fold_len),
+                per(fold_len),
+                worst.join("; ")
+            ),
         ));
     }
-    if crossing.len() > 12 {
-        out.push(("M110", format!("{} more crossing shell pairs (see `magician mesh` for the full list)", crossing.len() - 12)));
+    let crossing = crossings(o, valve);
+    let cross_len: f64 = crossing.iter().map(|c| c.length).sum();
+    if per(cross_len) > CROSS_RATE_VALVE {
+        let worst: Vec<String> = crossing
+            .iter()
+            .take(3)
+            .map(|c| {
+                let (inner, outer, d) = if c.depth_a_in_b >= c.depth_b_in_a { (c.a, c.b, c.depth_a_in_b) } else { (c.b, c.a, c.depth_b_in_a) };
+                format!("[{}] {} units into [{}] along {} units, z {:.0}..{:.0}", lbl(inner), if d >= 4.99 { "5 or more".to_string() } else { format!("{d:.2}") }, lbl(outer), f1(c.length), c.bounds.min[2], c.bounds.max[2])
+            })
+            .collect();
+        out.push((
+            "M110",
+            format!(
+                "{} shell pairs pass through each other at bind: {} units of visible crossing line, {:.1} times the model's size (the square root of its surface), more than any of Valve's heroes ({CROSS_RATE_VALVE} at most): clips that show along the lines. The longest: {}",
+                crossing.len(),
+                f1(cross_len),
+                per(cross_len),
+                worst.join("; ")
+            ),
+        ));
     }
     // M111 floating shells: no contact chain to the hero's skin.
     let roots: Vec<usize> = (0..vs(o)).filter(|&i| o.shells[i].materials.iter().any(|m| o.skin_materials.contains(m))).collect();
@@ -367,7 +455,7 @@ pub fn judge(ours: &Census, valve: Option<&Census>, fp: &FairPlay) -> Out {
             }
         }
         let total: f64 = o.shells.iter().map(|s| s.area).sum();
-        let mut floats: Vec<usize> = (0..vs(o)).filter(|&i| !grounded[i] && o.contacts[i].gap > FLOAT_GAP && o.shells[i].area < 0.05 * total && !own(i)).collect();
+        let mut floats: Vec<usize> = (0..vs(o)).filter(|&i| !grounded[i] && o.contacts[i].gap > FLOAT_GAP && o.shells[i].area >= FLOAT_MIN_AREA && o.shells[i].area < 0.05 * total && !own(i)).collect();
         floats.sort_by(|&a, &b| o.contacts[b].gap.partial_cmp(&o.contacts[a].gap).unwrap_or(std::cmp::Ordering::Equal));
         for &i in floats.iter().take(10) {
             let k = &o.contacts[i];
@@ -388,7 +476,12 @@ pub fn judge(ours: &Census, valve: Option<&Census>, fp: &FairPlay) -> Out {
             .filter(|&i| {
                 let b = &o.shells[i].bone;
                 let sub = &o.shells[o.contacts[i].substrate.unwrap()].bone;
-                valve.is_none_or(|v| {
+                // a piece that meets its substrate at the joint between their bones is articulated, not loose;
+                // one on a bone that moves it alone (a ring on its own ring bone, a pump on its pump) is a part the
+                // rig moves on purpose, not a piece left on the wrong bones
+                let hinge = hinge_distance(&o.model.skeleton, b, sub, o.contacts[i].rest_at).is_some_and(|d| d <= HINGE_REACH);
+                let alone = o.shells.iter().filter(|t| &t.bone == b).count() == 1;
+                !hinge && !alone && valve.is_none_or(|v| {
                     v.model.skeleton.index(b).is_some()
                         && v.model.skeleton.index(sub).is_some()
                         && !v.shells.iter().zip(&v.contacts).any(|(t, k)| &t.bone == b && k.skin_mismatch > SKIN_MISMATCH)
@@ -405,14 +498,22 @@ pub fn judge(ours: &Census, valve: Option<&Census>, fp: &FairPlay) -> Out {
             ));
         }
     }
-    // M112 coordinate precision.
-    let step = (o.reach * 2f64.powi(-23)).max(f64::MIN_POSITIVE);
+    // M112 coordinate precision: a piece far enough from the origin that float32 snaps its vertices by a visible
+    // amount (an eighth of a fair-play pixel or more), with a dimension held in fewer than eight of those steps. The
+    // step is the piece's own (its farthest corner), not the model's. Nearer in, the snap is far under a pixel: a
+    // hero's reach of 100 units steps by 1.2e-5 units, and a flat card's few quanta of thickness are float32
+    // rounding a plane, not a shape being lost (18 such cards on one skin, 2 on Valve's heroes, 6871).
     for (i, s) in o.shells.iter().enumerate() {
+        let far = s.bounds.min.iter().chain(s.bounds.max.iter()).fold(0.0f64, |m, x| m.max(x.abs()));
+        let step = (far * 2f64.powi(-23)).max(f64::MIN_POSITIVE);
+        if step < PRECISION_VISIBLE_STEP {
+            continue;
+        }
         let d = s.bounds.size();
         // a flat card (thinner than one quantum) is flat by design; only a dimension that exists can be lost
         let thin = d.iter().cloned().filter(|x| *x >= step && *x < step * MIN_QUANTA).fold(f64::INFINITY, f64::min);
         if thin.is_finite() {
-            out.push(("M112", format!("[{}] is {thin:.2e} units thin at {} units from the origin, where float32 steps are {step:.2e}: it cannot hold its shape", lbl(i), f1(o.reach))));
+            out.push(("M112", format!("[{}] is {thin:.2e} units thin at {} units from the origin, where float32 steps are {step:.2e} (an eighth of a pixel is {:.2e}): it cannot hold its shape", lbl(i), f1(far), PRECISION_VISIBLE_STEP)));
         }
     }
     // M113-M115 UVs, against Valve's worst material.

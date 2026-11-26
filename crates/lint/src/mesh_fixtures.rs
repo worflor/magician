@@ -160,6 +160,11 @@ fn body() -> SynthDraw {
     boxd([-10.0, -10.0, 0.0], [10.0, 10.0, 60.0], BODY, 1)
 }
 
+/// A head on the head bone, standing clear above the body.
+fn head() -> SynthDraw {
+    boxd([-4.0, -4.0, 70.0], [4.0, 4.0, 78.0], CLOTH, 2)
+}
+
 fn hero(lod0: Vec<SynthDraw>, lod1: Option<Vec<SynthDraw>>) -> SynthModel {
     let mut meshes = vec![SynthMesh { name: "body".into(), lod_mask: 1, draws: lod0, bones: bones(), no_uv: false }];
     if let Some(l1) = lod1 {
@@ -476,28 +481,70 @@ fn m108_z_fighting() {
     assert!(has(&f, "M108", "share a plane"), "{f:#?}");
 }
 
-#[test]
-fn m109_self_intersection() {
-    // three quads in one shell; the third folds back through the first
+/// Three quads in one shell, offset by `dy`; the third folds back through the first along 4 units.
+fn fold(dy: f32) -> SynthDraw {
     let mut d = SynthDraw { material: CLOTH.into(), ..Default::default() };
     let pts: [P3; 8] = [[10.0, 0.0, 20.0], [16.0, 0.0, 20.0], [16.0, 4.0, 20.0], [10.0, 4.0, 20.0], [16.0, 4.0, 24.0], [16.0, 0.0, 24.0], [13.0, 4.0, 16.0], [13.0, 0.0, 16.0]];
     for p in pts {
-        d.positions.push(p);
+        d.positions.push([p[0], p[1] + dy, p[2]]);
         d.normals.push([0.0, 0.0, 1.0]);
         d.uvs.push([0.5, 0.5]);
         d.joints.push([1, 0, 0, 0]);
         d.weights.push([1.0, 0.0, 0.0, 0.0]);
     }
     d.tris = vec![[0, 1, 2], [0, 2, 3], [1, 5, 4], [1, 4, 2], [5, 7, 6], [5, 6, 4]];
-    let f = run_ours(&with(vec![d]));
-    assert!(has(&f, "M109", "folds through itself"), "{f:#?}");
+    d
+}
+
+/// The mesh verdict on our pouch model (the body and a pouch, about 5,800 u2 of surface, 76 units of size) measured,
+/// with `n` visible crossings of `len` units each put in between shells `a` and `b` (the same shell for a fold).
+fn judged_with_crossings(a: usize, b: usize, n: usize, len: f64) -> Vec<&'static str> {
+    use crate::mesh::census::{no_env, Census, Cross};
+    let m = with(vec![boxd([8.0, -3.0, 20.0], [14.0, 3.0, 26.0], CLOTH, 1)]);
+    let mut c = Census::build(&::mesh::synth::model(&m), &no_env()).unwrap();
+    let mut bounds = geom::v3::Aabb::empty();
+    bounds.grow([10.0, -3.0, 20.0]);
+    bounds.grow([10.0, 3.0, 26.0]);
+    c.crosses = (0..n).map(|_| Cross { a, b, pairs: 40, length: len, bounds, depth_a_in_b: 2.0, depth_b_in_a: 0.0, visible_pairs: 20 }).collect();
+    rules::judge(&c, None, &policy::DEFAULT).into_iter().map(|x| x.0).collect()
+}
+
+#[test]
+fn m109_self_intersection() {
+    // the line sits at Valve's most (Frank's 4.81 sizes of fold line): just past it fires, just under is Valve's own
+    let size = judged_size().sqrt();
+    assert!(judged_with_crossings(1, 1, 10, 0.1 * 4.9 * size).contains(&"M109"));
+    assert!(!judged_with_crossings(1, 1, 10, 0.1 * 4.7 * size).contains(&"M109"));
+}
+
+#[test]
+fn m109_silent_where_valve_folds_as_much() {
+    // one fold on a hero-sized body: under Valve's own rate (the median hero has 0.4 sizes of fold line)
+    let f = run_ours(&with(vec![fold(0.0)]));
+    assert!(!f.iter().any(|x| x.code == "M109"), "{f:#?}");
 }
 
 #[test]
 fn m110_shell_intersection() {
-    // a pouch sunk 2 units into the body
+    // the line sits at Valve's most (Hornet's 52.5 sizes of crossing line): past it fires, under it is Valve's own
+    let size = judged_size().sqrt();
+    assert!(judged_with_crossings(1, 0, 40, 53.5 * size / 40.0).contains(&"M110"));
+    assert!(!judged_with_crossings(1, 0, 40, 51.5 * size / 40.0).contains(&"M110"));
+}
+
+/// The pouch model's surface.
+fn judged_size() -> f64 {
+    let m = with(vec![boxd([8.0, -3.0, 20.0], [14.0, 3.0, 26.0], CLOTH, 1)]);
+    let c = crate::mesh::census::Census::build(&::mesh::synth::model(&m), &crate::mesh::census::no_env()).unwrap();
+    c.shells.iter().map(|s| s.area).sum()
+}
+
+#[test]
+fn m110_silent_on_construction_like_valves() {
+    // Real case (6871): every one of Valve's 43 heroes has pieces sunk 5 units or more into others at bind (a
+    // pouch into the body, a buckle into a belt), about 250 pairs a hero. One sunk pouch is construction.
     let f = run_ours(&with(vec![boxd([8.0, -3.0, 20.0], [14.0, 3.0, 26.0], CLOTH, 1)]));
-    assert!(has(&f, "M110", "units into"), "{f:#?}");
+    assert!(!f.iter().any(|x| x.code == "M110"), "{f:#?}");
 }
 
 #[test]
@@ -505,16 +552,47 @@ fn m111_floating_shell() {
     // an arm band 2 units off the body
     let f = run_ours(&with(vec![boxd([12.0, -3.0, 20.0], [14.0, 3.0, 22.0], CLOTH, 1)]));
     assert!(has(&f, "M111", "touches nothing"), "{f:#?}");
-    // resting on the body but skinned to the head: lifts off when the spine and head part
+    // resting on the body but skinned to the head (which carries the head itself): lifts off when the spine and
+    // head part
+    let f = run_ours(&with(vec![boxd([10.0, -3.0, 20.0], [12.0, 3.0, 30.0], CLOTH, 2), head()]));
+    assert!(has(&f, "M111", "skinned to other bones"), "{f:#?}");
+    // a ring on a bone of its own is a part the rig moves on purpose
     let f = run_ours(&with(vec![boxd([10.0, -3.0, 20.0], [12.0, 3.0, 30.0], CLOTH, 2)]));
+    assert!(!has(&f, "M111", "skinned to other bones"), "{f:#?}");
+}
+
+#[test]
+fn m111_silent_under_a_pixel_and_at_a_hinge() {
+    // 5 mm off the body: under one fair-play pixel, as 108 of Valve's own pieces stand (6871)
+    let f = run_ours(&with(vec![boxd([10.2, -3.0, 20.0], [12.0, 3.0, 22.0], CLOTH, 1)]));
+    assert!(!f.iter().any(|x| x.code == "M111"), "{f:#?}");
+    // a collar on the head bone sitting on the body right at the neck pivot: the bend turns it about where it
+    // touches (a hand at its cuff, a finger on the next), so it does not lift off
+    let collar = || boxd([-3.0, -3.0, 60.0], [3.0, 3.0, 64.0], CLOTH, 2);
+    let mut m = with(vec![collar(), head()]);
+    m.skeleton[2].2 = [0.0, 0.0, 30.0];
+    let f = run_ours(&m);
+    assert!(!has(&f, "M111", "skinned to other bones"), "{f:#?}");
+    // the same collar with the neck pivot 25 units down still lifts off
+    let f = run_ours(&with(vec![collar(), head()]));
     assert!(has(&f, "M111", "skinned to other bones"), "{f:#?}");
 }
 
 #[test]
 fn m112_coordinate_precision() {
-    // 0.05 units thick at 1e5 units from the origin, where float32 steps are ~0.012
-    let f = run_ours(&with(vec![boxd([100000.0, -3.0, 20.0], [100000.05, 3.0, 26.0], CLOTH, 1)]));
+    // 0.3 units thick at 5e5 units from the origin, where float32 steps are ~0.06: under eight steps, each a
+    // quarter of a pixel
+    let f = run_ours(&with(vec![boxd([500000.0, -3.0, 20.0], [500000.3, 3.0, 26.0], CLOTH, 1)]));
     assert!(has(&f, "M112", "float32"), "{f:#?}");
+}
+
+#[test]
+fn m112_silent_on_a_flat_card_near_the_origin() {
+    // Real case (6871): a flat lace card on a skin's bodice, horizontal at z 80 and 105 units from the origin, is
+    // 1.6e-5 units thick: float32 rounding a plane, never a shape a player could see lost.
+    let card = boxd([2.0, -3.0, 80.0], [8.0, 3.0, 80.000016], CLOTH, 1);
+    let f = run_ours(&with(vec![card]));
+    assert!(!f.iter().any(|x| x.code == "M112"), "{f:#?}");
 }
 
 #[test]
@@ -869,6 +947,22 @@ fn m135_texture_parity() {
     assert!(has(&f, "M135", "1 mips, Valve's 9"), "{f:#?}");
 }
 
+#[test]
+fn m135_silent_on_a_morph_atlas_shipped_with_its_model() {
+    // Real case (6871, a third skin): a replaced face's morph atlas is 186x186 where Valve's is 388x388, because the
+    // compiler packs that model's own morph targets. Shipped with the model it is right; alone it is Valve's model
+    // reading another atlas, and still judged.
+    let atlas = "models/heroes_wip/lash/lash/head_vmorf.vtex_c";
+    let mut g = game();
+    with_game(&mut g, &[atlas, MODEL]);
+    let mut fake = Fake::default();
+    fake.files.insert(atlas.into(), resource::synth_with(&[], &[(*b"DATA", resource::texture::synth_header(388, 388, 28))]));
+    let alone = run_game(vec![file(atlas, tex(186, 186, 28))], &g, &fake);
+    assert!(has(&alone, "M135", "186x186"), "{alone:#?}");
+    let with_model = run_game(vec![file(atlas, tex(186, 186, 28)), file(MODEL, res(&[]))], &g, &fake);
+    assert!(!has(&with_model, "M135", ""), "{with_model:#?}");
+}
+
 
 #[test]
 fn m136_m137_albedo() {
@@ -898,22 +992,6 @@ fn m138_m139_alpha_coverage() {
     // solid alpha keeps its coverage at every mip
     let f = mesh_run(&piece, vec![file(&format!("{CLOTH_COLOR}_c"), flat(256, [200, 200, 200, 255]))], lace);
     assert!(!has(&f, "M138", "") && !has(&f, "M139", ""), "{f:#?}");
-}
-
-#[test]
-fn m135_silent_on_a_morph_atlas_shipped_with_its_model() {
-    // Real case (6871, a third skin): a replaced face's morph atlas is 186x186 where Valve's is 388x388, because the
-    // compiler packs that model's own morph targets. Shipped with the model it is right; alone it is Valve's model
-    // reading another atlas, and still judged.
-    let atlas = "models/heroes_wip/lash/lash/head_vmorf.vtex_c";
-    let mut g = game();
-    with_game(&mut g, &[atlas, MODEL]);
-    let mut fake = Fake::default();
-    fake.files.insert(atlas.into(), resource::synth_with(&[], &[(*b"DATA", resource::texture::synth_header(388, 388, 28))]));
-    let alone = run_game(vec![file(atlas, tex(186, 186, 28))], &g, &fake);
-    assert!(has(&alone, "M135", "186x186"), "{alone:#?}");
-    let with_model = run_game(vec![file(atlas, tex(186, 186, 28)), file(MODEL, res(&[]))], &g, &fake);
-    assert!(!has(&with_model, "M135", ""), "{with_model:#?}");
 }
 
 
