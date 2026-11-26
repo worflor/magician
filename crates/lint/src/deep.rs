@@ -274,6 +274,19 @@ pub fn texture_params(v: &Value) -> Vec<String> {
     out
 }
 
+/// An event's direct bases: `base` is one event's name or a list of `{ event_name }` (Valve writes both). Sorted, so
+/// the same bases in another order or form compare equal.
+pub fn bases(base: Option<&Value>) -> Vec<String> {
+    let mut out: Vec<String> = match base {
+        Some(Value::Str(s)) if !s.is_empty() => vec![s.clone()],
+        Some(Value::Array(a)) => a.iter().filter_map(|x| x.as_str().or_else(|| x.get("event_name").and_then(Value::as_str))).filter(|s| !s.is_empty()).map(String::from).collect(),
+        _ => Vec::new(),
+    };
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// The events an event inherits from, itself included: `base` is one event's name or a list of `{ event_name }`.
 pub fn base_closure(name: &str, events: &dyn Fn(&str) -> Option<Value>) -> std::collections::BTreeSet<String> {
     let mut seen = std::collections::BTreeSet::new();
@@ -332,25 +345,47 @@ pub fn sound_events(ours: &Value, valve: &Value, fp: &crate::policy::FairPlay, e
         } else if ov > vv + SOUND_LOUDER_SLACK_DB {
             more.push(format!("{name}: volume {ov} dB, Valve's {vv}"));
         }
-        let ob = oe.get("base").and_then(Value::as_str);
-        let vb = ve.get("base").and_then(Value::as_str);
+        let ob = bases(oe.get("base"));
+        let vb = bases(ve.get("base"));
         if ob != vb {
-            let (o, v) = (ob.unwrap_or(""), vb.unwrap_or(""));
-            match base_difference(o, v, events) {
-                // ours is an ancestor of Valve's base: only the fields in between differ, and only level and reach are heard
-                Some(fields) => {
-                    for (e, k, val) in fields {
-                        let lk = k.to_ascii_lowercase();
-                        let level = lk == "volume" || lk.starts_with("volume_offset");
-                        match val.as_f64() {
-                            Some(db) if level && db < 0.0 => more.push(format!("{name}: base {o:?}, Valve's {v:?}, whose {e} sets {k} {db}: ours plays {:.1} dB louder", -db)),
-                            Some(db) if level && db > 0.0 => less.push(format!("{name}: base {o:?}, Valve's {v:?}, whose {e} sets {k} +{db}: ours plays {db:.1} dB quieter")),
-                            _ if is_reach_key(&k) => less.push(format!("{name}: base {o:?}, Valve's {v:?}, whose {e} sets {k}: how far it carries differs")),
-                            _ => {}
+            let (o, v) = (ob.join(" + "), vb.join(" + "));
+            // `whose` is (event, key, value) from the base events in between; `sign` is +1 when they belong to Valve's
+            // side (a level there is what ours lacks), -1 when they are extra on ours (a level there is what ours adds)
+            let mut judge = |fields: Vec<(String, String, Value)>, sign: f64| {
+                for (e, k, val) in fields {
+                    let lk = k.to_ascii_lowercase();
+                    let level = lk == "volume" || lk.starts_with("volume_offset");
+                    let raw = val.as_f64();
+                    match raw.map(|db| db * sign) {
+                        Some(db) if level && db < 0.0 => more.push(format!("{name}: base {o:?}, Valve's {v:?}, where {e} sets {k} {}: ours plays {:.1} dB louder", raw.unwrap_or(0.0), -db)),
+                        Some(db) if level && db > 0.0 => less.push(format!("{name}: base {o:?}, Valve's {v:?}, where {e} sets {k} {}: ours plays {db:.1} dB quieter", raw.unwrap_or(0.0))),
+                        _ if is_reach_key(&k) => less.push(format!("{name}: base {o:?}, Valve's {v:?}, where {e} sets {k}: how far it carries differs")),
+                        _ => {}
+                    }
+                }
+            };
+            if let ([o1], [v1]) = (ob.as_slice(), vb.as_slice()) {
+                match base_difference(o1, v1, events) {
+                    // ours is an ancestor of Valve's base: only the fields in between differ, and only level and reach are heard
+                    Some(fields) => judge(fields, 1.0),
+                    None => less.push(format!("{name}: base {o:?}, Valve's {v:?} (the base stack sets falloff and perspective)")),
+                }
+            } else if !vb.is_empty() && vb.iter().all(|b| ob.contains(b)) {
+                // ours keeps every base Valve's has and adds more: only what the added bases set beyond Valve's can differ
+                let theirs: std::collections::BTreeSet<String> = vb.iter().flat_map(|b| base_closure(b, events)).collect();
+                let (mut extra, mut unknown) = (Vec::new(), Vec::new());
+                for x in ob.iter().filter(|x| !vb.contains(x)) {
+                    for e in base_closure(x, events).difference(&theirs) {
+                        match events(e) {
+                            Some(def) => extra.extend(def.members().iter().filter(|(k, _)| k != "base" && k != "type").map(|(k, val)| (e.clone(), k.clone(), val.clone()))),
+                            None => unknown.push(format!("{name}: base {o:?}, Valve's {v:?}: {e} is not a sound event the game defines")),
                         }
                     }
                 }
-                None => less.push(format!("{name}: base {o:?}, Valve's {v:?} (the base stack sets falloff and perspective)")),
+                judge(extra, -1.0);
+                less.extend(unknown);
+            } else {
+                less.push(format!("{name}: base {o:?}, Valve's {v:?} (the base stack sets falloff and perspective)"));
             }
         }
         let keys: Vec<&str> = ve.members().iter().chain(oe.members()).map(|(k, _)| k.as_str()).collect();

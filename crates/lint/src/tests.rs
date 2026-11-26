@@ -619,6 +619,28 @@ fn m063_a_base_valve_inherits_from_differs_only_by_what_lies_between() {
 }
 
 #[test]
+fn m063_a_list_of_bases_is_read_as_its_events() {
+    // Valve writes `base` as one name or as a list of { event_name field_name }: the same base in either form is the
+    // same stack, and a list that keeps Valve's base and adds one differs only by what the added base sets
+    let base = "soundevents/base/example_base_events.vsndevts_c";
+    let mut g = game();
+    with(&mut g, &[EVTS, base]);
+    let mut fake = Fake::default();
+    fake.files.insert(base.into(), res_kv(&[], &[(b"DATA", kv(r#"{ Base.Ability.Cast = { type = "x" falloff_far = 2000.0 }
+        Base.Quiet = { volume = -3.0 } Base.Flag = { some_flag = 1.0 } }"#))]));
+    fake.files.insert(EVTS.into(), res_kv(&[], &[(b"DATA", kv(r#"{ Lash.Cast = { base = "Base.Ability.Cast" } }"#))]));
+    let ours = |text: &str| run_game(vec![file(EVTS, res_kv(&[], &[(b"DATA", kv(text))]))], &g, &fake);
+    let same = ours(r#"{ Lash.Cast = { base = [ { event_name = "Base.Ability.Cast" field_name = "x" } ] } }"#);
+    assert!(!same.iter().any(|x| x.code == "M063"), "the same base as a list: {same:?}");
+    let flag = ours(r#"{ Lash.Cast = { base = [ { event_name = "Base.Ability.Cast" } { event_name = "Base.Flag" } ] } }"#);
+    assert!(!flag.iter().any(|x| x.code == "M063"), "an added base that sets no level or reach: {flag:?}");
+    let quiet = ours(r#"{ Lash.Cast = { base = [ { event_name = "Base.Ability.Cast" } { event_name = "Base.Quiet" } ] } }"#);
+    assert!(quiet.iter().any(|x| x.code == "M063" && x.message.contains("3.0 dB quieter")), "an added base that lowers it: {quiet:?}");
+    let other = ours(r#"{ Lash.Cast = { base = [ { event_name = "Base.Flag" } ] } }"#);
+    assert!(other.iter().any(|x| x.code == "M063" && x.message.contains("the base stack sets falloff")), "Valve's base dropped: {other:?}");
+}
+
+#[test]
 fn m063_a_voice_line_is_not_judged_by_its_length() {
     // Valve's own voices fail the duration test against each other on 46% of shared lines (`magician corpus`, 6868).
     let line = "sounds/vo/lash/emote/lash_effort_dash_02.vsnd_c";
