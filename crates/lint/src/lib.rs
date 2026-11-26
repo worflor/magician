@@ -114,6 +114,8 @@ pub const RULES: &[Rule] = &[
         in_game: "A particle function sits in a list whose registry doesn't have its class: the game logs 'Function \"...\" not found while loading particle system'. A constraint (C_OP_WorldTraceConstraint) in m_Operators crashed the game outright: an access violation executing a null pointer in particles.dll the first time the effect played. Valve's 133 uses of that class all sit in m_Constraints." },
     Rule { code: "M090", name: "shared-file", severity: Severity::Warn,
         in_game: "The game file this replaces is used by more than one hero, ability or item (Lash's Ground Strike icon is also Majestic Leap's). Replacing it changes all of them for everyone who installs the mod." },
+    Rule { code: "M091", name: "shared-file-unchecked", severity: Severity::Info,
+        in_game: "Deep lint had no users index for this build (or one from an older Magician), so the files this mod replaces were not checked for other heroes, abilities or items that use them (M090). A shared file it replaces changes those too; unchecked is not clean. `magician index` builds the index, once per build." },
     // The mesh family (M100-M140, M145-M147): compiled models decoded natively, measured with the geometry kernel,
     // judged against Valve's model at the same path (`mesh/`). Derived from scene3d's census and lint.
     Rule { code: "M100", name: "mesh-unchecked", severity: Severity::Warn,
@@ -246,6 +248,11 @@ pub trait Game: Sync {
     /// users index (`magician index`). Empty when there is no index.
     fn users(&self, _path: &str) -> Vec<String> {
         Vec::new()
+    }
+    /// Why `users` knows nothing, when it does not: no users index for the build, or one in an older format. Then
+    /// the shared-file rule (M090) cannot run, and M091 says so. `None`: the index was read.
+    fn users_unchecked(&self) -> Option<String> {
+        None
     }
     /// The particle classes Valve uses in each function list across the build (cached per build). `None` when
     /// unavailable: then M083 can't run.
@@ -823,6 +830,12 @@ fn deep_rules(input: &Input, out: &mut Vec<Finding>) {
         }
     }
     if let Some(g) = input.game {
+        if let Some(why) = g.users_unchecked() {
+            let n = input.files.iter().filter(|f| replaces(&f.path)).count();
+            if n > 0 {
+                out.push(finding("M091", None, format!("the {n} file(s) this mod replaces were not checked for other users (M090): {why}")));
+            }
+        }
         for f in &input.files {
             let p = f.path.as_str();
             if !replaces(p) {

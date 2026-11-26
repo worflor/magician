@@ -45,7 +45,7 @@ A finding line reads `<severity>  <code> <name>  <path>`, with a hint indented u
 - Findings are judged against Valve's file at the same path; what Valve's own file does is never a finding. A mod is blamed only for references it introduced.
 - **Allowances** live in the addon's `magician.allow` (one site, one rule, a written reason). Allowed findings still print, as `allowed`. `stale` means an allowance no longer matches anything: report it, the author should remove it.
 - `M129` (egregious hitbox overflow) and other fair-play findings are not style notes. They mean the mod makes a hero harder to read or hit fairly. `M144` means a fair-play comparison could not run on a file: fair play is unknown there, not clean. Fair play is lenient unless the policy enforces it (`[fair_play] enforce = true`): until then these print as warnings, lint exits 0 on them alone and install goes ahead. Report them anyway, with their codes; a warning here is not a clean bill.
-- Without a users index for the build, the shared-file rule M090 does not run and lint says so. `magician index` builds it (needs the Source 2 Viewer CLI).
+- Without a users index for the build, or with one from an older Magician, the shared-file rule M090 does not run and lint says so as an M091 note in the findings. `magician index` builds it (needs the Source 2 Viewer CLI).
 - One model in detail: `magician mesh <pak> <model path>` (verdict PASS / ATTENTION / FAIL, silhouettes, an x-ray sheet in `--out`), `magician cloth <pak> <model path>` (the compiled cloth beside Valve's).
 
 **Grade** (hero mods; a mod that touches nothing of the hero is "not graded", and says so):

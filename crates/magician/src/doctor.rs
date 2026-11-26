@@ -131,8 +131,11 @@ pub fn checks(args: &[String]) -> Vec<Check> {
             out.push(c("engine", State::Todo, format!("no engine sidecar for build {b}: the next patch day can't say whether the engine changed"), Some("magician patchday --capture   (writes only what is missing)".into())));
         }
         let users = users_index_path(b);
-        if users.is_file() {
+        let rev = std::fs::read_to_string(&users).ok().map(|t| crate::gamefiles::index_rev(&t));
+        if rev.is_some_and(|r| r >= crate::gamefiles::INDEX_REV) {
             out.push(c("users", State::Ok, format!("users index for build {b}"), None));
+        } else if rev.is_some() {
+            out.push(c("users", State::Todo, format!("the users index for build {b} is from an older Magician: the shared-file rule (M090) does not read it (M091)"), Some("magician index   (a few minutes, needs Source 2 Viewer)".into())));
         } else {
             out.push(c("users", State::Skip, format!("no users index for build {b}: the shared-file rule (M090) does not run"), Some("magician index   (optional; a few minutes, needs Source 2 Viewer)".into())));
         }

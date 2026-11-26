@@ -5,18 +5,30 @@
 //! file": every hero, ability or item whose data reaches it, following the reference graph backwards.
 //! Owners come from the game's own data: the top-level keys of `scripts/*.vdata` (an ability named by a
 //! hero belongs to that hero), plus hero path tokens (`lash`, `archer`...) for files no vdata names.
-//! Heroes Valve has disabled, keeps in development (`hero_skyrunner` wears Lash's model) or marks
-//! `_not_pickable` (the `hero_base` template, the target dummy) are left out: nobody can pick them.
+//! Heroes Valve has disabled, keeps in development (`hero_skyrunner` wears Lash's model), marks
+//! `_not_pickable` (the `hero_base` template) or gives a development state other than release (the target dummy
+//! is `EHeroDevState_DebugOnly`) are left out: nobody can pick them in a match.
+//!
+//! A base animation graph lists every hero's variation of it (`hero_flinch.vnmgraph_c` names
+//! `hero_flinch.vnmgraph+lash.vnmgraph_c` and 40 more): that list is not a use. Followed backwards, it made the one
+//! hero whose graphs take the base flinch graph unvaried a user of every hero's flinch clips and skeleton, and so a
+//! sharer the shared-file rule named on every skin. Those edges are left out.
 
 use grade::footprint::compiled;
 use resource::kv3::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
+/// The users index format. An index without this revision in its header was built before base graphs stopped
+/// lending their variations' owners (and before the target dummy was left out): it names owners that do not use
+/// the file, so it is not read, and lint says so (M091).
+pub const INDEX_REV: u32 = 2;
+
 pub struct GameFiles {
     pub paks: Vec<std::sync::Arc<vpk::Vpk>>,
     pub users: HashMap<String, Vec<String>>,
-    pub has_index: bool,
+    /// Why the shared-file rule could not run, when it could not: no index, or one in an older format.
+    pub index_missing: Option<String>,
     pub particle_classes: Option<lint::deep::ParticleClasses>,
     /// The archives' sizes and times: what keys cached results to this install of the game.
     pub identity: String,
@@ -28,12 +40,18 @@ impl GameFiles {
     pub fn open(game: &Path, index: Option<&Path>) -> GameFiles {
         let paks = ["citadel", "core"].iter().filter_map(|d| vpk::Vpk::open_shared(game.join(d).join("pak01_dir.vpk")).ok()).collect();
         let mut users = HashMap::new();
-        let mut has_index = false;
-        if let Some(text) = index.and_then(|p| std::fs::read_to_string(p).ok()) {
-            has_index = true;
-            for line in text.lines().filter(|l| !l.starts_with('#')) {
-                if let Some((t, o)) = line.split_once('\t') {
-                    users.insert(t.to_string(), o.split(',').map(str::to_string).collect());
+        let mut index_missing = None;
+        match index.map(|p| (p, std::fs::read_to_string(p))) {
+            None => index_missing = Some("no users index was given".to_string()),
+            Some((p, Err(_))) => index_missing = Some(format!("there is no users index for this build ({}); `magician index` builds it", p.display())),
+            Some((p, Ok(text))) if index_rev(&text) < INDEX_REV => {
+                index_missing = Some(format!("the users index ({}) is from an older Magician and names users that do not use the file; `magician index` builds it again", p.display()))
+            }
+            Some((_, Ok(text))) => {
+                for line in text.lines().filter(|l| !l.starts_with('#')) {
+                    if let Some((t, o)) = line.split_once('\t') {
+                        users.insert(t.to_string(), o.split(',').map(str::to_string).collect());
+                    }
                 }
             }
         }
@@ -51,7 +69,7 @@ impl GameFiles {
             })
             .collect::<Vec<_>>()
             .join(",");
-        GameFiles { paks, users, has_index, particle_classes: None, identity, addon_sources: None }
+        GameFiles { paks, users, index_missing, particle_classes: None, identity, addon_sources: None }
     }
 }
 
@@ -66,6 +84,9 @@ impl lint::Game for GameFiles {
     }
     fn users(&self, path: &str) -> Vec<String> {
         self.users.get(path).cloned().unwrap_or_default()
+    }
+    fn users_unchecked(&self) -> Option<String> {
+        self.index_missing.clone()
     }
     fn particle_classes(&self) -> Option<&lint::deep::ParticleClasses> {
         self.particle_classes.as_ref()
@@ -106,6 +127,22 @@ pub fn particle_classes(game: &Path, cache: &Path, build: &str) -> Result<lint::
     }
     std::fs::write(cache, lint::deep::particle_classes_tsv(&c, build)).map_err(|e| format!("{}: {e}", cache.display()))?;
     Ok(c)
+}
+
+/// The format revision a users index's header names (`rev=N`): 1 for an index written before the header carried one,
+/// 0 for a file that is not an index.
+pub fn index_rev(text: &str) -> u32 {
+    let head = text.lines().next().unwrap_or("");
+    if !head.starts_with("# magician users ") {
+        return 0;
+    }
+    head.split_whitespace().find_map(|w| w.strip_prefix("rev=")).and_then(|r| r.parse().ok()).unwrap_or(1)
+}
+
+/// Whether `target` is one of `from`'s variations: a base graph `a/x.vnmgraph_c` lists `a/x.vnmgraph+hero.vnmgraph_c`
+/// for every hero that varies it, which is not a use of them.
+fn variation_of(from: &str, target: &str) -> bool {
+    from.strip_suffix("_c").is_some_and(|base| base.ends_with(".vnmgraph") && !base.contains('+') && target.strip_prefix(base).is_some_and(|rest| rest.starts_with('+')))
 }
 
 fn data_of(bytes: &[u8]) -> Option<Value> {
@@ -205,7 +242,7 @@ pub fn build_index(game: &Path, out: &Path, build: &str, src: &grade::footprint:
         };
         let from = intern(&e.path, &mut names);
         for t in refs {
-            if t != e.path {
+            if t != e.path && !variation_of(&e.path, &t) {
                 rev.entry(t).or_default().push(from);
                 edges += 1;
             }
@@ -234,7 +271,9 @@ pub fn build_index(game: &Path, out: &Path, build: &str, src: &grade::footprint:
         let off = |k: &str| h.get(k).and_then(Value::as_bool).unwrap_or(false);
         // `_not_pickable` marks templates (hero_base) and test units (hero_targetdummy).
         let pickable = h.get("_not_pickable").and_then(Value::as_f64).unwrap_or(0.0) == 0.0;
-        let live = pickable && !off("m_bDisabled") && !off("m_bInDevelopment");
+        // the target dummy is `EHeroDevState_DebugOnly`; every hero in a match is `EHeroDevState_Release`
+        let released = h.get("m_eHeroDevelopmentState").and_then(Value::as_str).is_none_or(|s| s == "EHeroDevState_Release");
+        let live = pickable && released && !off("m_bDisabled") && !off("m_bInDevelopment");
         let strs: Vec<&str> = h.strings();
         for s in &strs {
             if ability_keys.contains(s) {
@@ -372,7 +411,7 @@ pub fn build_index(game: &Path, out: &Path, build: &str, src: &grade::footprint:
     if let Some(d) = out.parent() {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
-    let mut text = format!("# magician users build={build} targets={}\n", lines.len());
+    let mut text = format!("# magician users build={build} rev={INDEX_REV} targets={}\n", lines.len());
     text.push_str(&lines.join("\n"));
     text.push('\n');
     std::fs::write(out, text).map_err(|e| format!("{}: {e}", out.display()))?;
@@ -389,5 +428,35 @@ mod tests {
         assert_eq!(owner_by_token("sounds/vo/lash/lash_kill_wraith_01.vsnd_c", &t).map(String::as_str), Some("hero_lash"));
         assert_eq!(owner_by_token("particles/abilities/wraith/x.vpcf_c", &t).map(String::as_str), Some("hero_wraith"));
         assert_eq!(owner_by_token("particles/generic/splash.vpcf_c", &t), None, "whole words only");
+    }
+
+    #[test]
+    fn a_base_graph_does_not_use_its_variations() {
+        let base = "animgraphs/animgraph2/hero/hero_flinch.vnmgraph_c";
+        assert!(variation_of(base, "animgraphs/animgraph2/hero/hero_flinch.vnmgraph+lash.vnmgraph_c"));
+        assert!(!variation_of(base, "models/heroes_wip/lash/lash.vnmskel_c"), "what the base graph itself uses");
+        assert!(!variation_of(base, "animgraphs/animgraph2/hero/hero_flinch_heavy.vnmgraph+lash.vnmgraph_c"), "another graph");
+        let variation = "animgraphs/animgraph2/hero/hero_flinch.vnmgraph+lash.vnmgraph_c";
+        assert!(!variation_of(variation, "animgraphs/animgraph2/hero/hero_flinch.vnmgraph+lash.vnmgraph+x.vnmgraph_c"), "only a base graph lists variations");
+    }
+
+    #[test]
+    fn an_index_from_before_the_revision_is_not_read() {
+        assert_eq!(index_rev("# magician users build=6868 targets=3\na\thero_lash\n"), 1);
+        assert_eq!(index_rev(&format!("# magician users build=6868 rev={INDEX_REV} targets=3\n")), INDEX_REV);
+        assert_eq!(index_rev("a\thero_lash\n"), 0, "not an index");
+        let dir = std::env::temp_dir().join(format!("magician-users-rev-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let idx = dir.join("users.tsv");
+        std::fs::write(&idx, "# magician users build=6868 targets=1\na.vtex_c\thero_lash,hero_haze\n").unwrap();
+        let g = GameFiles::open(&dir, Some(&idx));
+        assert!(g.users.is_empty());
+        assert!(g.index_missing.as_deref().is_some_and(|m| m.contains("older Magician")), "{:?}", g.index_missing);
+        std::fs::write(&idx, format!("# magician users build=6868 rev={INDEX_REV} targets=1\na.vtex_c\thero_lash,hero_haze\n")).unwrap();
+        let g = GameFiles::open(&dir, Some(&idx));
+        assert!(g.index_missing.is_none() && g.users.len() == 1);
+        let g = GameFiles::open(&dir, Some(&dir.join("missing.tsv")));
+        assert!(g.index_missing.as_deref().is_some_and(|m| m.contains("no users index")), "{:?}", g.index_missing);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

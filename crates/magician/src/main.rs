@@ -1375,14 +1375,14 @@ fn users_index_path(build: &str) -> PathBuf {
     reference_root().join(build).join("users.tsv")
 }
 
-/// The game as lint's deep rules read it. Without a users index for the build, the shared-file rule
-/// (M090) can't run, and lint says so.
+/// The game as lint's deep rules read it. Without a users index for the build (or with one in an older format),
+/// the shared-file rule (M090) can't run, and lint says so (M091).
 fn game_files(args: &[String], build: &str) -> Result<gamefiles::GameFiles, String> {
     let game = game_dir(args)?;
     let idx = flag(args, "--users").map(PathBuf::from).unwrap_or_else(|| users_index_path(build));
     let mut gf = gamefiles::GameFiles::open(&game, Some(&idx));
-    if !gf.has_index {
-        say!("note: no users index for build {build} ({}); run `magician index` to check shared files (M090)", idx.display());
+    if let Some(why) = &gf.index_missing {
+        say!("note: shared files (M090) not checked for build {build}: {why}");
     }
     let cache = reference_root().join(build).join("particle_classes.tsv");
     match gamefiles::particle_classes(&game, &cache, build) {

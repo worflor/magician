@@ -5,7 +5,7 @@ description: Drive Magician, the headless toolchain for Deadlock (Valve, Source 
 
 # Using Magician
 
-Magician treats a Deadlock mod as a program and each game build as a compiler target. It builds mods reproducibly, lints them against the installed build (80 rules, each with its in-game consequence), works out what a new build changed under a mod, grades a hero mod (what it makes its own, identity, fair play, freshness, release gate) as one reproducible record, drives the retail game to film a mod, records which bytes were proven on which build, and installs or rolls back paks through a ledger. Every command is deterministic and its exit code means something, so you can act on results without a person watching.
+Magician treats a Deadlock mod as a program and each game build as a compiler target. It builds mods reproducibly, lints them against the installed build (81 rules, each with its in-game consequence), works out what a new build changed under a mod, grades a hero mod (what it makes its own, identity, fair play, freshness, release gate) as one reproducible record, drives the retail game to film a mod, records which bytes were proven on which build, and installs or rolls back paks through a ledger. Every command is deterministic and its exit code means something, so you can act on results without a person watching.
 
 **Good for:** checking a mod against the installed build; patch day (did Valve's update break anything, and what must be re-filmed); the in-game pass that re-proves a mod; building and releasing from an addon's sources; installing and removing paks safely; starting a mod folder for a hero; shipping hero-page scenes without Valve's bytes; packaging releases and a mod source for Deadlock Mod Manager.
 

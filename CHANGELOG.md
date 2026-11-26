@@ -6,7 +6,14 @@ Each release's entry says whether the lint rules, the grading rubric or the buil
 
 ## Unreleased
 
-Judgement unchanged: the same lint rules, grading rubric and built-in policy as 0.1.0.
+**Judgement changed in the lint rules (81 now); the grading rubric and the built-in policy are as in 0.1.0.** Re-run `lint` on every mod, and `magician index` once on each build you lint against: an index from 0.1.0 is not read.
+
+### Judgement changed
+
+- **New rule M091 shared-file-unchecked (a note).** Without a users index for the build, the shared-file rule M090 cannot run. Lint said so only in a note on stderr, which `--json` silences; now the run carries an M091 finding that names how many replaced files went unchecked and why, as M144 does for a fair-play comparison. `magician doctor` says the same.
+- **M090 no longer names a hero that does not use the file.** A base animation graph lists every hero's variation of it, and the users index followed that list backwards: the one hero whose graphs take the base flinch graph unvaried became a user of every hero's flinch clips and skeleton, and two others of about 1,400 hero files each, so M090 named them on nearly every skin. The target dummy (`EHeroDevState_DebugOnly`) was counted as a hero too. On 6868 the files under hero model folders shared by more than one owner fell from 3,808 to 2,333. An index from before the fix carries no format revision and is not read (M091 says why).
+
+### Other changes
 
 - M145 inside-out-shell tells an inverted-hull outline (an inside-out copy wrapped around another piece) from a piece that is merely turned out, and says what the game does with it: it is not culled into a line but draws an opaque black shape over what it wraps, though Blender and Source 2 Viewer both show the line. The finding points to the material's own outline (`F_SOLID_COLOR_OUTLINE`, heavier with `F_OVERRIDE_NPR_OUTLINE`). Where it fires and its severity are unchanged; the engine reference has the facts.
 - `magician mesh --json-out` carries the fair-play silhouettes, one entry per view with its share of Valve's (`percent_of_valve`, the number M124 judges), IoU and the pixels added and lost, as the text report and the MCP `mesh` tool's `silhouettes` do.

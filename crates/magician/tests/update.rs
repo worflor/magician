@@ -235,7 +235,7 @@ fn a_changed_rubric_or_rule_set_is_reported_as_changed_judgement() {
     let d = scratch("judgement");
     let tk = toolkit(&d);
     let mut r = Release::new("99.0.0", "aaaaaaaaaaaa");
-    r.keys = vec![("rubric", "9.9.9".into()), ("lint_rules", "81".into()), ("lint_fingerprint", "0".repeat(64))];
+    r.keys = vec![("rubric", "9.9.9".into()), ("lint_rules", "999".into()), ("lint_fingerprint", "0".repeat(64))];
     let src = r.write(&d, "changed");
     let o = magician(&d, &tk, &s(&src), &["update", "--check", "--json"]);
     let j = out(&o);
@@ -243,7 +243,7 @@ fn a_changed_rubric_or_rule_set_is_reported_as_changed_judgement() {
     assert!(j.contains("\"judgement\":{\"changed\":true,\"differences\":[\"the grading rubric is 9.9.9") && j.contains("\"rerun\":[\"lint\",\"grade\"]"), "{j}");
     let o = magician(&d, &tk, &s(&src), &["update", "--check"]);
     let t = out(&o);
-    assert!(t.contains("judgement    would change: the grading rubric is 9.9.9") && t.contains("the lint rule set is 81 rules") && t.contains("re-run `magician lint` and `magician grade`"), "{t}");
+    assert!(t.contains("judgement    would change: the grading rubric is 9.9.9") && t.contains("the lint rule set is 999 rules") && t.contains("re-run `magician lint` and `magician grade`"), "{t}");
     // the same judgement: said unchanged
     let same = Release::new("99.0.0", "aaaaaaaaaaaa").write(&d, "same-judgement");
     let o = magician(&d, &tk, &s(&same), &["update", "--check", "--json"]);

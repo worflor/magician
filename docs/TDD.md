@@ -76,7 +76,7 @@ Plain text, tab-separated where tabular.
 | File | Where | What |
 |---|---|---|
 | `baseline.tsv`, `rig.tsv`, `engine.tsv` | `<reference>/<build>/` | The target description, each written whole (a temporary name, then a rename). Never overwritten by `patchday`; `baseline` rewrites on request; the first command on a new build captures them for this machine's own game |
-| `users.tsv` | `<reference>/<build>/` | Which heroes, abilities and items reach each game file (`magician index`); feeds the shared-file rule M090 |
+| `users.tsv` | `<reference>/<build>/` | Which heroes, abilities and items reach each game file (`magician index`); feeds the shared-file rule M090. Its header names a format revision, and an index from an older one is not read (M091 says so) |
 | `decompiled/`, `particle_classes.tsv` | `<reference>/<build>/` | Derived reference data for footprints and deep rules |
 | `corpus.tsv`, `witness.tsv` | `<reference>/<build>/` | Each rule's record on the build: how often its test fires on Valve's own content (`corpus`), and what the game's log said of each finding in a pass (`witness`, appended per pass); `rules` prints both |
 | `.magician-installed.tsv` | `game/citadel/addons/` | The install ledger: file, CRC, the mod it was installed for |

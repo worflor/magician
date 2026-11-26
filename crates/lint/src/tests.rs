@@ -44,7 +44,7 @@ fn clean() -> Vec<ModFile> {
 /// Codes every fixture below proves. Checked against RULES so a rule can't be added without one.
 const PROVEN: &[&str] = &[
     "M001", "M002", "M010", "M011", "M012", "M020", "M021", "M030", "M031", "M040", "M041", "M050", "M061", "M070", "M071", "M051", "M052", "M060",
-    "M013", "M032", "M033", "M062", "M063", "M064", "M072", "M073", "M081", "M082", "M083", "M090",
+    "M013", "M032", "M033", "M062", "M063", "M064", "M072", "M073", "M081", "M082", "M083", "M090", "M091",
     // the mesh family: fixtures in mesh_fixtures.rs
     "M100", "M101", "M102", "M103", "M104", "M105", "M106", "M107", "M108", "M109", "M110", "M111", "M112", "M113",
     "M114", "M115", "M116", "M117", "M118", "M119", "M120", "M121", "M122", "M123", "M124", "M125", "M126", "M127",
@@ -319,6 +319,8 @@ struct Fake {
     users: HashMap<String, Vec<String>>,
     classes: Option<deep::ParticleClasses>,
     sources: Option<std::collections::HashSet<String>>,
+    /// Set: the game has no users index to read (`users_unchecked`).
+    no_index: Option<String>,
 }
 impl Game for Fake {
     fn read(&self, path: &str) -> Option<Vec<u8>> {
@@ -332,6 +334,9 @@ impl Game for Fake {
     }
     fn addon_sources(&self) -> Option<&std::collections::HashSet<String>> {
         self.sources.as_ref()
+    }
+    fn users_unchecked(&self) -> Option<String> {
+        self.no_index.clone()
     }
 }
 
@@ -918,6 +923,22 @@ fn m090_shared_file() {
     assert!(f[0].message.contains("upgrade_rocket_booster"));
     fake.users.insert(icon.into(), vec!["hero_lash".into()]);
     assert!(run_game(files, &g, &fake).is_empty(), "one owner: the hero's own file");
+}
+
+#[test]
+fn m091_shared_file_unchecked() {
+    // Without a users index the shared-file check cannot run: that is said as a finding, not passed in silence.
+    let icon = "panorama/images/hud/abilities/lash/lash_death_slam_psd.vtex_c";
+    let mut g = game();
+    with(&mut g, &[icon]);
+    let fake = Fake { no_index: Some("there is no users index for this build".into()), ..Default::default() };
+    let f = run_game(vec![file(icon, tex(128, 128, 28))], &g, &fake);
+    assert_eq!(codes(&f), BTreeSet::from(["M091"]), "{f:?}");
+    assert!(f[0].message.contains("the 1 file(s) this mod replaces were not checked") && f[0].message.contains("no users index"), "{}", f[0].message);
+    assert!(f[0].path.is_none() && f[0].severity == Severity::Info);
+    // a mod that replaces nothing of Valve's has nothing to check
+    let new = "panorama/images/hud/abilities/lash/lash_new_icon_psd.vtex_c";
+    assert!(run_game(vec![file(new, tex(128, 128, 28))], &g, &fake).iter().all(|x| x.code != "M091"));
 }
 
 // ------------------------------------------------------------------------------------------ M141 cloth-flutter
