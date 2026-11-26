@@ -15,7 +15,7 @@ Deadlock Mod Manager from [its page](https://woflo.dev/deadlock-skins/maid-lash/
 
 ```
 maid-lash: ok  Costume (look, effects, sound)  (build 6868)
-  lint   warn   0 error(s), 81 warning(s), 20 allowed (deep; fair play pass)
+  lint   warn   0 error(s), 81 warning(s), 22 allowed (deep; fair play pass)
          warnings  M112 coordinate-precision x18, M110 shell-intersection x13, M111 floating-shell x13, M109 self-intersection x11, M102 open-sheet-void x6, M108 z-fighting x5, M113 uv-degenerate x3, M122 lod-budget x2, M100 mesh-unchecked x1, M104 normals-flipped x1, M105 degenerate-triangles x1, M107 backface-shading x1, M117 skin-influences x1, M118 skin-distant-bone x1, M123 mesh-budget x1, M125 seam-crack x1, M136 albedo-range x1, M148 default-slot-literal x1
          advisory  M081 particle-energy x3, M130 hitbox-envelope-wide x1 (fair play's advisories: reported, never a violation)
   grade  ok     Costume (look, effects, sound) for Lash; release gate pass
