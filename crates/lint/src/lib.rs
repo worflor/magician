@@ -84,7 +84,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M033", name: "dev-leftover", severity: Severity::Warn,
         in_game: "A particle, material or file whose path marks it as debug content (probe, debug, test, tmp, scratch...) ships in the release. It is a test aid, not art: a probe child spawned on every cast (one release shipped one), a placeholder swatch, an effect nobody meant to show. If it is also a dangling reference, M030/M032 already report that as an error. A material or texture the mod draws with is not reported: it is the art on screen, whatever the exporter named it." },
     Rule { code: "M031", name: "orphan-new-file", severity: Severity::Warn,
-        in_game: "The file doesn't replace anything in the game, and nothing in the mod references it, so it never loads." },
+        in_game: "The file doesn't replace anything in the game, and nothing in the mod references it, so it never loads. A reference counts from a compiled file's reference list or from Panorama's own text (a stylesheet's s2r:// url, a script's or layout's file://{images} or file://{resources} path, a layout's script). The model rules do not judge a model that never loads." },
     Rule { code: "M040", name: "drift-original-changed", severity: Severity::Warn,
         in_game: "Valve changed the original of a file you replace since you built against it. Your copy may now be missing fixes, attachments or new animations." },
     Rule { code: "M041", name: "drift-original-removed", severity: Severity::Error,
@@ -465,6 +465,11 @@ pub fn lint(input: &Input) -> Vec<Finding> {
                 Err(e) => out.push(finding("M021", Some(p), e.to_string())),
                 Ok(r) => {
                     let mut mine = ref_targets(&r);
+                    // Panorama names what it draws in its own text: a stylesheet's `url("s2r://...")` and a script's
+                    // or layout's `file://{images}/...`, which the compiler does not list as references.
+                    if matches!(ext.as_str(), "vcss_c" | "vxml_c" | "vjs_c" | "vts_c") {
+                        referenced.extend(panorama_refs(&f.data));
+                    }
                     let original = input.original_refs.get(p);
                     // Sound-event files name their .vsnd files as strings in the data, with no RERL entry.
                     let mut inherited_strings: Vec<String> = Vec::new();
@@ -572,6 +577,39 @@ pub fn plays(referrer: &str, target: &str) -> bool {
     let ext = |p: &str| p.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     let t = ext(target);
     !(matches!(t.as_str(), "vmat_c" | "vtex_c" | "vsvg_c") || t == "vmdl_c" && ext(referrer) == "vpcf_c")
+}
+
+/// The files a Panorama stylesheet, layout or script names in its text, as compiled paths: `s2r://<path>` is the
+/// path itself, `file://{images}/<x>.<ext>` an image under `panorama/images/` (`.svg` compiles to `.vsvg_c`, any other
+/// image to `_<ext>.vtex_c`), `file://{resources}/<x>` a file under `panorama/`, and a bare `panorama/<x>.vts` as a
+/// compiled layout lists its scripts.
+pub fn panorama_refs(data: &[u8]) -> Vec<String> {
+    let text = String::from_utf8_lossy(data);
+    let mut out = Vec::new();
+    let end = |s: &str| s.find(['"', '\'', ')', '(', ' ', ';', ',', '\n', '\r', '\t', '\0', '<', '>']).unwrap_or(s.len());
+    for (key, root) in [("s2r://", ""), ("file://{images}/", "panorama/images/"), ("file://{resources}/", "panorama/"), ("panorama/", "panorama/")] {
+        for (i, _) in text.match_indices(key) {
+            let rest = &text[i + key.len()..];
+            let raw = rest[..end(rest)].to_ascii_lowercase();
+            if raw.is_empty() {
+                continue;
+            }
+            let path = format!("{root}{raw}");
+            let compiled = match path.rsplit_once('.') {
+                _ if path.ends_with("_c") => path.clone(),
+                Some((stem, "svg")) if !root.is_empty() => format!("{stem}.vsvg_c"),
+                Some((stem, e @ ("png" | "jpg" | "jpeg" | "tga" | "psd"))) if !root.is_empty() => format!("{stem}_{e}.vtex_c"),
+                Some((stem, "css")) if !root.is_empty() => format!("{stem}.vcss_c"),
+                Some((stem, "xml")) if !root.is_empty() => format!("{stem}.vxml_c"),
+                Some((stem, "js")) if !root.is_empty() => format!("{stem}.vjs_c"),
+                _ => format!("{path}_c"),
+            };
+            out.push(compiled);
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// Words that mark a path as debug content when they are a whole token of it. Whole tokens only: `testing`,

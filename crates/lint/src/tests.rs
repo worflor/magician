@@ -1332,3 +1332,26 @@ fn every_rule_is_seen_somewhere_a_report_names() {
     }
     assert_eq!((seen("M110"), seen("M061"), seen("M090"), seen("M123"), seen("M030"), seen("M031")), ("on the hero", "effects, sound", "other heroes", "frame cost", "loading", "the pak"));
 }
+
+#[test]
+fn m031_counts_what_panorama_names_in_its_own_text() {
+    // Real case (6871, a community HUD mod, 229 findings): a stylesheet draws `url("s2r://panorama/images/custom/x.vsvg")`
+    // and a script sets `file://{images}/minecraft/heart_png.png`; neither is in the compiled file's reference list,
+    // so the images read as never loaded.
+    let css = r#"#Heal { background-image: url("s2r://panorama/images/custom/healing_sum_cross.vsvg"); }"#;
+    let js = r#"panel.SetImage("file://{images}/minecraft/heart_8x_png.png"); $.Load("file://{resources}/layout/qol.xml");"#;
+    // a compiled layout lists its scripts as bare paths (an FOV slider's settings page, 6871)
+    assert_eq!(panorama_refs(b"\x00TS panorama/scripts/fov_unlock.vts PANEL"), vec!["panorama/scripts/fov_unlock.vts_c".to_string()]);
+    assert_eq!(
+        panorama_refs(format!("{css}\n{js}").as_bytes()),
+        vec!["panorama/images/custom/healing_sum_cross.vsvg_c".to_string(), "panorama/images/minecraft/heart_8x_png_png.vtex_c".into(), "panorama/layout/qol.vxml_c".into()]
+    );
+    let g = game();
+    let image = "panorama/images/custom/healing_sum_cross.vsvg_c";
+    let sheet = |text: &str| file("panorama/styles/qol_hud.vcss_c", resource::synth_with(&[], &[(*b"DATA", text.as_bytes().to_vec())]));
+    let named = run(vec![sheet(css), file(image, res(&[]))], Some(&g), None);
+    assert!(!named.iter().any(|x| x.code == "M031" && x.path.as_deref() == Some(image)), "{named:?}");
+    // an image nothing names is still never loaded
+    let unnamed = run(vec![sheet("#Heal { }"), file(image, res(&[]))], Some(&g), None);
+    assert!(unnamed.iter().any(|x| x.code == "M031" && x.path.as_deref() == Some(image)), "{unnamed:?}");
+}
