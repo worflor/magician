@@ -79,20 +79,27 @@ What stands behind each line:
 ![Lööps Viscous in game](showcase/loops-viscous.jpg)
 
 Viscous, except a long-haired calico has got into the diving suit. The goo is milk and the skeleton is cereal. It is a
-new character on Viscous's rig, 466 files, and it is still in production.
+new character on Viscous's rig, 468 files, and it is not released yet.
 
 ```
-loops-viscous: RE-PROVE  Echo (look, effects, sound) · unproven  (build 6868)
-  lint   warn   0 error(s), 76 warning(s), 64 allowed (deep; fair play pass)
-         warnings  M110 shell-intersection x43, M061 dropped-dependency x18, M102 open-sheet-void x6, M109 self-intersection x2, M122 lod-budget x2, M107 backface-shading x1, M113 uv-degenerate x1, M123 mesh-budget x1, M125 seam-crack x1, M136 albedo-range x1
-  grade  warn   Echo (look, effects, sound) · unproven for Viscous; release gate blocked: freshness: not proven on 6868 (no proven build on record for these bytes)
-  proof  warn   these bytes proven on none
-  drift  warn   these bytes are proven on no build yet: nothing to compare from
+loops-viscous: ok  Echo (look, effects, sound)  (build 6868)
+  lint   warn   0 error(s), 96 warning(s), 64 allowed (deep; fair play pass)
+         warnings  M110 shell-intersection x48, M061 dropped-dependency x18, M111 floating-shell x10, M102 open-sheet-void x6, M090 shared-file x4, M109 self-intersection x3, M122 lod-budget x2, M107 backface-shading x1, M113 uv-degenerate x1, M123 mesh-budget x1, M125 seam-crack x1, M136 albedo-range x1
+  grade  ok     Echo (look, effects, sound) for Viscous; release gate pass
+  proof  ok     these bytes proven on 6868
+  drift  ok     proven on 6868, the installed build
   scene  ok     viscous: the stock map matches the patch
 ```
 
-It loads with no lint errors, and that is all Magician will say for it. Nobody has recorded an in-game pass of these
-bytes, so the label reads `unproven`, the release gate is closed, and `check` exits 4 until someone looks.
+A day earlier the same command said `RE-PROVE` and exited 4: the pak loaded with no lint errors, but nobody had
+recorded an in-game pass of those bytes, so the label read `unproven` and the release gate was closed. The skin now
+has a standing pass (`[ingame] pass` in its `mod.toml`: the hero from every angle and in motion, each ability, the HUD).
+`magician session qa` ran it, the contact sheets were read, and `magician prove` wrote the first row of its ledger:
+
+```
+build  date        owner          file            crc32
+6868   2026-11-26  loops_viscous  pak20_dir.vpk   c4e6ad87
+```
 
 ```
 Echo: a new character (character rubric)
