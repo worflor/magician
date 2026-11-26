@@ -276,7 +276,7 @@ def t_mesh(a):
     if data is None:
         raise ToolError("mesh produced no verdict (exit %s); log: %s\n%s" % (r["exit_code"], r["log"], "\n".join(r["tail"])))
     data["run"] = run_meta(r)
-    # the LOD and silhouette tables are text-only today: pass the head of the report through
+    # the LOD table is text-only today (the silhouettes are in the file): pass the head of the report through
     head = []
     for line in r["text"].splitlines():
         if line.startswith("verdict:"):

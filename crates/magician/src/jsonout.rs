@@ -51,8 +51,24 @@ pub fn lint_run(r: &Applied, build: &str, vpk: &str, deep: bool) -> String {
     )
 }
 
-/// `magician mesh`: verdict plus every finding. `findings` are (code, message) in the order printed.
-pub fn mesh_run(model: &str, vpk: &str, verdict: &str, findings: &[(&'static str, String)]) -> String {
+/// `magician mesh`: verdict, the fair-play silhouettes against Valve's model (the numbers the report prints and M124
+/// judges; empty when there is no Valve model to compare with) and every finding. `findings` are (code, message) in
+/// the order printed.
+pub fn mesh_run(model: &str, vpk: &str, verdict: &str, silhouettes: &[lint::mesh::views::ViewCompare], findings: &[(&'static str, String)]) -> String {
+    let views: Vec<String> = silhouettes
+        .iter()
+        .map(|c| {
+            Obj::new()
+                .str("view", c.view)
+                .num("percent_of_valve", 100.0 * c.ratio())
+                .num("iou", c.iou)
+                .int("ours_px", c.ours as i64)
+                .int("valve_px", c.valve as i64)
+                .int("added_px", c.added as i64)
+                .int("lost_px", c.lost as i64)
+                .build()
+        })
+        .collect();
     let items: Vec<String> = findings
         .iter()
         .map(|(c, m)| {
@@ -60,7 +76,7 @@ pub fn mesh_run(model: &str, vpk: &str, verdict: &str, findings: &[(&'static str
             format!("{{\"code\":{},\"name\":{},\"severity\":{},\"message\":{},\"in_game\":{}}}", s(c), s(r.name), s(severity(r.severity)), s(m), s(r.in_game))
         })
         .collect();
-    format!("{{\"model\":{},\"vpk\":{},\"verdict\":{},\"findings\":[{}]}}\n", s(model), s(vpk), s(verdict), items.join(","))
+    format!("{{\"model\":{},\"vpk\":{},\"verdict\":{},\"silhouettes\":[{}],\"findings\":[{}]}}\n", s(model), s(vpk), s(verdict), views.join(","), items.join(","))
 }
 
 /// One pak's drift between two eras (`drift --json`, and each pak of `patchday --json`).
@@ -126,7 +142,11 @@ mod tests {
 
     #[test]
     fn mesh_shape() {
-        let j = mesh_run("m.vmdl_c", "p.vpk", "PASS", &[]);
-        assert_eq!(j, "{\"model\":\"m.vmdl_c\",\"vpk\":\"p.vpk\",\"verdict\":\"PASS\",\"findings\":[]}\n");
+        let j = mesh_run("m.vmdl_c", "p.vpk", "PASS", &[], &[]);
+        assert_eq!(j, "{\"model\":\"m.vmdl_c\",\"vpk\":\"p.vpk\",\"verdict\":\"PASS\",\"silhouettes\":[],\"findings\":[]}\n");
+        // the silhouette the report prints (and M124 judges) is in the file too
+        let front = lint::mesh::views::ViewCompare { view: "front", ours: 930, valve: 1000, iou: 0.9, added: 10, lost: 80 };
+        let j = mesh_run("m.vmdl_c", "p.vpk", "FAIL", &[front], &[]);
+        assert!(j.contains("\"silhouettes\":[{\"view\":\"front\",\"percent_of_valve\":93,\"iou\":0.9,\"ours_px\":930,\"valve_px\":1000,\"added_px\":10,\"lost_px\":80}]"), "{j}");
     }
 }

@@ -9,6 +9,7 @@ Each release's entry says whether the lint rules, the grading rubric or the buil
 Judgement unchanged: the same lint rules, grading rubric and built-in policy as 0.1.0.
 
 - M145 inside-out-shell tells an inverted-hull outline (an inside-out copy wrapped around another piece) from a piece that is merely turned out, and says what the game does with it: it is not culled into a line but draws an opaque black shape over what it wraps, though Blender and Source 2 Viewer both show the line. The finding points to the material's own outline (`F_SOLID_COLOR_OUTLINE`, heavier with `F_OVERRIDE_NPR_OUTLINE`). Where it fires and its severity are unchanged; the engine reference has the facts.
+- `magician mesh --json-out` carries the fair-play silhouettes, one entry per view with its share of Valve's (`percent_of_valve`, the number M124 judges), IoU and the pixels added and lost, as the text report and the MCP `mesh` tool's `silhouettes` do.
 - `magician cloth` ends each chain's row with how it moves: the rebound of its median free node (frequency and damping ratio, in the solver model M141 judges by) and the steady offset of its most-pressed leashed node under the hero's fall against its leash. A chain several times over its leash moves and stops dead in game, which its clips alone do not show.
 - Builds clean under Rust 1.100 with warnings as errors, and two Linux tests no longer assume older system tools.
 

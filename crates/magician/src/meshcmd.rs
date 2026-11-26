@@ -108,9 +108,10 @@ pub fn cmd_mesh(args: &[String], game_dir: &Path, reference: &Path, policy: &gra
             valve.as_ref().filter(|v| v.envelope.area > 0.0).map_or(String::new(), |v| format!("   Valve's: {:.1}% beyond {} u, 99.9th {:.1} u", 100.0 * v.envelope.beyond(fp.hitbox_warn_units) / v.envelope.area, fp.hitbox_warn_units, v.envelope.p999))
         );
     }
-    if let Some(v) = &valve {
+    let silhouettes = valve.as_ref().map(|v| views::silhouettes(&ours, v)).unwrap_or_default();
+    if valve.is_some() {
         outln!("\nfair-play silhouettes (in-game, 6 mm pixels, same frames)");
-        for c in views::silhouettes(&ours, v) {
+        for c in &silhouettes {
             outln!("  {:<6} {:>6.1}% of Valve's   IoU {:.3}   ours adds {} px, loses {} px", c.view, 100.0 * c.ratio(), c.iou, c.added, c.lost);
         }
     }
@@ -141,7 +142,7 @@ pub fn cmd_mesh(args: &[String], game_dir: &Path, reference: &Path, policy: &gra
     outln!("\nverdict: {grade}  ({} findings over {} rules)", findings.len(), codes.len());
     if let Some(out) = flag("--json-out") {
         let flat: Vec<(&'static str, String)> = codes.iter().flat_map(|(c, ms)| ms.iter().map(move |m| (*c, m.clone()))).collect();
-        crate::write_output("--json-out", &out, &crate::jsonout::mesh_run(&path, vp, grade, &flat)).map_err(|e| e.text().to_string())?;
+        crate::write_output("--json-out", &out, &crate::jsonout::mesh_run(&path, vp, grade, &silhouettes, &flat)).map_err(|e| e.text().to_string())?;
     }
     let mut marks = Vec::new();
     for (code, msgs) in &codes {
