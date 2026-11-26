@@ -5,7 +5,7 @@
 //!
 //! ```text
 //! # code   path                                              match            reason
-//! M061     particles/abilities/lash/lash_flog_whip_sparks.vpcf_c   sparks.vmat_c    plumes replace sparks (MOTIFS: feather duster)
+//! M061     particles/abilities/lash/lash_flog_whip.vpcf_c   whip_sparks.vpcf_c    plumes replace sparks (MOTIFS: feather duster)
 //! ```
 //!
 //! - `code` is a rule code; `path` is the exact file the finding is on (`*` = the VPK itself);

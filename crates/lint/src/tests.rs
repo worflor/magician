@@ -257,6 +257,51 @@ fn m061_silent_when_dropped_ref_was_already_dead() {
 }
 
 #[test]
+fn m061_silent_when_a_replacement_draws_with_its_own_art() {
+    // Real case (6871, three skins, all 105 findings): a restyled material no longer names Valve's compiled textures
+    // (whose names carry a hash of their settings), a model draws its own materials, a particle renders its own model.
+    let mut g = game();
+    let vtex = "materials/particle/noise/noise_shredded_psd_51ae548.vtex_c";
+    let fx = "particles/abilities/lash/lash_ground_strike.vpcf_c";
+    let prop = "models/particle/rock_chunk.vmdl_c";
+    let svg = "panorama/images/hud/lash_icon_psd.vsvg_c";
+    for p in [vtex, fx, prop, svg] {
+        g.files.insert(p.into(), FileInfo { crc: 7, size: 1 });
+    }
+    let originals = HashMap::from([
+        (MAT.to_string(), vec![vtex.to_string()]),
+        (MODEL.to_string(), vec![MAT.to_string()]),
+        (fx.to_string(), vec![prop.to_string(), "materials/particle/sparks.vmat_c".to_string(), svg.to_string()]),
+    ]);
+    g.files.insert("materials/particle/sparks.vmat_c".into(), FileInfo { crc: 7, size: 1 });
+    let files = vec![
+        file(MAT, res(&["models/heroes_wip/lash/materials/maid_color_psd_0a1b2c3d.vtex"])),
+        file(MODEL, res(&["models/heroes_wip/lash/materials/maid_cloth.vmat"])),
+        file(fx, res(&[])),
+    ];
+    let f = lint(&Input { vpk_name: "pak03_dir.vpk".into(), files, base: Some(&g), built_against: None, original_refs: &originals, game: None, deep: true, fair_play: &policy::DEFAULT });
+    assert!(!codes(&f).contains("M061"), "{f:?}");
+}
+
+#[test]
+fn m061_still_fires_when_a_particle_loses_a_child_or_a_model_its_effect() {
+    // The true catch: something that plays is gone (a child effect, an event's sound, an anim clip).
+    let mut g = game();
+    let fx = "particles/abilities/lash/lash_ground_strike.vpcf_c";
+    let child = "particles/abilities/lash/lash_ground_strike_dust.vpcf_c";
+    let clip = "animgraphs/lash/lash_flog.vnmclip_c";
+    for p in [fx, child, clip] {
+        g.files.insert(p.into(), FileInfo { crc: 7, size: 1 });
+    }
+    let originals = HashMap::from([(fx.to_string(), vec![child.to_string()]), (MODEL.to_string(), vec![MAT.to_string(), clip.to_string()])]);
+    let files = vec![file(fx, res(&[])), file(MODEL, res(&["models/heroes_wip/lash/materials/lash_body.vmat"]))];
+    let f = lint(&Input { vpk_name: "pak03_dir.vpk".into(), files, base: Some(&g), built_against: None, original_refs: &originals, game: None, deep: true, fair_play: &policy::DEFAULT });
+    let m: Vec<&str> = f.iter().filter(|x| x.code == "M061").map(|x| x.message.as_str()).collect();
+    assert_eq!(m.len(), 2, "{m:?}");
+    assert!(m.iter().any(|s| s.contains("lash_ground_strike_dust")) && m.iter().any(|s| s.contains("lash_flog.vnmclip_c")), "{m:?}");
+}
+
+#[test]
 fn m070_ships_protected_file() {
     let g = game();
     for p in ["models/heroes_wip/lash/lash.vnmskel_c", "animgraphs/animgraph2/hero/lash/lash_loco_set_idle.vnmgraph_c", "scripts/heroes.vdata_c"] {

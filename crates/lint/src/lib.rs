@@ -77,7 +77,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M071", name: "replaces-engine-default", severity: Severity::Error,
         in_game: "resourcecompiler emits its own copies of the engine's default textures (materials/default/*) next to your materials, and they differ from Valve's. Shipped with other pixels than Valve's, they replace the fallback texture for every material in the game that uses one (an error). A copy that decodes to Valve's own pixels, or sits at a path Valve does not ship, changes nothing in the game and is a warning (seen on three published mods, 6868)." },
     Rule { code: "M061", name: "dropped-dependency", severity: Severity::Warn,
-        in_game: "The game's original of this file referenced a resource your replacement no longer does (a particle, sound tag, material or anim graph). That effect or sound silently stops playing." },
+        in_game: "The game's original of this file referenced something that plays (a particle, a sound or sound event, an anim graph or clip, a sound snapshot) and your replacement no longer does: that effect or sound silently stops playing. A material or texture the original drew with and yours does not is a restyle, not a loss: the replacement draws with its own (and the compiler names a texture after its settings, so the same art recompiled has other names)." },
     Rule { code: "M032", name: "stale-leftover", severity: Severity::Error,
         in_game: "A file the mod references has no source left in the addon: a compiled leftover of something deleted. It ships the old content (one release shipped five deleted effects this way, one a shock ring at 1.3x Valve's brightness) and no rebuild can ever change it." },
     Rule { code: "M033", name: "dev-leftover", severity: Severity::Warn,
@@ -477,7 +477,7 @@ pub fn lint(input: &Input) -> Vec<Finding> {
                         for t in orig {
                             // Dropping a reference Valve itself couldn't resolve costs nothing.
                             let resolvable = input.base.is_none_or(|b| b.contains(t)) || mod_paths.contains(t.as_str());
-                            if resolvable && !mine.contains(t) {
+                            if resolvable && plays(p, t) && !mine.contains(t) {
                                 out.push(finding("M061", Some(p), format!("original referenced '{t}'")));
                             }
                         }
@@ -542,6 +542,17 @@ fn same_picture(a: &[u8], b: &[u8]) -> bool {
         (Some(x), Some(y)) => x == y,
         _ => false,
     })
+}
+
+/// Whether `referrer` losing its reference to `target` stops something playing (M061). What a file draws with is
+/// the art, not a dependency: a material, a texture or a vector image the original drew with and the replacement does
+/// not is a restyle (it draws with its own), and so is the model a particle renders. The compiler names a texture
+/// after its source and settings (`..._psd_3804f11c.vtex_c`), so Valve's own material recompiled unchanged refers to
+/// other names; on three skins (6871) all 105 dropped references were of these kinds.
+pub fn plays(referrer: &str, target: &str) -> bool {
+    let ext = |p: &str| p.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    let t = ext(target);
+    !(matches!(t.as_str(), "vmat_c" | "vtex_c" | "vsvg_c") || t == "vmdl_c" && ext(referrer) == "vpcf_c")
 }
 
 /// Words that mark a path as debug content when they are a whole token of it. Whole tokens only: `testing`,
