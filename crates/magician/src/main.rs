@@ -2248,6 +2248,15 @@ fn compile_addon(addon: &str, args: &[String], compile: bool, explicit_bin: Opti
         if let Some(g) = &dstf_game {
             say!("{addon}: {} model document(s) with distance fields compile with -game {}", dstf.len(), g.display());
         }
+        // a document that replaces a Valve model with distance fields and asks for none: said now, not only by M142
+        if let Ok(pak) = game_dir(args).and_then(|g| vpk::Vpk::open(g.join("citadel").join("pak01_dir.vpk")).map_err(|e| e.to_string())) {
+            let valve = |p: &str| pak.find(p).and_then(|e| pak.read(e).ok());
+            for (rel, n) in build::distance_fields_left_out(&content, &sources.roots, &valve) {
+                say!(
+                    "{addon}: note: {rel} has no DistanceFieldList, and Valve's model at this path carries {n} distance field(s): the build drops them and the model loses their occlusion (M142). Put one back in the document (docs/reference/engine.md, the compiler, \"Distance fields\"); this build then compiles it against a gameinfo that allows it"
+                );
+            }
+        }
         let (dstf, rest): (Vec<PathBuf>, Vec<PathBuf>) = rest.into_iter().partition(|p| dstf_game.is_some() && dstf.contains(p));
         let mut summary = build::CompileSummary::default();
         let mut result = Ok(());

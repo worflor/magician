@@ -394,6 +394,22 @@ pub fn needs_distance_fields(root: &Path, rels: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Model documents that replace a Valve model carrying distance fields and ask for none: (path, Valve's field count).
+/// A document patched from a Source 2 Viewer decompile is one (the decompile writes no DistanceFieldList), and its
+/// build drops Valve's fields without a word from the compiler; M142 says so after the build, this before it.
+/// `valve` reads Valve's compiled file at a path.
+pub fn distance_fields_left_out(root: &Path, rels: &[String], valve: &dyn Fn(&str) -> Option<Vec<u8>>) -> Vec<(String, usize)> {
+    let asking = needs_distance_fields(root, rels);
+    rels.iter()
+        .filter(|r| r.to_ascii_lowercase().ends_with(".vmdl") && !asking.contains(r))
+        .filter_map(|r| {
+            let data = valve(&format!("{}_c", r.replace('\\', "/").to_ascii_lowercase()))?;
+            let n = lint::distfield::read(&data).ok()??.hashes.len();
+            (n > 0).then(|| (r.clone(), n))
+        })
+        .collect()
+}
+
 /// The byte range of the ModelDoc block's `"features"` value in a gameinfo, if it has one.
 fn modeldoc_features(gi: &[u8]) -> Option<std::ops::Range<usize>> {
     let find = |hay: &[u8], needle: &[u8], from: usize| hay.get(from..)?.windows(needle.len()).position(|w| w == needle).map(|i| i + from);
@@ -672,6 +688,11 @@ mod tests {
         std::fs::write(addon.join("models").join("b.vmdl"), "{ rootNode = { children = [ { _class = \"RenderMeshList\" } ] } }").unwrap();
         let rels = vec!["models/a.vmdl".to_string(), "models/b.vmdl".to_string(), "models/c.vmat".to_string()];
         assert_eq!(needs_distance_fields(&addon, &rels), vec!["models/a.vmdl"]);
+        // Valve's compiled b.vmdl carries two fields, and our b.vmdl asks for none: said before the build
+        let fields = resource::synth_with(&[], &[(*b"DSTF", resource::kv3::encode(&resource::kv3::parse_text("{ m_distanceFields = [ { m_nParentBoneNameHash = 1 } { m_nParentBoneNameHash = 2 } ] }").unwrap()))]);
+        let valve = |p: &str| (p == "models/b.vmdl_c" || p == "models/a.vmdl_c").then(|| fields.clone());
+        assert_eq!(distance_fields_left_out(&addon, &rels, &valve), vec![("models/b.vmdl".to_string(), 2)], "a.vmdl asks for its own");
+        assert!(distance_fields_left_out(&addon, &rels, &|_: &str| None).is_empty(), "no Valve model there: nothing to lose");
         let _ = std::fs::remove_dir_all(&d);
     }
 
