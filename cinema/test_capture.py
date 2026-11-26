@@ -91,10 +91,16 @@ class Record(unittest.TestCase):
         w, h, n = (int(v) for v in frames.strip().split(","))
         self.assertEqual((w, h), (320, 180))
         self.assertGreaterEqual(n, 18, "two seconds at 10 fps")
-        png = os.path.join(self.tmp, "f.png")
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", mkv, "-frames:v", "1", "-update", "1", png], check=True)
-        self.assertEqual(self.color_at(png, 40, 90), self.FG)
-        self.assertEqual(self.color_at(png, 280, 90), self.BG)
+        # the frame as raw pixels: capture.py's PNG reader reads only the PNGs capture.py writes (unfiltered rows)
+        px = subprocess.run(["ffmpeg", "-v", "error", "-i", mkv, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                            check=True, capture_output=True).stdout
+        self.assertEqual(len(px), w * h * 3)
+
+        def at(x, y):
+            return int.from_bytes(px[(y * w + x) * 3:(y * w + x) * 3 + 3], "big")
+
+        self.assertEqual(at(40, 90), self.FG)
+        self.assertEqual(at(280, 90), self.BG)
 
     def test_a_frame_grab_is_the_pixels_drawn(self):
         from capture import find_window, client_rect, grab, write_png
