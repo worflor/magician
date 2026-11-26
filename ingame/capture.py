@@ -1,7 +1,8 @@
 """Capture the Deadlock window from outside the game (retail has no screenshot or movie commands).
 
     python -I capture.py shot  <out.png>                      # one frame
-    python -I capture.py burst <out_dir> --frames 24 --fps 12  # a sequence, for motion review (half res; --full)
+    python -I capture.py burst <out_dir> --frames 24 --fps 12  # a sequence, for motion review (half res; --full),
+                                                               # with frames.tsv: each frame's grab time
     python -I capture.py sheet <in_dir> <out.png> --cols 6     # contact sheet of a burst
                                [--prefix TAG_]                 # only the shots named TAG_<n>.png (a turntable)
     python -I capture.py crop  <in.png> <out.png> x0 y0 x1 y1 [--zoom 2]
@@ -85,10 +86,20 @@ def shot(out):
     print(f"CAPTURE {out} {w}x{h}")
 
 
+def frame_times(grabbed, wall0):
+    """`frames.tsv`: one line a frame, its file, seconds from the burst's first grab, and the wall clock (Unix time)
+    it was grabbed at, so a burst can be lined up with anything else that keeps time (a key log, another
+    recording). `grabbed` is [(seconds since the first grab, pixels)], `wall0` the wall clock of the first grab."""
+    lines = ["file\tsecs\twall"]
+    for i, (t, _) in enumerate(grabbed):
+        lines.append(f"f{i:03d}.png\t{t:.4f}\t{wall0 + t:.4f}")
+    return "\n".join(lines) + "\n"
+
+
 def burst(out_dir, frames, fps):
     x, y, w, h, hwnd = window_or_die()
     os.makedirs(out_dir, exist_ok=True)
-    grabbed, t0 = [], time.perf_counter()
+    grabbed, t0, wall0 = [], time.perf_counter(), time.time()
     for i in range(frames):   # grab everything first, encode after: encoding would wreck the frame timing
         target = t0 + i / fps
         while time.perf_counter() < target:
@@ -107,6 +118,8 @@ def burst(out_dir, frames, fps):
                 rows += line
             px = bytes(rows)
         write_png(os.path.join(out_dir, f"f{i:03d}.png"), ow, oh, px)
+    with open(os.path.join(out_dir, "frames.tsv"), "w", encoding="utf-8") as f:
+        f.write(frame_times(grabbed, wall0))
     print(f"BURST {out_dir} {frames} frames {ow}x{oh}, {grabbed[-1][0]:.2f}s")
 
 
