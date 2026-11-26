@@ -639,6 +639,17 @@ fn m063_reads_only_the_keys_that_set_how_far_a_sound_carries() {
 }
 
 #[test]
+fn m063_a_voice_lines_event_is_not_judged_by_its_length() {
+    // Real case (6871, community voice packs, 2,241 findings): a recorded line under sounds/vo/ is shorter than
+    // Valve's, which Valve's own voices are against each other on 46% of shared lines. Its file is not judged by length,
+    // so neither is its event; a shorter ability sound still is.
+    let valve = kv(r#"{ Atlas.Kill = { vsnd_files = [ "sounds/vo/atlas/atlas_kill_01.vsnd" ] vsnd_duration = 2.28 } Atlas.Cast = { vsnd_files = "sounds/abilities/atlas/cast.vsnd" vsnd_duration = 1.0 } }"#);
+    let ours = kv(r#"{ Atlas.Kill = { vsnd_files = [ "sounds/vo/atlas/atlas_kill_01.vsnd" ] vsnd_duration = 1.95 } Atlas.Cast = { vsnd_files = "sounds/abilities/atlas/cast.vsnd" vsnd_duration = 0.5 } }"#);
+    let (less, _) = deep::sound_events(&ours, &valve, &policy::DEFAULT, &|_| None);
+    assert_eq!(less, vec!["Atlas.Cast: plays 0.50 s, Valve's 1.00 s".to_string()]);
+}
+
+#[test]
 fn m063_sound_file_shortened() {
     let snd = "sounds/abilities/lash/a1_ground_strike/lash_ground_strike_impact.vsnd_c";
     let ctrl = |dur: f64, peak: f64| {

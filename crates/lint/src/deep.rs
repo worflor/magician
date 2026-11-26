@@ -427,7 +427,10 @@ pub fn sound_events(ours: &Value, valve: &Value, fp: &crate::policy::FairPlay, e
                 }
             }
         }
-        if let (Some(a), Some(b)) = (num(oe, "vsnd_duration"), num(ve, "vsnd_duration")) {
+        // a voice line's event is not judged by its length, as its file is not (`vsnd_compare`): Valve's own voices
+        // fail that test against each other on 46% of shared lines (`magician corpus`)
+        let speaks = |e: &Value| e.get("vsnd_files").map(vsnd_refs).is_some_and(|f| !f.is_empty() && f.iter().all(|x| x.starts_with("sounds/vo/")));
+        if let (false, Some(a), Some(b)) = (speaks(ve), num(oe, "vsnd_duration"), num(ve, "vsnd_duration")) {
             if b > 0.0 && a < b * fp.sound_duration_ratio {
                 less.push(format!("{name}: plays {a:.2} s, Valve's {b:.2} s"));
             }
