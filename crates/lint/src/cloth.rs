@@ -94,20 +94,11 @@ pub fn unreadable(data: &[u8]) -> Option<String> {
     mesh::cloth::read(data).err().map(|e| format!("cloth not checked (M141): the PHYS block does not decode ({e})"))
 }
 
-/// The simulated nodes and their groups, from the native FeModel decoder (`mesh::cloth`), or None when the model has
-/// no cloth (or its PHYS block does not decode: see `unreadable`).
-pub fn read(data: &[u8]) -> Option<Cloth> {
-    let fe = mesh::cloth::read(data).ok()??;
+/// Every node's arc: its shortest rod path (rest lengths) to a static node; infinite where no rod path reaches one.
+pub fn arcs(fe: &mesh::cloth::Cloth) -> Vec<f64> {
     let n = fe.node_count.max(fe.names.len());
-    let (ns, fpd) = (fe.static_nodes.min(n), fe.first_driven.min(n));
-    // arc: shortest rod path (rest length) to a static node
-    let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
-    for r in &fe.rods {
-        if r.a < n && r.b < n {
-            adj[r.a].push((r.b, r.max));
-            adj[r.b].push((r.a, r.max));
-        }
-    }
+    let ns = fe.static_nodes.min(n);
+    let adj = adjacency(fe, n);
     let mut dist = vec![f64::INFINITY; n];
     let mut done = vec![false; n];
     for d in dist.iter_mut().take(ns) {
@@ -128,6 +119,43 @@ pub fn read(data: &[u8]) -> Option<Cloth> {
             }
         }
     }
+    dist
+}
+
+/// Each node's rods: (the other end, the rod's longest length).
+fn adjacency(fe: &mesh::cloth::Cloth, n: usize) -> Vec<Vec<(usize, f64)>> {
+    let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+    for r in &fe.rods {
+        if r.a < n && r.b < n {
+            adj[r.a].push((r.b, r.max));
+            adj[r.b].push((r.a, r.max));
+        }
+    }
+    adj
+}
+
+/// How far a node sits off its animated pose while the hero accelerates at `accel` units/s^2, in the solver model
+/// above: the steady offset `accel dt^2 / (F + kappa)`. Infinite for a node with neither goal nor pendulum (it never
+/// comes back). Against a node's leash (stray radius) it says whether the node rides the leash through a move: a
+/// ratio over 1 is a node pressed to its leash the whole time the hero accelerates, which reads as stiff, however soft
+/// its goal.
+pub fn offset_under(accel: f64, f: f64, g: f64, arc: f64) -> f64 {
+    let kap = if arc > 0.0 && arc.is_finite() { (g * DT * DT / arc).max(0.0) } else { 0.0 };
+    let k = f + kap;
+    if k <= 0.0 {
+        return f64::INFINITY;
+    }
+    accel * DT * DT / k
+}
+
+/// The simulated nodes and their groups, from the native FeModel decoder (`mesh::cloth`), or None when the model has
+/// no cloth (or its PHYS block does not decode: see `unreadable`).
+pub fn read(data: &[u8]) -> Option<Cloth> {
+    let fe = mesh::cloth::read(data).ok()??;
+    let n = fe.node_count.max(fe.names.len());
+    let (ns, fpd) = (fe.static_nodes.min(n), fe.first_driven.min(n));
+    let dist = arcs(&fe);
+    let adj = adjacency(&fe, n);
     let mut c = Cloth::default();
     let mut index = vec![usize::MAX; n];
     for i in ns..fpd {
@@ -436,6 +464,28 @@ impl<'a> MeshArea<'a> {
 #[cfg(test)]
 mod unit {
     use super::*;
+
+    #[test]
+    fn offset_under_a_push_is_the_steady_state_of_the_solver() {
+        // goal spring alone: a dt^2 / F
+        assert!((offset_under(800.0, 0.2, 0.0, f64::INFINITY) - 800.0 / 3600.0 / 0.2).abs() < 1e-12);
+        // a hanging node is held by its pendulum too: a dt^2 / (F + g dt^2 / arc)
+        let k = 0.01 + 360.0 / 3600.0 / 5.0;
+        assert!((offset_under(800.0, 0.01, 360.0, 5.0) - 800.0 / 3600.0 / k).abs() < 1e-12);
+        // nothing holds it: it never comes back
+        assert_eq!(offset_under(800.0, 0.0, 0.0, f64::INFINITY), f64::INFINITY);
+        // a stiffer goal sits nearer its pose
+        assert!(offset_under(800.0, 0.2, 0.0, 1.0) < offset_under(800.0, 0.02, 0.0, 1.0));
+    }
+
+    #[test]
+    fn arcs_are_the_shortest_rod_paths_to_a_static_node() {
+        let fe = mesh::cloth::fixture();
+        let c = mesh::cloth::from_value(&resource::kv3::Value::Object(vec![("m_pFeModel".into(), fe)])).unwrap();
+        let a = arcs(&c);
+        assert!(a[..c.static_nodes].iter().all(|&d| d == 0.0), "{a:?}");
+        assert!(a[c.static_nodes..].iter().any(|d| d.is_finite() && *d > 0.0), "{a:?}");
+    }
 
     #[test]
     fn oscillator_matches_the_python_lens_on_valves_sinclair() {

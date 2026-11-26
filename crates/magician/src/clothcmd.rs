@@ -46,7 +46,56 @@ pub fn summary(c: &Cloth) -> Vec<(&'static str, String)> {
     ]
 }
 
-const HEAD: &str = "  chain                              nodes stat free drvn   goal mean/max (g)        vertex mean/max   gravity   radius mean/max   stray      rods  shapes (layers)";
+const HEAD: &str = "  chain                              nodes stat free drvn   goal mean/max (g)        vertex mean/max   gravity   radius mean/max   stray      rods  shapes (layers)          rebound            fall/leash";
+
+/// The chain's motion, from the solver model M141 judges by (`lint::cloth`): the median free node's rebound
+/// frequency and damping ratio, and the leashed node pressed hardest under the hero's fall acceleration
+/// (`HERO_FALL`, sv_gravity 800 units/s^2): its steady offset and its leash. A node whose offset is many times its
+/// leash spends every move pressed on the leash and stops dead there.
+pub struct Motion {
+    pub freq: f64,
+    pub zeta: f64,
+    pub cycles: f64,
+    /// (offset, leash) of the leashed node with the largest offset / leash, if any node is leashed.
+    pub leash: Option<(f64, f64)>,
+}
+
+pub fn motion(c: &Cloth, ch: &Chain, arcs: &[f64]) -> Option<Motion> {
+    use lint::cloth::{offset_under, oscillator, HERO_FALL};
+    let at = |i: usize| c.integrator.get(i).copied().unwrap_or_default();
+    let arc = |i: usize| arcs.get(i).copied().unwrap_or(f64::INFINITY);
+    let free: Vec<usize> = ch.nodes.iter().copied().filter(|&i| c.kind(i) == Kind::Free).collect();
+    if free.is_empty() {
+        return None;
+    }
+    let mut osc: Vec<lint::cloth::Osc> = free.iter().map(|&i| oscillator(at(i).goal, at(i).vertex, at(i).gravity, arc(i))).collect();
+    osc.sort_by(|a, b| a.freq.total_cmp(&b.freq));
+    let mid = osc[osc.len() / 2];
+    let leash = free
+        .iter()
+        .filter_map(|&i| c.stray.get(&i).map(|&s| (offset_under(HERO_FALL, at(i).goal, at(i).gravity, arc(i)), s)))
+        .filter(|&(_, s)| s > 0.0)
+        .max_by(|a, b| (a.0 / a.1).total_cmp(&(b.0 / b.1)));
+    Some(Motion { freq: mid.freq, zeta: mid.zeta, cycles: mid.cycles, leash })
+}
+
+fn motion_cells(m: Option<&Motion>) -> String {
+    let Some(m) = m else { return format!("{:<18} {}", "-", "-") };
+    let rebound = if m.freq == 0.0 {
+        "no swing".to_string()
+    } else if m.cycles.is_infinite() {
+        format!("{:.1} Hz, never settles", m.freq)
+    } else {
+        format!("{:.1} Hz z {:.2}", m.freq, m.zeta)
+    };
+    let leash = match m.leash {
+        None => "-".to_string(),
+        Some((o, s)) if !o.is_finite() => format!("inf/{s:.1}"),
+        Some((o, s)) if o >= s => format!("{o:.1}/{s:.1} ({:.0}x)", o / s),
+        Some((o, s)) => format!("{o:.1}/{s:.1}"),
+    };
+    format!("{rebound:<18} {leash}")
+}
 
 fn row(ch: &Chain) -> String {
     let shapes = if ch.capsules + ch.spheres == 0 {
@@ -93,9 +142,11 @@ pub fn report(path: &str, ours: &Cloth, valve: Option<&Cloth>, shapes: bool) -> 
         let Some(c) = c else { continue };
         let (chains, anchors) = cloth::chains(c);
         out.push(String::new());
-        out.push(format!("{side}: {} chains ({path}); goal in parentheses is the goal strength g, goal attraction = g^3; vertex attraction is the goal damping; drvn (position-driven) nodes are not simulated: on an extruded chain they are the joints' bone centres, set between their two simulated side nodes (as on Valve's rope), not nodes that follow the skeleton", chains.len()));
+        out.push(format!("{side}: {} chains ({path}); goal in parentheses is the goal strength g, goal attraction = g^3; vertex attraction is the goal damping; drvn (position-driven) nodes are not simulated: on an extruded chain they are the joints' bone centres, set between their two simulated side nodes (as on Valve's rope), not nodes that follow the skeleton; rebound is the median free node's frequency and damping ratio z in the solver model M141 judges by (z near 0.1 rings on, 0.3 to 0.4 swings once and settles); fall/leash is, for the leashed node pressed hardest, its steady offset while the hero accelerates at his fall (800 units/s^2) against its stray radius: past 1x it reaches the leash under that push, and the larger the multiple the more of every move it spends pressed on the leash and the deader it stops there", chains.len()));
         out.push(HEAD.to_string());
-        out.extend(chains.iter().map(row));
+        let arcs = lint::cloth::arcs(c);
+        let w = HEAD.find("rebound").unwrap_or(0).saturating_sub(1);
+        out.extend(chains.iter().map(|ch| format!("{:<w$} {}", row(ch), motion_cells(motion(c, ch, &arcs).as_ref()))));
         if !anchors.is_empty() {
             let anchor = |n: usize| {
                 let on: Vec<&Shape> = c.shapes.iter().filter(|s| s.node == n).collect();
@@ -193,9 +244,34 @@ mod tests {
         // --shapes lists every shape with its layers
         assert!(text.contains("glove (0)") && text.contains("capsule r 5.00 -> 6.50, length 13.00") && text.contains("layers 0-3"), "{text}");
         assert!(text.contains("skirt_1 (2)") && text.contains("sphere r 4.00") && text.contains("layers 0,2"), "{text}");
+        // every chain row ends in its motion: the median free node's rebound, and the leashed node's offset under the fall
+        assert!(skirt.contains(" Hz z ") && skirt.contains("/4.0"), "{skirt}");
         // without Valve's model there is one column and one table
         let solo = report("p", &c, None, false).join("\n");
         assert_eq!(solo.lines().filter(|l| l.trim_start().starts_with("skirt ")).count(), 1);
         assert!(!solo.contains("collision shapes (2)"));
+    }
+
+    #[test]
+    fn motion_is_the_solver_model_of_the_free_nodes_and_the_leash_pressed_hardest() {
+        let fe = mesh::cloth::fixture();
+        let c = cloth::from_value(&resource::kv3::Value::Object(vec![("m_pFeModel".into(), fe)])).unwrap();
+        let (chains, _) = cloth::chains(&c);
+        let skirt = chains.iter().find(|ch| ch.key == "skirt").expect("the skirt chain");
+        let arcs = lint::cloth::arcs(&c);
+        let m = motion(&c, skirt, &arcs).expect("the skirt has free nodes");
+        assert!(m.freq > 0.0 && m.zeta > 0.0 && m.zeta < 1.0 && m.cycles.is_finite(), "{} {} {}", m.freq, m.zeta, m.cycles);
+        // node 3 is the leashed one (4.0); its offset is the steady state of the solver under 800 units/s^2
+        let it = c.integrator[3];
+        let want = lint::cloth::offset_under(lint::cloth::HERO_FALL, it.goal, it.gravity, arcs[3]);
+        assert_eq!(m.leash, Some((want, 4.0)));
+        // a chain with no free node has no motion to report
+        assert!(chains.iter().filter(|ch| ch.free == 0).all(|ch| motion(&c, ch, &arcs).is_none()));
+        assert_eq!(motion_cells(None).split_whitespace().collect::<Vec<_>>(), ["-", "-"]);
+        // the cells: a multiple once the offset passes the leash, the bare figures before
+        let cell = |o: f64| motion_cells(Some(&Motion { freq: 2.0, zeta: 0.2, cycles: 1.5, leash: Some((o, 2.0)) }));
+        assert!(cell(5.0).ends_with("5.0/2.0 (2x)") && cell(1.0).ends_with("1.0/2.0") && cell(f64::INFINITY).ends_with("inf/2.0"));
+        assert!(motion_cells(Some(&Motion { freq: 0.0, zeta: 1.0, cycles: 0.0, leash: None })).starts_with("no swing"));
+        assert!(motion_cells(Some(&Motion { freq: 1.0, zeta: 0.0, cycles: f64::INFINITY, leash: None })).contains("never settles"));
     }
 }
