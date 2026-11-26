@@ -51,8 +51,9 @@ pub struct Rule {
 /// The revision of how the rules judge, beyond their codes, names and severities: raised whenever a rule's test or a
 /// finding's own severity changes (a narrower test, a finding the files show to have no consequence). The update
 /// check's lint fingerprint carries it, so a user is told to re-run lint. 2: the first published mods by others,
-/// witnessed in game (CHANGELOG, "judgement changed").
-pub const JUDGEMENT: u32 = 2;
+/// witnessed in game (CHANGELOG, "judgement changed"). 3: the rules measured on Valve's 43 heroes (6871): M061, M063's
+/// reach keys, M109 to M112, M135.
+pub const JUDGEMENT: u32 = 3;
 
 /// The rule catalogue: one home for codes, names and in-game consequences.
 pub const RULES: &[Rule] = &[

@@ -78,7 +78,7 @@ magician lint                     # every finding, ending with the count by rule
 - **`broken`** (exit 1). Lint errors, or files the current game build no longer has. These are findings about the mod as it already was. Do not add allowances, edit the pak or pick a different check to get a better word.
 - **`ok`** (exit 0) only happens once a proof exists, so not on a first move.
 
-Some findings are about the game, not about taste, and are worth a sentence to the author: a reference to a file neither the mod nor the current build has (M030: that sound or material is silent or missing now), a copy of the engine's own files (M071) or of another hero's (init's `also` line), attachments or hitboxes that are not Valve's (M062; `(*)` marks the ones that are Valve's turned by an exporter, one setting to fix), Valve's effects the mod's file no longer references (M061), files nothing plays (M031). A fair-play finding (`NSFR`, `FP?`) on someone's long-standing mod is worth one plain sentence: what the rule saw, and that Magician will refuse to install with lint errors but only warns on this unless they enforce it.
+Some findings are about the game, not about taste, and are worth a sentence to the author: a reference to a file neither the mod nor the current build has (M030: that sound or material is silent or missing now), a copy of the engine's own files (M071) or of another hero's (init's `also` line), attachments or hitboxes that are not Valve's (M062; `(*)` marks the ones that are Valve's turned by an exporter, one setting to fix), Valve's effects, sounds or animations the mod's file no longer references (M061), files nothing plays (M031). A fair-play finding (`NSFR`, `FP?`) on someone's long-standing mod is worth one plain sentence: what the rule saw, and that Magician will refuse to install with lint errors but only warns on this unless they enforce it.
 
 ## 4. Put it in the game through the ledger
 
@@ -129,7 +129,7 @@ One block per run, verdict first:
 
 ```
 Deadlock build 6868. 3 mods moved to ~/mods, 1 not moved.
-- cool-lash-skin: moved as it is from cool-lash-skin.zip (sha256 1f0c...; the download's older particles pak left out, every file of it in the main pak). RE-PROVE: loads, 0 errors, 350 warnings (M110 x200, M064 x150), Costume (look, some effects) · NSFR (M124 on the model). Installed as pak11 (pak10 is another mod's). Needs: a look in game.
+- cool-lash-skin: moved as it is from cool-lash-skin.zip (sha256 1f0c...; the download's older particles pak left out, every file of it in the main pak). RE-PROVE: loads, 0 errors, 350 warnings (M064 x150, M111 x120, M102 x80), Costume (look, some effects) · NSFR (M124 on the model). Installed as pak11 (pak10 is another mod's). Needs: a look in game.
 - menu-music: moved as it is. A music mod, not graded. 0 errors. Your own copy is in addons/pak31_dir.vpk; not installed until you say which copy stays.
 - soul-jar: moved as it is. A prop mod (models/props_gameplay/...), not graded. BROKEN: 3 x M071 (it ships its own copies of the engine's default masks). Not installed.
 - old-skin.vpk: not moved: Magician could not read it as a VPK ("...").

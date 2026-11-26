@@ -2,7 +2,9 @@
 
 Two of the three full hero skins built with this toolchain, and what Magician says about each. Every block below is
 what `magician check` or `magician grade` printed on Deadlock build 6868, less the lines that name files on the
-author's disk; the proof ledger is the skin's own `proofs.tsv` without its hash and evidence columns. The third skin
+author's disk; the proof ledger is the skin's own `proofs.tsv` without its hash and evidence columns. The lint rows
+are the same bytes linted again with the rules as measured against Valve's heroes on 6871 (the changelog says what
+moved). The third skin
 is not public yet and is not shown.
 
 ## Maid Lash
@@ -15,9 +17,11 @@ Deadlock Mod Manager from [its page](https://woflo.dev/deadlock-skins/maid-lash/
 
 ```
 maid-lash: ok  Costume (look, effects, sound)  (build 6868)
-  lint   warn   0 error(s), 81 warning(s), 22 allowed (deep; fair play pass)
-         warnings  M112 coordinate-precision x18, M110 shell-intersection x13, M111 floating-shell x13, M109 self-intersection x11, M102 open-sheet-void x6, M108 z-fighting x5, M113 uv-degenerate x3, M122 lod-budget x2, M100 mesh-unchecked x1, M104 normals-flipped x1, M105 degenerate-triangles x1, M107 backface-shading x1, M117 skin-influences x1, M118 skin-distant-bone x1, M123 mesh-budget x1, M125 seam-crack x1, M136 albedo-range x1, M148 default-slot-literal x1
-         advisory  M081 particle-energy x3, M130 hitbox-envelope-wide x1 (fair play's advisories: reported, never a violation)
+  lint   warn   0 error(s), 36 warning(s), 4 allowed (deep; fair play pass)
+         on the hero    M111 floating-shell x8, M102 open-sheet-void x6, M108 z-fighting x5, M113 uv-degenerate x3, M104 normals-flipped x1, M105 degenerate-triangles x1, M107 backface-shading x1, M109 self-intersection x1, M110 shell-intersection x1, M117 skin-influences x1, M118 skin-distant-bone x1, M125 seam-crack x1, M136 albedo-range x1, M148 default-slot-literal x1
+         frame cost     M122 lod-budget x2, M123 mesh-budget x1
+         the pak        M100 mesh-unchecked x1
+         advisory       M081 particle-energy x3, M130 hitbox-envelope-wide x1 (fair play's advisories: reported, never a violation)
   grade  ok     Costume (look, effects, sound) for Lash; release gate pass
   proof  ok     these bytes proven on 6868; 6864, 6865, 6866 (claimed for other bytes or never recorded)
   drift  ok     proven on 6868, the installed build
@@ -26,8 +30,8 @@ maid-lash: ok  Costume (look, effects, sound)  (build 6868)
 
 What stands behind each line:
 
-- **The lint.** No errors: nothing the game will not load or play. The warnings are counted by rule, all of them
-  from the mesh family, which measures the model against Valve's; `magician lint` prints each site and
+- **The lint.** No errors: nothing the game will not load or play. The warnings are counted by rule and grouped by
+  where a player meets them, all of them from the mesh family, which measures the model against Valve's; `magician lint` prints each site and
   `magician rules` says what each rule means in game.
 
 - **The grade.** Lash is 2,201 files in the game's own data. The skin ships 644, and the grade says which parts of
@@ -83,8 +87,10 @@ new character on Viscous's rig, 468 files, and it is not released yet.
 
 ```
 loops-viscous: ok  Echo (look, effects, sound)  (build 6868)
-  lint   warn   0 error(s), 96 warning(s), 64 allowed (deep; fair play pass)
-         warnings  M110 shell-intersection x48, M061 dropped-dependency x18, M111 floating-shell x10, M102 open-sheet-void x6, M090 shared-file x4, M109 self-intersection x3, M122 lod-budget x2, M107 backface-shading x1, M113 uv-degenerate x1, M123 mesh-budget x1, M125 seam-crack x1, M136 albedo-range x1
+  lint   warn   0 error(s), 17 warning(s), 14 allowed (deep; fair play pass)
+         on the hero    M102 open-sheet-void x6, M107 backface-shading x1, M113 uv-degenerate x1, M125 seam-crack x1, M136 albedo-range x1
+         other heroes   M090 shared-file x4
+         frame cost     M122 lod-budget x2, M123 mesh-budget x1
   grade  ok     Echo (look, effects, sound) for Viscous; release gate pass
   proof  ok     these bytes proven on 6868
   drift  ok     proven on 6868, the installed build
@@ -106,7 +112,6 @@ Echo: a new character (character rubric)
   look     model, materials, UI art, Valve's scenes
   effects  ability VFX, animation
   sound    kit sound, Valve's voice
-  note: 18 dropped dependencies (M061): effects or sounds of Valve's originals that no longer play
 ```
 
 ## Try it on your own mod

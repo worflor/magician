@@ -60,18 +60,21 @@ magician install                   # lints first, backs up gameinfo.gi, never un
 ```
 
 ```
-my-lash-skin: RE-PROVE  Costume (look, effects, sound) · NSFR · unproven  (build 6868)
-  lint   warn   0 error(s), 100 warning(s), 0 allowed (deep; fair play NSFR)
-         warnings  M061 dropped-dependency x18, M112 coordinate-precision x18, M110 shell-intersection x13, ...
-         fair play M140 hitbox-envelope-taste x1
-         advisory  M081 particle-energy x3, M130 hitbox-envelope-wide x1 (fair play's advisories: reported, never a violation)
-  grade  warn   Costume (look, effects, sound) · NSFR · unproven for Lash; release gate blocked: freshness: not proven on 6868 (no proven build on record for these bytes)
+my-lash-skin: RE-PROVE  Echo (look, effects, sound) · NSFR · unproven  (build 6871)
+  lint   warn   0 error(s), 39 warning(s), 0 allowed (deep; fair play NSFR, not safe for ranked)
+         on the hero    M111 floating-shell x8, M102 open-sheet-void x6, M108 z-fighting x5, M113 uv-degenerate x3, ...
+         other heroes   M090 shared-file x2
+         frame cost     M122 lod-budget x2, M123 mesh-budget x1
+         the pak        M031 orphan-new-file x1, M100 mesh-unchecked x1
+         fair play      M140 hitbox-envelope-taste x1
+         advisory       M081 particle-energy x3, M130 hitbox-envelope-wide x1 (fair play's advisories: reported, never a violation)
+  grade  warn   Echo (look, effects, sound) · NSFR · unproven for Lash; release gate blocked: freshness: not proven on 6871 (no proven build on record for these bytes)
   proof  warn   these bytes proven on none
   drift  warn   these bytes are proven on no build yet: nothing to compare from
-next: the in-game pass on build 6868 (`magician session qa --mod /home/you/mods/my-lash-skin --out <dir>`), look at the frames, then `magician prove --evidence <dir>`
+next: the in-game pass on build 6871 (`magician session qa --mod /home/you/mods/my-lash-skin --out <dir>`), look at the frames, then `magician prove --evidence <dir>`
 ```
 
-`check` exits 1 when something is broken, 4 when the mod loads but is not proven on the installed build, 0 when it is proven here and clean. Under the lint line the findings are counted by rule (the row is cut short here); `magician lint` prints each one. The same bare verbs work for `lint`, `ls`, `grade`, `drift` (from the mod's last proven build), `release` (its addon), `uninstall`, `prove`, `footprint` and `scene check`; whatever you pass explicitly wins. `magician help` lists every command and option, `magician help <command>` shows one, and a mistyped command, option or hero is answered with what it most likely meant. A hero can be named the way you would say it: `lash`, `Lash`, `hero_lash`, `"Lady Geist"`, or its model's path.
+`check` exits 1 when something is broken, 4 when the mod loads but is not proven on the installed build, 0 when it is proven here and clean. Under the lint line the findings are counted by rule, grouped by where a player meets them (the first row is cut short here); `magician lint` prints each one. The same bare verbs work for `lint`, `ls`, `grade`, `drift` (from the mod's last proven build), `release` (its addon), `uninstall`, `prove`, `footprint` and `scene check`; whatever you pass explicitly wins. `magician help` lists every command and option, `magician help <command>` shows one, and a mistyped command, option or hero is answered with what it most likely meant. A hero can be named the way you would say it: `lash`, `Lash`, `hero_lash`, `"Lady Geist"`, or its model's path.
 
 A `mod.toml` is plain text, read line by line: flat tables of strings, numbers and lists, the shape `new` and `init` write. The keys a mod usually carries:
 
