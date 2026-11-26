@@ -35,9 +35,9 @@ pub const CROSS_DEPTH: f64 = 0.04;
 /// M109 and M110: the most visible fold line (a shell through itself) and crossing line (two shells, over 1 mm deep),
 /// counting sites over 1 unit long, that any of Valve's 43 playable heroes has at bind (6871), in units of the model's
 /// own size (the square root of its surface, so a prop a particle scales down is judged as its hero would be):
-/// Frank's folds and Hornet's crossings. The median hero has 0.4 and 18.8. A model past these crosses more than
-/// Valve builds any hero.
-pub const FOLD_RATE_VALVE: f64 = 4.81;
+/// Frank's folds (4.811) and Hornet's crossings (52.46), each rounded up so that hero is not over its own line. The
+/// median hero has 0.4 and 18.8. A model past these crosses more than Valve builds any hero.
+pub const FOLD_RATE_VALVE: f64 = 4.82;
 pub const CROSS_RATE_VALVE: f64 = 52.5;
 /// Coplanar overlap worth a flicker (SKIN-FLAWS A6: more than 1 cm^2).
 pub const ZFIGHT_AREA: f64 = 0.155;
