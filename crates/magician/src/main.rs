@@ -88,8 +88,9 @@ Start here:
                                                 <hero>-skin) with a mod.toml whose [target] is the hero's real model and
                                                 skeleton, an addon folder at the game's paths with .gitignore files that
                                                 keep Valve-derived files out of git, a package for tools/bundle.py, two
-                                                in-game scenarios and a README with the next commands; never writes into
-                                                a folder that exists, never copies a Valve file
+                                                in-game scenarios and a README with the next commands. Into a folder
+                                                that is there (sketches before a manifest) it writes only the files it
+                                                lacks and names the rest; never over a mod, never copies a Valve file
   magician init [<pak>... | <archive>... | <addon dir>] [--out DIR] [--hero HERO] [--slug SLUG] [--name NAME] [--force]
                                                 write a mod.toml for paks (or the paks here) or an addon's sources: the
                                                 hero from the files it replaces, slug and name from the folder. Paks

@@ -41,7 +41,7 @@ Some commands need more than the game (the Source 2 Viewer CLI to grade, Valve's
 
 ### A mod is a folder with a `mod.toml`
 
-To start a skin from nothing, `magician new <hero>` writes that folder from the installed game's own data: a `mod.toml` whose `[target]` is the hero's real model and skeleton, an `addon/` laid out at the game's paths with `.gitignore` files that keep Valve-derived work out of git, a `package/` that `magician bundle` takes once there is a pak, two in-game scenarios for the hero, and a README with the next commands. It copies no Valve file and never writes into a folder that exists.
+To start a skin from nothing, `magician new <hero>` writes that folder from the installed game's own data: a `mod.toml` whose `[target]` is the hero's real model and skeleton, an `addon/` laid out at the game's paths with `.gitignore` files that keep Valve-derived work out of git, a `package/` that `magician bundle` takes once there is a pak, two in-game scenarios for the hero, and a README with the next commands. It copies no Valve file. A folder that is there already, a skin that began as sketches and notes, is scaffolded in place: only the files it lacks are written, its own are kept and named (a `.gitignore` with the scaffold's lines it lacks), and a folder that is already a mod is refused.
 
 ```
 magician new lash --author you     # lash-skin/: mod.toml, addon/, package/, source/ingame/scenarios/, README.md

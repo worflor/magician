@@ -809,6 +809,24 @@ fn new_scaffolds_a_mod_from_the_games_own_data_and_never_over_a_folder() {
     assert_eq!(o.status.code(), Some(3), "{}", text(&o));
     assert_eq!(magician_in(&d, &m, &["new", "x", "--slug", "other"]).status.code(), Some(3), "not inside a mod");
     assert_eq!(magician_in(&d, &d, &["new", "nobody", "--dir", &ms]).status.code(), Some(2), "a hero the game does not have");
+    // a skin that began as sketches before it had a manifest: scaffolded in place, nothing of its own replaced
+    let sketch = mods.join("x-sketches");
+    std::fs::create_dir_all(sketch.join("docs")).unwrap();
+    std::fs::write(sketch.join("README.md"), "my notes\n").unwrap();
+    std::fs::write(sketch.join("docs").join("ideas.md"), "the hat\n").unwrap();
+    std::fs::write(sketch.join(".gitignore"), "*.blend1\n").unwrap();
+    let o = magician_in(&d, &d, &["new", "x", "--dir", &ms, "--slug", "x-sketches"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(out.contains("a folder that was there: only what it lacked is written") && out.contains("kept, already there"), "{out}");
+    assert!(out.contains("  .gitignore: it lacks the scaffold's ") && out.contains("  README.md\n"), "{out}");
+    assert_eq!(std::fs::read_to_string(sketch.join("README.md")).unwrap(), "my notes\n");
+    assert_eq!(std::fs::read_to_string(sketch.join(".gitignore")).unwrap(), "*.blend1\n");
+    assert_eq!(std::fs::read_to_string(sketch.join("docs").join("ideas.md")).unwrap(), "the hat\n");
+    assert!(sketch.join("mod.toml").is_file() && sketch.join("addon").join("magician.allow").is_file() && sketch.join("source/ingame/scenarios/x_angles.txt").is_file());
+    assert!(std::fs::read_dir(&sketch).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().contains("magician-partial")), "no temporary file left");
+    // once it has a mod.toml it is a mod, and `new` stops
+    assert_eq!(magician_in(&d, &d, &["new", "x", "--dir", &ms, "--slug", "x-sketches"]).status.code(), Some(3));
     // `magician` and `check` in it say plainly there is no pak yet
     let o = magician_in(&d, &m, &[]);
     assert!(text(&o).contains("no pak yet") && text(&o).contains("magician release --out pak10_dir.vpk"), "{}", text(&o));

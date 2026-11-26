@@ -21,8 +21,11 @@
 //!   source/ingame/scenarios/      enter_<hero>.txt and <hero>_angles.txt for the in-game session
 //! ```
 //!
-//! It writes no Valve byte (only paths and names the game data gives), never writes into a folder that exists, and
-//! prints what it wrote and what to run next.
+//! It writes no Valve byte (only paths and names the game data gives) and prints what it wrote and what to run next.
+//! A folder that is there already (a skin that began as sketches and notes before it had a manifest) is scaffolded in
+//! place: only the files it lacks are written, nothing of its own is replaced, and a `.gitignore` it already has is
+//! named with the lines it lacks from the scaffold's. A folder that is a mod already (a `mod.toml` in it or above
+//! it) is refused.
 
 use super::*;
 use crate::heroes::{Hero, Heroes};
@@ -199,32 +202,41 @@ pub fn cmd_new(args: &[String]) -> R {
     };
     let base = flag(args, "--dir").map(PathBuf::from).unwrap_or(std::env::current_dir().map_err(|e| e.to_string())?);
     let root = std::path::absolute(base.join(&plan.slug)).unwrap_or_else(|_| base.join(&plan.slug));
-    if root.exists() {
-        return Err(Stop::Refused(format!("{} already exists; `magician new` never writes into a folder that is there (pick another --slug or --dir)", root.display())));
+    if root.exists() && !root.is_dir() {
+        return Err(Stop::Refused(format!("{} is a file; `magician new` writes a folder (pick another --slug or --dir)", root.display())));
+    }
+    if root.join("mod.toml").exists() {
+        return Err(Stop::Refused(format!("{} is a mod already (it has a mod.toml); `magician new` never writes over one (pick another --slug or --dir)", root.display())));
     }
     if modctx::find_upward(&base).is_some() {
         return Err(Stop::Refused(format!("{} is inside a mod already ({}); start a new one beside it, not in it", base.display(), modctx::find_upward(&base).map(|p| p.display().to_string()).unwrap_or_default())));
     }
     let csdk = paths::csdk(flag(args, "--csdk")).ok().map(|f| f.path);
     let files = plan.files(csdk.as_deref());
-    // Written into a temporary folder beside it and renamed into place: a run that stops leaves nothing half-made.
-    let tmp = root.with_file_name(format!("{}.magician-partial", plan.slug));
-    let _ = std::fs::remove_dir_all(&tmp);
-    let write = || -> std::io::Result<()> {
-        for (rel, text) in &files {
-            let p = tmp.join(build::native(rel));
-            if let Some(d) = p.parent() {
-                std::fs::create_dir_all(d)?;
-            }
-            std::fs::write(&p, text)?;
-        }
-        std::fs::rename(&tmp, &root)
-    };
-    if let Err(e) = write() {
+    let existed = root.exists();
+    let kept: Vec<&(String, String)> = files.iter().filter(|(rel, _)| root.join(build::native(rel)).exists()).collect();
+    if existed {
+        write_missing(&root, &files)?;
+    } else {
+        // Written into a temporary folder beside it and renamed into place: a run that stops leaves nothing half-made.
+        let tmp = root.with_file_name(format!("{}.magician-partial", plan.slug));
         let _ = std::fs::remove_dir_all(&tmp);
-        return Err(format!("{}: {e}", root.display()).into());
+        let write = || -> std::io::Result<()> {
+            for (rel, text) in &files {
+                let p = tmp.join(build::native(rel));
+                if let Some(d) = p.parent() {
+                    std::fs::create_dir_all(d)?;
+                }
+                std::fs::write(&p, text)?;
+            }
+            std::fs::rename(&tmp, &root)
+        };
+        if let Err(e) = write() {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(format!("{}: {e}", root.display()).into());
+        }
     }
-    say!("new {} skin: {}", plan.hero.name, root.display());
+    say!("new {} skin: {}{}", plan.hero.name, root.display(), if existed { " (a folder that was there: only what it lacked is written)" } else { "" });
     say!("  hero     {} from this build's heroes.vdata", plan.hero.label());
     say!("  model    {}", plan.hero.model);
     match &plan.skeleton {
@@ -237,8 +249,19 @@ pub fn cmd_new(args: &[String]) -> R {
         None => say!("  author   left blank: fill in [mod] author in mod.toml and \"author\" in package/bundle.json"),
     }
     say!("wrote:");
-    for (rel, _) in &files {
+    for (rel, _) in files.iter().filter(|f| !kept.iter().any(|k| k.0 == f.0)) {
         say!("  {rel}");
+    }
+    if !kept.is_empty() {
+        say!("kept, already there (the scaffold's version is not written):");
+        for (rel, text) in &kept {
+            let missing = if rel.ends_with(".gitignore") { gitignore_missing(&std::fs::read_to_string(root.join(build::native(rel))).unwrap_or_default(), text) } else { Vec::new() };
+            if missing.is_empty() {
+                say!("  {rel}");
+            } else {
+                say!("  {rel}: it lacks the scaffold's {}; add them if this folder holds that kind of file", missing.join(" "));
+            }
+        }
     }
     say!("\nnext, from {}:", root.display());
     say!("  (once) link addon\\ into the CSDK: the mklink line in README.md");
@@ -246,6 +269,62 @@ pub fn cmd_new(args: &[String]) -> R {
     say!("  magician check                         one verdict on the installed build");
     say!("  magician install                       put it in the game");
     Ok(ExitCode::SUCCESS)
+}
+
+/// Into a folder that is there: each file the scaffold has and the folder lacks, written under a temporary name and
+/// renamed into place, never over a file. A run that stops takes back what it wrote.
+fn write_missing(root: &Path, files: &[(String, String)]) -> Result<(), Stop> {
+    let mut wrote: Vec<PathBuf> = Vec::new();
+    let mut made: Vec<PathBuf> = Vec::new();
+    let mut one = |rel: &str, text: &str| -> std::io::Result<()> {
+        let p = root.join(build::native(rel));
+        if p.exists() {
+            return Ok(());
+        }
+        if let Some(d) = p.parent() {
+            let mut fresh = Vec::new();
+            let mut up = Some(d);
+            while let Some(x) = up.filter(|x| !x.exists()) {
+                fresh.push(x.to_path_buf());
+                up = x.parent();
+            }
+            std::fs::create_dir_all(d)?;
+            made.extend(fresh.into_iter().rev());
+        }
+        let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let tmp = p.with_file_name(format!("{name}.magician-partial"));
+        std::fs::write(&tmp, text)?;
+        // a file that appeared meanwhile is the author's: leave it and drop ours
+        if p.exists() {
+            return std::fs::remove_file(&tmp);
+        }
+        std::fs::rename(&tmp, &p)?;
+        wrote.push(p);
+        Ok(())
+    };
+    let mut failed = None;
+    for (rel, text) in files {
+        if let Err(e) = one(rel, text) {
+            failed = Some(format!("{}: {e}", root.join(build::native(rel)).display()));
+            break;
+        }
+    }
+    if let Some(e) = failed {
+        for p in wrote.iter().rev() {
+            let _ = std::fs::remove_file(p);
+        }
+        for d in made.iter().rev() {
+            let _ = std::fs::remove_dir(d);
+        }
+        return Err(e.into());
+    }
+    Ok(())
+}
+
+/// The scaffold's `.gitignore` lines (patterns, not comments) that an existing one does not have.
+fn gitignore_missing(have: &str, want: &str) -> Vec<String> {
+    let has: std::collections::HashSet<&str> = have.lines().map(str::trim).collect();
+    want.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#') && !has.contains(l)).map(String::from).collect()
 }
 
 #[cfg(test)]
@@ -286,5 +365,11 @@ mod tests {
         // no author given: a marked blank, never a guess
         let t = plan(None).files(None)[0].1.clone();
         assert!(t.contains("author  = \"\"   # TO FILL IN"), "{t}");
+    }
+
+    #[test]
+    fn an_existing_gitignore_is_named_with_what_it_lacks() {
+        assert_eq!(gitignore_missing("*.blend\n# mine\n", "# Valve-derived\n*.blend\n*.dmx\n"), vec!["*.dmx".to_string()]);
+        assert!(gitignore_missing("*.dmx\n*.blend\n", "*.blend\n*.dmx\n").is_empty());
     }
 }
