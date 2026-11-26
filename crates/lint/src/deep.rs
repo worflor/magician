@@ -625,6 +625,20 @@ pub fn show_attachment(sig: &str) -> String {
     format!("{head} at {} rot {}", take(at), take(rot))
 }
 
+/// Whether two attachment or hitbox signatures say the same thing: the words equal and every number within one step of
+/// the two decimals they are written to. A re-export writes Valve's 5.774999618 as 5.775000095, one float32 step that
+/// rounds to 5.78 where Valve's rounds to 5.77 (a community skin's pelvis capsule, 6871); a step of 0.01 units is a
+/// quarter of a millimetre.
+pub fn same_signature(a: &str, b: &str) -> bool {
+    let toks = |s: &str| s.split([' ', ',', ';']).filter(|t| !t.is_empty()).map(String::from).collect::<Vec<_>>();
+    let (x, y) = (toks(a), toks(b));
+    x.len() == y.len()
+        && x.iter().zip(&y).all(|(p, q)| match (p.parse::<f64>(), q.parse::<f64>()) {
+            (Ok(m), Ok(n)) => (m - n).abs() <= 0.0101,
+            _ => p == q,
+        })
+}
+
 /// Contract breaches of `ours` against Valve's model (M062). Added bones are allowed (cloth chains, model-only
 /// bones; docs/reference/engine.md, the compiler); every Valve bone, attachment and hitbox must be there, unchanged; no hitbox may be added.
 pub fn contract_breaches(ours: &Contract, valve: &Contract) -> Vec<String> {
@@ -652,15 +666,15 @@ pub fn contract_breaches(ours: &Contract, valve: &Contract) -> Vec<String> {
             let want = find(theirs, n);
             if have.is_empty() {
                 out.push(format!("{kind} '{n}' missing"));
-            } else if let Some(bad) = have.iter().find(|h| !want.contains(h)) {
-                let theirs = want.iter().find(|w| !have.contains(w)).unwrap_or(sig);
+            } else if let Some(bad) = have.iter().find(|h| !want.iter().any(|w| same_signature(h, w))) {
+                let theirs = want.iter().find(|w| !have.iter().any(|h| same_signature(h, w))).unwrap_or(sig);
                 if kind == "attachment" {
                     let turned = axes_turned(bad, theirs);
                     out.push(format!("{kind} '{n}' changed: {} (Valve's {}){}", show_attachment(bad), show_attachment(theirs), turned.map(|t| format!("; {t}")).unwrap_or_default()));
                 } else {
                     out.push(format!("{kind} '{n}' changed: {bad} (Valve's {theirs})"));
                 }
-            } else if let Some(lost) = want.iter().find(|w| !have.contains(w)) {
+            } else if let Some(lost) = want.iter().find(|w| !have.iter().any(|h| same_signature(h, w))) {
                 let lost = if kind == "attachment" { show_attachment(lost) } else { lost.clone() };
                 out.push(format!("{kind} '{n}' missing: Valve's model has another of that name, {lost}"));
             }

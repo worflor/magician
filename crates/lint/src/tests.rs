@@ -808,6 +808,21 @@ fn m062_model_contract() {
 }
 
 #[test]
+fn m062_a_float32_step_across_a_rounding_line_is_not_a_change() {
+    // Real case (6871, a community skin): Valve's pelvis capsule radius 5.774999618 re-exported as 5.775000095, which
+    // writes 5.78 where Valve's writes 5.77. Never allowable, so a false one cannot be waived: it must not fire.
+    let mut g = game();
+    let mut fake = Fake::default();
+    fake.files.insert(MODEL.into(), model(5.774999618530273, 89.88, false));
+    with(&mut g, &[MODEL]);
+    let same = run_game(vec![file(MODEL, model(5.775000095367432, 89.88, false))], &g, &fake);
+    assert_eq!(codes(&same), BTreeSet::from(["M060"]), "{same:?}");
+    // two hundredths of a unit wider is a changed hitbox
+    let wider = run_game(vec![file(MODEL, model(5.795, 89.88, false))], &g, &fake);
+    assert!(wider.iter().any(|x| x.code == "M062" && x.message.contains("hitbox 'default/head_capsule' changed")), "{wider:?}");
+}
+
+#[test]
 fn m062_says_when_an_attachment_is_valve_s_with_its_axes_turned() {
     // Real shape (two mods from one exporter): every attachment on the root at Valve's numbers in another order,
     // zipline 10.43,10.89,90.36 written as 10.89,90.36,10.43.
