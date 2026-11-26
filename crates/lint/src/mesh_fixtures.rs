@@ -1146,6 +1146,16 @@ fn m145_inside_out_shell() {
     let f = run_ours(&with(vec![inside_out(cuff())]));
     let m = f.iter().find(|x| x.code == "M145").unwrap_or_else(|| panic!("{f:#?}"));
     assert!(m.message.contains("signed volume is -120.0 u3") && m.message.contains("all 12 of its faces point inward"), "{}", m.message);
+    assert!(m.message.contains("hollow or flat black") && !m.message.contains("inverted-hull"), "a lone piece is no outline: {}", m.message);
+    // the inverted-hull outline: a slightly larger copy wound inside out around the cuff, which the game draws as a
+    // solid black shape over it; the finding says so and names the material's own outline as the route
+    let hull = inside_out(boxd([9.8, -3.2, 19.8], [12.2, 3.2, 30.2], CLOTH, 1));
+    let f = run_ours(&with(vec![cuff(), hull]));
+    let m = f.iter().find(|x| x.code == "M145").unwrap_or_else(|| panic!("{f:#?}"));
+    for want in ["inverted-hull outline", "opaque black shape over what it wraps", "F_SOLID_COLOR_OUTLINE", "F_OVERRIDE_NPR_OUTLINE"] {
+        assert!(m.message.contains(want), "{want}: {}", m.message);
+    }
+    assert_eq!(f.iter().filter(|x| x.code == "M145").count(), 1, "the cuff inside is the right way out: {f:#?}");
     // a closed piece with no room in it (a card's two layers, 0.02 units apart) has no inside to turn out
     let card = inside_out(boxd([10.0, -3.0, 20.0], [10.02, 3.0, 30.0], CLOTH, 1));
     assert!(!has(&run_ours(&with(vec![card])), "M145", ""));

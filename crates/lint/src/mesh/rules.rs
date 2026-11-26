@@ -255,10 +255,27 @@ pub fn judge(ours: &Census, valve: Option<&Census>, fp: &FairPlay) -> Out {
         if valve.is_some_and(|v| v.shells.iter().any(|t| t.winding < 0 && v3::dist(t.bounds.center(), s.bounds.center()) < MATCH_DIST)) {
             continue; // Valve's model has an inside-out piece at the same place
         }
+        // A shell that holds another piece of the model inside its box is the inverted-hull outline: the author meant
+        // a line around what it wraps, and the game draws a solid shape over it instead.
+        let wraps: Vec<usize> = (0..o.shells.len()).filter(|&j| j != i && inside(&o.shells[j].bounds, &s.bounds)).collect();
+        let (what, fix) = match wraps.first() {
+            Some(&j) => (
+                format!(
+                    ", and it wraps [{}]{}: an inverted-hull outline. The game does not cull it into a line: it draws an opaque black shape over what it wraps (seen in game on hero materials), while Blender and Source 2 Viewer draw back faces and show the line, so neither preview can be trusted for it",
+                    lbl(j),
+                    if wraps.len() > 1 { format!(" and {} other piece(s)", wraps.len() - 1) } else { String::new() }
+                ),
+                "Remove the shell and draw the line with the material's own outline: F_SOLID_COLOR_OUTLINE (Valve's hero materials set it), coloured by g_vSolidOutlineTint, and for a heavier line F_OVERRIDE_NPR_OUTLINE with g_flOverrideNprOutlineThickness",
+            ),
+            None => (
+                ". The game culls them from outside and draws the far inner wall instead, lit from within: the piece reads hollow or flat black (Blender and Source 2 Viewer draw back faces, so they show it right)".to_string(),
+                "Flip its faces (and normals); a lining meant to be seen from inside is an open sheet, not a closed piece, and an outline is the material's own (F_SOLID_COLOR_OUTLINE), never a shell",
+            ),
+        };
         out.push((
             "M145",
             format!(
-                "[{}] is a closed piece wound inside out: its signed volume is {} u3 (a closed piece seen from outside encloses a positive one; {thick:.2} units thick on average), so all {} of its faces point inward. The game culls them from outside and draws the far inner wall instead, lit from within: the piece reads hollow or flat black. Flip its faces (and normals); a lining meant to be seen from inside is an open sheet, not a closed piece",
+                "[{}] is a closed piece wound inside out: its signed volume is {} u3 (a closed piece seen from outside encloses a positive one; {thick:.2} units thick on average), so all {} of its faces point inward{what}. {fix}",
                 lbl(i),
                 s.volume.map_or("-".into(), |v| format!("{:.1}", -v.abs())),
                 s.tris
@@ -554,6 +571,11 @@ pub fn judge(ours: &Census, valve: Option<&Census>, fp: &FairPlay) -> Out {
 }
 
 /// A share as a percentage with up to two decimals: 0.035 -> "3.5", 0.0412 -> "4.12", 0.02 -> "2".
+/// Whether box `a` lies within box `b` (to a hundredth of a unit), as a piece wrapped by a hull does.
+fn inside(a: &v3::Aabb, b: &v3::Aabb) -> bool {
+    !a.is_empty() && (0..3).all(|k| a.min[k] >= b.min[k] - 0.01 && a.max[k] <= b.max[k] + 0.01)
+}
+
 fn pct(share: f64) -> String {
     let t = format!("{:.2}", 100.0 * share + 0.0);
     let t = t.trim_end_matches('0').trim_end_matches('.');
