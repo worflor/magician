@@ -190,7 +190,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M134", name: "particle-prop-unlit", severity: Severity::Warn,
         in_game: "A lit opaque pbr.vfx material drawn by a particle's C_OP_RenderModels without NPR or self-illum: particle models get no normal lighting, so it renders black." },
     Rule { code: "M135", name: "texture-parity", severity: Severity::Warn,
-        in_game: "A replaced texture has fewer mips, another format or another size than Valve's file: Valve's panels and materials draw it at Valve's sizes, so it aliases or shows block artefacts. A model's morph atlas (`_vmorf`) shipped with its own model is not judged: the compiler sizes it to that model's morphs, and only that model reads it." },
+        in_game: "A replaced texture shows worse where Valve draws it: smaller than Valve's (stretched up to Valve's size, it blurs), in a format that loses more than Valve's (block artefacts), or with fewer mips than Valve's where its size could hold them (drawn small, it shimmers). A larger image, or another format that keeps as much, shows nothing. A model's morph atlas (`_vmorf`) shipped with its own model is not judged: the compiler sizes it to that model's morphs, and only that model reads it." },
     Rule { code: "M136", name: "albedo-range", severity: Severity::Warn,
         in_game: "Over 10% of the new materials' area sits outside Valve's own albedo range for this model: the piece reads brighter or darker than everything Valve drew, flattening or blooming in the game's lighting." },
     Rule { code: "M137", name: "albedo-absolute", severity: Severity::Error,

@@ -921,17 +921,32 @@ pub fn particle_prop(material: &str, m: &MatInfo, particle: &str) -> Option<(&'s
     (lit_opaque && !m.npr).then(|| ("M134", format!("{material}: lit opaque pbr.vfx drawn by C_OP_RenderModels in {particle} without F_USE_NPR_LIGHTING or self-illum: particle models get no normal lighting, it renders black")))
 }
 
-/// SKIN-FLAWS T1: a replaced texture against Valve's file at the same path.
+/// How much a texture format loses: 0 keeps every pixel (RGBA8888, BGRA8888, PNG_RGBA8888 and the float formats),
+/// 1 the high-quality blocks (BC7, BC6H), 2 the older blocks (DXT5, ATI1N, ATI2N, ETC2 and EAC), 3 DXT1 and JPEG.
+fn loss(format_name: &str) -> u8 {
+    match format_name {
+        "BC7" | "BC6H" => 1,
+        "DXT5" | "PNG_DXT5" | "ATI1N" | "ATI2N" | "ETC2" | "ETC2_EAC" | "R11_EAC" | "RG11_EAC" => 2,
+        "DXT1" | "JPEG_RGBA8888" | "JPEG_DXT5" => 3,
+        _ => 0,
+    }
+}
+
+/// SKIN-FLAWS T1: a replaced texture against Valve's file at the same path, for what shows where Valve draws it: a
+/// smaller image stretched up to Valve's size, a format that loses more than Valve's, and fewer mips than Valve's
+/// where the image could hold them (drawn small, it shimmers). A larger image, or another format that loses no more
+/// (148 community UI images were PNG_RGBA8888 where Valve's are BGRA8888, both every pixel kept, 6871), shows nothing.
 pub fn texture_parity(path: &str, ours: &resource::texture::TexInfo, valve: &resource::texture::TexInfo) -> Option<(&'static str, String)> {
     let mut why = Vec::new();
-    if ours.mips < valve.mips {
-        why.push(format!("{} mips, Valve's {}", ours.mips, valve.mips));
+    let chain = |t: &resource::texture::TexInfo| 16 - t.width.max(t.height).max(1).leading_zeros() as u8;
+    if ours.mips < valve.mips.min(chain(ours)) {
+        why.push(format!("{} mips, Valve's {}: drawn small, it shimmers", ours.mips, valve.mips));
     }
-    if ours.format != valve.format {
-        why.push(format!("{} where Valve's is {}", ours.format_name(), valve.format_name()));
+    if loss(ours.format_name()) > loss(valve.format_name()) {
+        why.push(format!("{} where Valve's is {}: it shows block artefacts Valve's does not", ours.format_name(), valve.format_name()));
     }
-    if (ours.width, ours.height) != (valve.width, valve.height) {
-        why.push(format!("{}x{} where Valve's is {}x{}", ours.width, ours.height, valve.width, valve.height));
+    if ours.width < valve.width || ours.height < valve.height {
+        why.push(format!("{}x{} where Valve's is {}x{}: drawn at Valve's size, it is stretched up and blurs", ours.width, ours.height, valve.width, valve.height));
     }
-    (!why.is_empty()).then(|| ("M135", format!("{path}: {}: Valve's panels and materials draw it at Valve's sizes, so it aliases or shows block artefacts when drawn small", why.join(", "))))
+    (!why.is_empty()).then(|| ("M135", format!("{path}: {}", why.join("; "))))
 }

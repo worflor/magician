@@ -969,6 +969,25 @@ fn m135_texture_parity() {
 }
 
 #[test]
+fn m135_judges_what_shows_where_valve_draws_it() {
+    use resource::texture::{info, BGRA8888, DXT1};
+    let t = |w: u16, format: u8, mips: u8| {
+        let mut h = resource::texture::synth_header(w, w, format);
+        h[27] = mips;
+        info(&resource::synth_with(&[], &[(*b"DATA", h)])).unwrap()
+    };
+    let valve = t(256, BGRA8888, 9);
+    let png = resource::texture::FORMATS.iter().position(|f| *f == "PNG_RGBA8888").unwrap() as u8;
+    // Real case (6871, 148 community UI images): PNG_RGBA8888 where Valve's is BGRA8888 keeps every pixel; larger is fine
+    assert_eq!(rules::texture_parity("p", &t(256, png, 9), &valve), None);
+    assert_eq!(rules::texture_parity("p", &t(512, BGRA8888, 10), &valve), None);
+    // the true catches: a lossier format, a smaller image, a missing mip chain
+    assert!(rules::texture_parity("p", &t(256, DXT1, 9), &valve).is_some_and(|x| x.1.contains("block artefacts")));
+    assert!(rules::texture_parity("p", &t(128, BGRA8888, 8), &valve).is_some_and(|x| x.1.contains("blurs") && !x.1.contains("mips")));
+    assert!(rules::texture_parity("p", &t(512, BGRA8888, 1), &valve).is_some_and(|x| x.1.contains("1 mips, Valve's 9")));
+}
+
+#[test]
 fn m135_silent_on_a_morph_atlas_shipped_with_its_model() {
     // Real case (6871, a third skin): a replaced face's morph atlas is 186x186 where Valve's is 388x388, because the
     // compiler packs that model's own morph targets. Shipped with the model it is right; alone it is Valve's model
