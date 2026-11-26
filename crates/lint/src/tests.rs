@@ -622,6 +622,23 @@ fn m063_event_quieter_or_removed() {
 }
 
 #[test]
+fn m063_reads_only_the_keys_that_set_how_far_a_sound_carries() {
+    // Real keys from Valve's 160 event files (6871). Where a sound folds to mono, whether a distance filter colours it
+    // and how far a limiter counts instances name a distance but are not reach: changing or adding them hides no cue.
+    let valve = kv("{ Lash.Cast = { volume = 0.0 mono_downmix_min_distance = 400.0 distance_lpf_on = 1.0 limiter_global_event_distance_max = 2000.0 volume_falloff_max = 3000.0 } }");
+    let ours = kv("{ Lash.Cast = { volume = 0.0 mono_downmix_min_distance = 100.0 mono_downmix_max_distance = 300.0 distance_lpf_on = 0.0 limiter_global_event_distance_max = 500.0 volume_falloff_max = 3000.0 } }");
+    let (less, _) = deep::sound_events(&ours, &valve, &policy::DEFAULT, &|_| None);
+    assert!(less.is_empty(), "{less:?}");
+    // the true catches still fire: a shorter falloff, a cut-off added, a falloff curve dropped, occlusion sooner
+    let valve = kv("{ Lash.Cast = { volume = 0.0 volume_falloff_max = 3000.0 volume_falloff_curve_db = [ 0.0, -6.0 ] occlusion_radius = 40.0 } }");
+    let ours = kv("{ Lash.Cast = { volume = 0.0 volume_falloff_max = 1500.0 cull_at_distance = 1000.0 occlusion_radius = 10.0 } }");
+    let (less, _) = deep::sound_events(&ours, &valve, &policy::DEFAULT, &|_| None);
+    for want in ["volume_falloff_max 1500", "cull_at_distance added", "volume_falloff_curve_db removed", "occlusion_radius 10"] {
+        assert!(less.iter().any(|l| l.contains(want)), "{want}: {less:?}");
+    }
+}
+
+#[test]
 fn m063_sound_file_shortened() {
     let snd = "sounds/abilities/lash/a1_ground_strike/lash_ground_strike_impact.vsnd_c";
     let ctrl = |dur: f64, peak: f64| {

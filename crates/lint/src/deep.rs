@@ -261,9 +261,23 @@ pub fn vsnd_refs(v: &Value) -> Vec<String> {
     out
 }
 
+/// Whether a sound event key sets how far the sound carries. Valve's 160 event files (6871) use the falloff family
+/// (`volume_falloff_min`, `_max`, `_floor`, each also per team, opponent, neutral and player; the falloff curves and
+/// whether the curve editor drives them), two cut-offs (`cull_at_distance`, `max_distance_recipient_filter`) and how a
+/// wall muffles it (`occlusion_radius`, `occlusion_volume_blend_distance_min` and `_max`). Other keys that name a
+/// distance set something else: where a sound folds to mono (`mono_downmix_min_distance`), whether a distance filter
+/// colours it (`distance_lpf_on`), how far a limiter counts instances (`limiter_global_event_distance_max`).
+const REACH_ORDERED: &[&str] = &["volume_falloff_min", "volume_falloff_max", "volume_falloff_floor", "cull_at_distance", "max_distance_recipient_filter", "occlusion_radius", "occlusion_volume_blend_distance"];
+
 fn is_reach_key(k: &str) -> bool {
+    k.to_ascii_lowercase().starts_with("volume_falloff_") || reach_is_ordered(k)
+}
+
+/// A reach key whose number is a distance or a floor, so a smaller one carries less far; the falloff curves and the
+/// editor switch are judged by being there or not.
+fn reach_is_ordered(k: &str) -> bool {
     let k = k.to_ascii_lowercase();
-    ["distance", "falloff", "radius", "range"].iter().any(|w| k.contains(w))
+    REACH_ORDERED.iter().any(|p| k.starts_with(p))
 }
 
 /// The texture slots a compiled material sets (`m_textureParams[].m_name`, `g_tColor` and the like), sorted.
@@ -395,7 +409,7 @@ pub fn sound_events(ours: &Value, valve: &Value, fp: &crate::policy::FairPlay, e
                 continue;
             }
             if is_reach_key(k) {
-                if let (Some(a), Some(b)) = (num(oe, k), num(ve, k)) {
+                if let (true, Some(a), Some(b)) = (reach_is_ordered(k), num(oe, k), num(ve, k)) {
                     if a < b - 1e-3 {
                         less.push(format!("{name}: {k} {a}, Valve's {b}"));
                     } else if a > b + 1e-3 {
