@@ -16,6 +16,7 @@ Each release's entry says whether the lint rules, the grading rubric or the buil
 
 ### Other changes
 
+- `magician install --status --json`: the ledger as one document (`magician.install-status/1`: the build, whether the addons search path is there, the backup, and each pak's name, crc, owner, state and the name it had before another tool renamed it), for tools that read what is installed. `--json` on an install itself is refused.
 - No perceptual loudness rule for voices: measured first on Valve's own voices (400 lines two heroes share, EBU R128 against the 50 ms envelope peak lint compares), a quarter of the pairs whose peaks agree within 1.5 dB differ by more than 1.5 LU, and 3 to 5% by more than 3 LU, so a rule at those limits would fire on Valve against Valve. The measurement is in the engine reference.
 - `build` and `release` say before compiling when a model document replaces a Valve model that carries distance fields and asks for none (a document patched from a decompile), with how many fields it drops; M142 said it only after. A document that has a `DistanceFieldList` already compiled against a gameinfo that allows it, so a skin's own build need not compile it first. The engine reference now holds the distance-field authoring facts.
 - An in-game session cuts a contact sheet for a turntable or an orbit shot frame by frame (`@turntable`, `orbit.py`: `<tag>_<degrees>.png`), beside the sheets for bursts and films; before, those views had to be opened one by one. `capture.py sheet --prefix` sheets one such sequence.

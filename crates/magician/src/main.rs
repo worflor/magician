@@ -224,7 +224,10 @@ Every command:
   magician install <.../maps/ui/hero_prefabs/<hero>.vpk>
                                                 a UI scene map goes to addons/maps/ui/hero_prefabs/ (same ledger and
                                                 backup); nothing else under maps/ installs
-  magician install --status                     show the search path, backups and what we installed
+  magician install --status [--json]            show the search path, backups and what we installed; --json as
+                                                one document (magician.install-status/1: the build, whether the
+                                                addons search path is there, the backup, each pak's name, crc,
+                                                owner and state), for tools that read the ledger
   magician uninstall <pakNN_dir.vpk> [--force] [--holder NAME] [--ignore-game]
                                                 remove a VPK we installed (never touches files we didn't, nor one whose
                                                 bytes changed since, unless --force; a pak another tool renamed is
@@ -2766,8 +2769,42 @@ fn cmd_install(args: &[String]) -> R {
     let game = game_dir(args)?;
     let build = game_build(&game)?;
     let gi_text = std::fs::read_to_string(ip.gameinfo()).map_err(|e| format!("{}: {e}", ip.gameinfo().display()))?;
+    if json_mode() && !args.iter().any(|a| a == "--status") {
+        return Err(Stop::Usage("`magician install` has a --json form only with --status".into()));
+    }
     if args.iter().any(|a| a == "--status") {
         let has = install::add_addons_search_path(&gi_text)?.is_none();
+        if json_mode() {
+            let mut ledger = install::read_installed(&ip.ledger());
+            let moved = install::reconcile(&mut ledger, &ip.addons());
+            let rows: Vec<String> = ledger
+                .iter()
+                .map(|r| {
+                    let present = ip.addons().join(&r.name).exists();
+                    let was = moved.iter().find(|(_, new)| *new == r.name).map(|(old, _)| old.as_str());
+                    jsonout::Obj::new()
+                        .str("name", &r.name)
+                        .str("crc", &r.crc)
+                        .str("owner", &r.owner)
+                        .str("state", if present { "installed" } else { "missing" })
+                        .opt_str("renamed_from", was)
+                        .build()
+                })
+                .collect();
+            let backup = ip.backup(&build);
+            let backup = backup.exists().then(|| backup.display().to_string());
+            outln!(
+                "{}",
+                jsonout::Obj::new()
+                    .str("schema", "magician.install-status/1")
+                    .str("build", &build)
+                    .bool("addons_search_path", has)
+                    .opt_str("backup", backup.as_deref())
+                    .raw("paks", jsonout::arr(rows))
+                    .build()
+            );
+            return Ok(ExitCode::SUCCESS);
+        }
         say!("build {build}: addons search path {}", if has { "present" } else { "MISSING (Steam reset gameinfo.gi?)" });
         say!("backup: {}", if ip.backup(&build).exists() { ip.backup(&build).display().to_string() } else { "none for this build".into() });
         let mut ledger = install::read_installed(&ip.ledger());

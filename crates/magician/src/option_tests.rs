@@ -94,7 +94,10 @@ fn an_option_borrowed_from_another_command_is_refused_naming_the_ones_that_take_
         assert!(e.contains(" is not an option of `magician ") && e.contains(said) && e.contains("lists the ones it takes"), "{line}: {e}");
     }
     // the wording a command without a JSON form has always had
-    assert_eq!(check("install PAK --json").unwrap_err(), format!("`magician install` has no --json form; it is available on {}", cli::JSON_COMMANDS.join(", ")));
+    assert_eq!(check("uninstall PAK --json").unwrap_err(), format!("`magician uninstall` has no --json form; it is available on {}", cli::JSON_COMMANDS.join(", ")));
+    // install has one, for its ledger: `install --status --json` passes the option check (cmd_install refuses it
+    // without --status)
+    assert!(check("install --status --json").is_ok());
 }
 
 #[test]
