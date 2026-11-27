@@ -1,7 +1,7 @@
 //! The text files the CLI reads, on hostile input: a scene patch (downloaded with a mod), the install ledger (other
 //! tools rename and rewrite the addons folder), `gameinfo.gi`, the game lock's JSON, the build lock, `mod.toml`'s
 //! proven line as `prove` rewrites it, a rig sidecar, `magician.exclude`, the config file, Steam's library list, a
-//! process's command line (the seat check on Linux), the game's hero table and a hero's name as a person types it,
+//! process's command line (the seat check on Linux), `gameinfo.gi` as doctor reads it against the stock file, the game's hero table and a hero's name as a person types it,
 //! a `mod.toml` as discovery reads it and as `init` writes it, and a mod site's zip as `init` takes its paks out of
 //! it. Each must read or refuse, never panic, and where
 //! the CLI writes the file back, what it writes reads back the same. See `crates/fuzz`.
@@ -43,6 +43,9 @@ fn gameinfo_edits() {
                 assert_eq!(install::add_addons_search_path(&new), Ok(None), "the edit is idempotent:\n{new}");
             }
         }
+        // doctor reads it against the stock file: any text reads, and against itself it changes nothing
+        assert_eq!(crate::gameinfo::diff(t, t), crate::gameinfo::Diff::default());
+        let _ = crate::gameinfo::diff(t, GAMEINFO);
     });
 }
 

@@ -47,6 +47,49 @@ fn on_path(name: &Path) -> Option<PathBuf> {
     std::env::split_paths(&std::env::var_os("PATH")?).find_map(|d| exts.iter().map(|e| d.join(format!("{}{e}", name.display()))).find(|p| p.is_file()))
 }
 
+/// The stock `gameinfo.gi` Magician kept for a build (`install`'s backup before its first edit): this build's, else the
+/// newest of an earlier build, with the build it is of.
+pub fn stock_gameinfo(citadel: &Path, build: Option<&str>) -> Option<(String, PathBuf)> {
+    let want: Option<u64> = build.and_then(|b| b.parse().ok());
+    let mut found: Vec<(u64, PathBuf)> = std::fs::read_dir(citadel)
+        .ok()?
+        .flatten()
+        .filter_map(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            let b: u64 = n.strip_prefix("gameinfo.gi.magician-backup-")?.parse().ok()?;
+            want.is_none_or(|w| b <= w).then(|| (b, e.path()))
+        })
+        .collect();
+    found.sort();
+    found.pop().map(|(b, p)| (b.to_string(), p))
+}
+
+/// The game's `gameinfo.gi` against the build's stock file (`gameinfo.rs`): its SearchPaths, and the sections a config
+/// must not change.
+fn gameinfo_check(citadel: &Path, build: Option<&str>) -> Check {
+    let Ok(now) = std::fs::read_to_string(citadel.join("gameinfo.gi")) else { return c("gameinfo", State::Skip, "gameinfo.gi could not be read", None) };
+    let Some((of, stock)) = stock_gameinfo(citadel, build) else {
+        return c("gameinfo", State::Skip, "no stock gameinfo.gi on record to compare with (the first `magician install` on a build keeps one)", None);
+    };
+    let Ok(st) = std::fs::read_to_string(&stock) else { return c("gameinfo", State::Skip, format!("{} could not be read", stock.display()), None) };
+    let older = if build.is_some_and(|b| b != of) { format!(" (build {of}'s; this build's is not on record)") } else { String::new() };
+    let d = crate::gameinfo::diff(&now, &st);
+    let mut said = Vec::new();
+    if !d.missing.is_empty() {
+        said.push(format!("SearchPaths lacks {} of the stock file{older}: a block pasted from an older guide or another manager, so what those paths mount does not load", d.missing.iter().map(|l| format!("`{l}`")).collect::<Vec<_>>().join(", ")));
+    }
+    if !d.added.is_empty() {
+        said.push(format!("SearchPaths adds {} beside Magician's addons mount (another manager's, or a pasted block)", d.added.iter().map(|l| format!("`{l}`")).collect::<Vec<_>>().join(", ")));
+    }
+    if !d.restricted.is_empty() {
+        said.push(format!("{} differ from the stock file{older}: a party with such a change is refused matchmaking ('has unsupported changes', a community report, UNVERIFIED here)", d.restricted.join(", ")));
+    }
+    if said.is_empty() {
+        return c("gameinfo", State::Ok, format!("as the stock file{older}, with the addons mount; no section a config must not touch is changed"), None);
+    }
+    c("gameinfo", State::Todo, said.join("; "), Some(format!("verify the game's files in Steam (it puts the stock file back), then `magician install` mounts addons again; the stock file is {}", stock.display())))
+}
+
 /// Every check, in the order a new machine would meet them. `args` are the command's (`--game`, `--csdk`, `--vrf`,
 /// `--policy`, `--mod`).
 pub fn checks(args: &[String]) -> Vec<Check> {
@@ -96,6 +139,7 @@ pub fn checks(args: &[String]) -> Vec<Check> {
             Ok(Some(_)) => out.push(c("mounted", State::Todo, "gameinfo.gi does not load citadel/addons (a game update resets it)", Some("the next `magician install` adds it, with a backup".into()))),
             Err(e) => out.push(c("mounted", State::Fail, format!("{}: {e}", gi.display()), Some("verify the game's files in Steam".into()))),
         }
+        out.push(gameinfo_check(&g.path.join("citadel"), build.as_deref()));
         let state = match install::game_running() {
             Ok(true) => {
                 let holder = std::fs::read_to_string(paths::game_lock().path).ok().and_then(|t| install::lock_holder(&t));

@@ -444,7 +444,7 @@ def t_build(a):
 def t_install_status(a):
     r = run_magician("install_status", INSTALL_STATUS_ARGS, a.get("timeout"))
     fail_unless_ran(r, "install_status")
-    out = {"ok": r["exit_code"] == 0, "build": None, "search_path": None, "backup": None, "installed": [], "run": run_meta(r)}
+    out = {"ok": r["exit_code"] == 0, "build": None, "search_path": None, "backup": None, "installed": [], "shared_paths": [], "run": run_meta(r)}
     for l in r["text"].splitlines():
         m = re.match(r"^build (\S+?): (.*)$", l)
         if m:
@@ -452,6 +452,10 @@ def t_install_status(a):
         m = re.match(r"^backup: (.*)$", l)
         if m:
             out["backup"] = m.group(1)
+        # which installed paks hold the same paths, and the one the game reads them from
+        m = re.match(r"^shared paths: (.*)$", l)
+        if m and not m.group(1).startswith("none"):
+            out["shared_paths"].append(m.group(1))
         m = re.match(r"^\s+(\S+)\s+crc (\w+)\s+for (.*?)\s+(installed|\S.*)$", l)
         if m:
             out["installed"].append({"file": m.group(1), "crc": m.group(2), "mod": None if m.group(3) == "?" else m.group(3), "state": m.group(4)})
@@ -614,8 +618,9 @@ TOOLS = [
               "Does NOT install into the game. Default timeout 1800 s.",
      schema({"addon": {"type": "string"}, "out": {"type": "string", "description": "Output pakNN_dir.vpk path."},
              "no_compile": {"type": "boolean"}, "timeout": TIMEOUT_PROP}, ["addon", "out"]), t_build),
-    ("install_status", "Read-only: the game's addons search path, gameinfo backup, and the VPKs Magician installed "
-                       "(file, crc, owning mod). Cannot install or uninstall.",
+    ("install_status", "Read-only: the game's addons search path, gameinfo backup, the VPKs Magician installed "
+                       "(file, crc, owning mod), and the paths installed paks share with the one the game reads. "
+                       "Cannot install or uninstall.",
      schema({"timeout": TIMEOUT_PROP}, []), t_install_status),
     ("refs", "A compiled resource's block list and dependencies, each marked as resolving inside the VPK or not.",
      schema({"vpk": VPK_PROP, "path": {"type": "string"}, "timeout": TIMEOUT_PROP}, ["vpk", "path"]), t_refs),

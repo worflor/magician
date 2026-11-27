@@ -52,6 +52,7 @@ mod witness;
 mod doctor;
 mod frontdoor;
 mod gamefiles;
+mod gameinfo;
 mod heroes;
 mod initcmd;
 mod install;
@@ -232,10 +233,12 @@ Every command:
   magician install <.../maps/ui/hero_prefabs/<hero>.vpk>
                                                 a UI scene map goes to addons/maps/ui/hero_prefabs/ (same ledger and
                                                 backup); nothing else under maps/ installs
-  magician install --status [--json]            show the search path, backups and what we installed; --json as
-                                                one document (magician.install-status/1: the build, whether the
-                                                addons search path is there, the backup, each pak's name, crc,
-                                                owner and state), for tools that read the ledger
+  magician install --status [--json]            show the search path, backups, what we installed, and the paths two
+                                                installed paks share with the one the game reads them from (the
+                                                lowest number); --json as one document (magician.install-status/1:
+                                                the build, whether the addons search path is there, the backup, each
+                                                pak's name, crc, owner and state, shared_paths, unread_paks), for
+                                                tools that read the ledger
   magician uninstall <pakNN_dir.vpk> [--force] [--holder NAME] [--ignore-game]
                                                 remove a VPK we installed (never touches files we didn't, nor one whose
                                                 bytes changed since, unless --force; a pak another tool renamed is
@@ -1458,8 +1461,8 @@ fn cmd_index(args: &[String]) -> R {
     let t = std::time::Instant::now();
     let s = gamefiles::build_index(&game, &out, &build, &grade_sources(args)?)?;
     say!(
-        "build {build}: {} compiled files, {} references, {} owners, {} files with users -> {} ({:.0}s)",
-        s.files, s.edges, s.owners, s.targets, out.display(), t.elapsed().as_secs_f64()
+        "build {build}: {} compiled files, {} references, {} owners, {} files with users -> {}; {} particles nothing names -> {} ({:.0}s)",
+        s.files, s.edges, s.owners, s.targets, out.display(), s.unreached, gamefiles::unreached_path(&out).display(), t.elapsed().as_secs_f64()
     );
     Ok(ExitCode::SUCCESS)
 }
@@ -2919,6 +2922,18 @@ fn cmd_install(args: &[String]) -> R {
                 .collect();
             let backup = ip.backup(&build);
             let backup = backup.exists().then(|| backup.display().to_string());
+            let (shared, unread) = install::collisions(&ip.addons());
+            let shared: Vec<String> = shared
+                .iter()
+                .map(|c| {
+                    jsonout::Obj::new()
+                        .raw("paks", jsonout::arr(c.paks.iter().map(|p| jsonout::s(p))))
+                        .str("wins", &c.paks[0])
+                        .int("paths", c.paths.len() as i64)
+                        .raw("sample", jsonout::arr(c.paths.iter().take(5).map(|p| jsonout::s(p))))
+                        .build()
+                })
+                .collect();
             outln!(
                 "{}",
                 jsonout::Obj::new()
@@ -2927,6 +2942,8 @@ fn cmd_install(args: &[String]) -> R {
                     .bool("addons_search_path", has)
                     .opt_str("backup", backup.as_deref())
                     .raw("paks", jsonout::arr(rows))
+                    .raw("shared_paths", jsonout::arr(shared))
+                    .raw("unread_paks", jsonout::arr(unread.iter().map(|p| jsonout::s(p))))
                     .build()
             );
             return Ok(ExitCode::SUCCESS);
@@ -2939,6 +2956,28 @@ fn cmd_install(args: &[String]) -> R {
             let present = ip.addons().join(&r.name).exists();
             let was = moved.iter().find(|(_, new)| *new == r.name).map(|(old, _)| format!(" (the ledger says {old}: renamed by another tool)")).unwrap_or_default();
             say!("  {}  crc {}  for {}  {}{was}", r.name, r.crc, r.owner, if present { "installed" } else { "missing" });
+        }
+        // what the installed paks hold in common: the game reads each path from the lowest pak number
+        let ledger = install::read_installed(&ip.ledger());
+        let who = |p: &str| ledger.iter().find(|r| r.name == p).map_or("not installed by magician".to_string(), |r| format!("for {}", r.owner));
+        let (shared, unread) = install::collisions(&ip.addons());
+        if shared.is_empty() {
+            say!("shared paths: none (no two installed paks hold the same file)");
+        }
+        for c in &shared {
+            let paks: Vec<String> = c.paks.iter().map(|p| format!("{p} ({})", who(p))).collect();
+            let sample: Vec<&str> = c.paths.iter().take(3).map(String::as_str).collect();
+            let more = if c.paths.len() > 3 { format!(" and {} more", c.paths.len() - 3) } else { String::new() };
+            say!(
+                "shared paths: {} hold {} of the same paths ({}{more}): the game reads them from {}, the lowest number, and the others' copies do not show; move one with `--as`, or leave it if that is the order you want",
+                paks.join(" and "),
+                c.paths.len(),
+                sample.join(", "),
+                c.paks[0]
+            );
+        }
+        for p in &unread {
+            say!("shared paths: {p} does not open as a VPK, so what it holds was not compared");
         }
         return Ok(ExitCode::SUCCESS);
     }

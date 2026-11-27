@@ -20,7 +20,7 @@ magician                  # the game it found, the mod of this folder, and what 
 magician doctor --json    # every part of the setup (game, build, baseline, viewer, CSDK, toolkit, the mod here): ok, todo, skip or fail, each with its fix
 magician paths            # where the game, reference folder, CSDK, viewer, mods folder and game lock resolved to, and from what
 magician help <command>   # one command's usage; `magician help` lists them all
-magician install --status # what is installed, by which mod, and whether the game still mounts it (read-only)
+magician install --status # what is installed, by which mod, whether the game still mounts it, and which paks share paths (read-only)
 ```
 
 If `doctor` fails `game`, stop and say so: nearly everything judges a mod against the installed game. Override with `--game DIR` or `DEADLOCK_GAME` only if the user gave you the location.

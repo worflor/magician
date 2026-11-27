@@ -273,6 +273,45 @@ pub fn is_pak_name(n: &str) -> bool {
     n.len() == 13 && n.starts_with("pak") && n.ends_with("_dir.vpk") && b[3].is_ascii_digit() && b[4].is_ascii_digit() && &n[3..5] != "00"
 }
 
+/// Paths that two or more installed paks both hold. The game mounts `addons/` as one search path and reads a path
+/// from the pak with the lowest number, so each group's first pak wins and the others' copies of those paths are
+/// never seen. One group per set of paks, its paths sorted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Collision {
+    /// The paks that share these paths, lowest number (the winner) first.
+    pub paks: Vec<String>,
+    pub paths: Vec<String>,
+}
+
+/// Every set of `pakNN_dir.vpk` in `addons` that share paths, largest first. A pak that does not open is left out
+/// (`unread` names it).
+pub fn collisions(addons: &Path) -> (Vec<Collision>, Vec<String>) {
+    let mut names: Vec<String> = std::fs::read_dir(addons).map(|d| d.flatten().filter_map(|e| e.file_name().to_str().map(str::to_string)).filter(|n| is_pak_name(n)).collect()).unwrap_or_default();
+    names.sort();
+    let mut by_path: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    let mut unread = Vec::new();
+    for n in &names {
+        match vpk::Vpk::open(addons.join(n)) {
+            Ok(v) => {
+                for e in &v.entries {
+                    by_path.entry(e.path.to_ascii_lowercase()).or_default().push(n.clone());
+                }
+            }
+            Err(_) => unread.push(n.clone()),
+        }
+    }
+    let mut groups: std::collections::BTreeMap<Vec<String>, Vec<String>> = Default::default();
+    for (p, mut paks) in by_path {
+        paks.dedup();
+        if paks.len() >= 2 {
+            groups.entry(paks).or_default().push(p);
+        }
+    }
+    let mut out: Vec<Collision> = groups.into_iter().map(|(paks, paths)| Collision { paks, paths }).collect();
+    out.sort_by(|a, b| b.paths.len().cmp(&a.paths.len()).then(a.paks.cmp(&b.paks)));
+    (out, unread)
+}
+
 pub const SCENE_DIR: &str = "maps/ui/hero_prefabs";
 
 /// Where an install goes, relative to `addons/`.
@@ -912,6 +951,28 @@ mod tests {
         let p = d.join(name);
         vpk::write(&p, &[("particles/x.vpcf_c".to_string(), body.as_bytes().to_vec())]).unwrap();
         p
+    }
+
+    #[test]
+    fn installed_paks_that_share_paths_and_which_wins() {
+        // Real shape (an addons folder with a skin and a voice pak for one hero, and a second skin of it): the lower
+        // number is the one the game reads
+        let (d, ip) = scratch("collisions");
+        let a = ip.addons();
+        std::fs::create_dir_all(&a).unwrap();
+        let put = |n: &str, paths: &[&str]| vpk::write(a.join(n), &paths.iter().map(|p| (p.to_string(), b"x".to_vec())).collect::<Vec<_>>()).unwrap();
+        put("pak10_dir.vpk", &["models/heroes_wip/lash/lash.vmdl_c", "models/heroes_wip/lash/materials/lash_body.vmat_c"]);
+        put("pak12_dir.vpk", &["models/heroes_wip/lash/lash.vmdl_c", "models/heroes_wip/lash/materials/lash_body.vmat_c", "sounds/vo/lash/lash_select_01.vsnd_c"]);
+        put("pak06_dir.vpk", &["sounds/vo/lash/lash_select_01.vsnd_c"]);
+        put("pak30_dir.vpk", &["panorama/images/x_psd.vtex_c"]);
+        std::fs::write(a.join("pak40_dir.vpk"), b"not a vpk").unwrap();
+        let (c, unread) = collisions(&a);
+        assert_eq!(c, vec![
+            Collision { paks: vec!["pak10_dir.vpk".into(), "pak12_dir.vpk".into()], paths: vec!["models/heroes_wip/lash/lash.vmdl_c".into(), "models/heroes_wip/lash/materials/lash_body.vmat_c".into()] },
+            Collision { paks: vec!["pak06_dir.vpk".into(), "pak12_dir.vpk".into()], paths: vec!["sounds/vo/lash/lash_select_01.vsnd_c".into()] },
+        ]);
+        assert_eq!(unread, vec!["pak40_dir.vpk"]);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
