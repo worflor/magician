@@ -106,6 +106,7 @@ pub fn cmd_check(args: &[String]) -> R {
     };
     let hint = progress::start(&format!("grading {} ({} lint, footprint)", ctx.label(), if light { "light" } else { "deep" }));
     let graded = if ctx.hero().is_some() { Some(grade_run(&grade_args)) } else { None };
+    let mut stale: Vec<String> = Vec::new();
     drop(hint);
     match graded {
         Some(Ok(g)) => {
@@ -116,8 +117,8 @@ pub fn cmd_check(args: &[String]) -> R {
             items.push(Item {
                 what: "lint",
                 state: lint_state,
-                text: format!("{} error(s), {} warning(s), {} allowed ({}; fair play {})", g.lint_errors, g.lint_warnings, g.lint_allowed, g.lint_depth, match g.fair_play { "fail" => format!("{}, not safe for ranked", style::mark("NSFR")), "unknown" => format!("{}, not checked", style::mark("FP?")), x => style::mark(x) }),
-                json: jsonout::Obj::new().str("state", lint_state).int("errors", g.lint_errors as i64).int("warnings", g.lint_warnings as i64).int("allowed", g.lint_allowed as i64).str("depth", g.lint_depth).str("fair_play", g.fair_play).build(),
+                text: format!("{} error(s), {} warning(s), {} allowed{} ({}; fair play {})", g.lint_errors, g.lint_warnings, g.lint_allowed, if g.lint_stale.is_empty() { String::new() } else { format!(", {} stale", g.lint_stale.len()) }, g.lint_depth, match g.fair_play { "fail" => format!("{}, not safe for ranked", style::mark("NSFR")), "unknown" => format!("{}, not checked", style::mark("FP?")), x => style::mark(x) }),
+                json: jsonout::Obj::new().str("state", lint_state).int("errors", g.lint_errors as i64).int("warnings", g.lint_warnings as i64).int("allowed", g.lint_allowed as i64).strs("stale", &g.lint_stale).str("depth", g.lint_depth).str("fair_play", g.fair_play).build(),
             });
             items.push(Item {
                 what: "grade",
@@ -125,6 +126,7 @@ pub fn cmd_check(args: &[String]) -> R {
                 text: format!("{} for {}; release gate {}", style::label(&g.label), g.hero, if g.gate_passes { "pass".to_string() } else { format!("blocked: {}", g.blockers.join("; ")) }),
                 json: jsonout::Obj::new().str("state", if g.gate_passes { "ok" } else { "blocked" }).str("label", &g.label).bool("gate", g.gate_passes).strs("blockers", &g.blockers).build(),
             });
+            stale = g.lint_stale.clone();
             label = Some(g.label.clone());
             gate = Some((g.gate_passes, g.blockers.clone()));
             grade_json = g.json.trim().to_string();
@@ -190,6 +192,9 @@ pub fn cmd_check(args: &[String]) -> R {
     let fp: Vec<&Tally> = tally.iter().filter(|t| t.severity != Severity::Info && fair(t) && !advisory(t)).collect();
     if !fp.is_empty() {
         by_rule.push(("fair play", tally_line(&fp)));
+    }
+    if !stale.is_empty() {
+        by_rule.push(("stale", format!("{} (an allowance no pak of the mod uses: remove it)", stale.join("; "))));
     }
     let adv: Vec<&Tally> = tally.iter().filter(|t| t.severity != Severity::Info && fair(t) && advisory(t)).collect();
     if !adv.is_empty() {

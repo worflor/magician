@@ -41,7 +41,7 @@ pub fn lint_facts(findings: Vec<Finding>, allowances: &[Allowance], depth: Depth
     for f in findings.iter().filter(|f| f.severity == Severity::Error && !is_compliance(f.code, &f.message)) {
         *errors_by_code.entry(f.code).or_default() += 1;
     }
-    let applied = apply(findings, allowances, matches!(depth, Depth::Deep));
+    let applied = apply(findings, allowances, matches!(depth, Depth::Deep), None);
     let count = |c: &str| applied.kept.iter().filter(|f| f.code == c).count();
     let mut allowed_by_code = BTreeMap::new();
     for (f, _) in &applied.allowed {

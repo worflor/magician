@@ -164,7 +164,7 @@ pub fn judge(findings: &[Finding], allowances: &[Allowance], depth: Depth, appli
     let checks_run: Vec<&'static str> = wanted.iter().map(|(c, _)| *c).filter(|c| !not_run.iter().any(|n| n.as_str() == *c)).collect();
 
     let fair: Vec<Finding> = findings.iter().filter(|f| is_fair_play(f.code, &f.message)).cloned().collect();
-    let applied = apply(fair, allowances, deep);
+    let applied = apply(fair, allowances, deep, None);
     let never = |c: &str| p.compliance.never.iter().any(|x| x == c);
     let advisory = |c: &str| p.compliance.advisory.iter().any(|x| x == c);
     let item = |f: &Finding, reason: Option<String>, measures: Vec<Measure>, why: &str| Item {

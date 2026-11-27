@@ -59,7 +59,11 @@ fn matches(a: &Allowance, f: &Finding) -> bool {
 }
 
 /// `deep`: whether the lint ran the deep mesh rules; without them their allowances are neither used nor stale.
-pub fn apply(findings: Vec<Finding>, allowances: &[Allowance], deep: bool) -> Applied {
+/// `shipped`: the files the run judged, when it judged one pak of a mod that may have several. An allowance for a file
+/// that pak does not ship is about another of the mod's paks (a skin's music pak beside its model pak) or a file the
+/// mod no longer has, and one pak cannot tell which: it is neither used nor stale there. `check` and `grade` judge
+/// every pak of the mod at once and pass `None`, so an allowance no pak can use is stale there.
+pub fn apply(findings: Vec<Finding>, allowances: &[Allowance], deep: bool, shipped: Option<&std::collections::HashSet<&str>>) -> Applied {
     let mut used = vec![false; allowances.len()];
     let mut kept = Vec::new();
     let mut allowed = Vec::new();
@@ -75,7 +79,7 @@ pub fn apply(findings: Vec<Finding>, allowances: &[Allowance], deep: bool) -> Ap
     let stale = allowances
         .iter()
         .zip(used)
-        .filter(|(a, u)| !u && (deep || !crate::mesh::deep_only(&a.code)))
+        .filter(|(a, u)| !u && (deep || !crate::mesh::deep_only(&a.code)) && (a.path == "*" || shipped.is_none_or(|s| s.contains(a.path.as_str()))))
         .map(|(a, _)| a.clone())
         .collect();
     Applied { kept, allowed, stale }
@@ -94,7 +98,7 @@ mod tests {
     #[test]
     fn allowance_moves_a_finding_and_keeps_its_reason() {
         let a = parse("M061\tparticles/x.vpcf_c\tsparks.vmat_c\tplumes replace sparks (feather duster)\n").unwrap();
-        let r = apply(vec![f("M061", "particles/x.vpcf_c", "original referenced 'materials/particle/sparks.vmat_c'")], &a, true);
+        let r = apply(vec![f("M061", "particles/x.vpcf_c", "original referenced 'materials/particle/sparks.vmat_c'")], &a, true, None);
         assert!(r.kept.is_empty());
         assert_eq!(r.allowed.len(), 1);
         assert!(r.allowed[0].1.contains("feather duster"));
@@ -112,6 +116,7 @@ mod tests {
             ],
             &a,
             false,
+            None,
         );
         assert_eq!(r.kept.len(), 3);
         assert_eq!(r.stale.len(), 1, "an allowance that matched nothing is stale");
@@ -126,7 +131,7 @@ mod tests {
     #[test]
     fn errors_can_be_allowed_but_stay_visible() {
         let a = parse("M030\t*\t*\tknown engine-internal path verified in-game on 6861\n").unwrap();
-        let r = apply(vec![f("M030", "a.vmat_c", "needs 'x'")], &a, true);
+        let r = apply(vec![f("M030", "a.vmat_c", "needs 'x'")], &a, true, None);
         assert_eq!(r.allowed[0].0.severity, Severity::Error, "an allowed error is still recorded as an error");
     }
 
@@ -135,8 +140,21 @@ mod tests {
         let a = parse("M140	m.vmdl_c	*	the bell skirt's flare is the silhouette
 M123	m.vmdl_c	*	budget accepted for the lace hem
 ").unwrap();
-        let light = apply(Vec::new(), &a, false);
+        let light = apply(Vec::new(), &a, false, None);
         assert_eq!(light.stale.iter().map(|x| x.code.as_str()).collect::<Vec<_>>(), ["M123"], "M140 didn't run; M123 did");
-        assert_eq!(apply(Vec::new(), &a, true).stale.len(), 2, "a deep lint judges both");
+        assert_eq!(apply(Vec::new(), &a, true, None).stale.len(), 2, "a deep lint judges both");
+    }
+
+    #[test]
+    fn an_allowance_for_a_file_another_pak_ships_is_not_stale_in_this_one() {
+        // Real case (6871, a third skin): its model's M140 allowance read stale when lint ran over its music pak,
+        // which ships no model. Judged over the mod's paks together (no `shipped`), an allowance no pak uses is stale.
+        let a = parse("M140	models/x.vmdl_c	beyond	the nightcap's scroll, approved
+").unwrap();
+        let music: std::collections::HashSet<&str> = ["sounds/music/a.vsnd_c"].into_iter().collect();
+        assert!(apply(Vec::new(), &a, true, Some(&music)).stale.is_empty());
+        let model: std::collections::HashSet<&str> = ["models/x.vmdl_c"].into_iter().collect();
+        assert_eq!(apply(Vec::new(), &a, true, Some(&model)).stale.len(), 1, "the pak that ships the file judges it");
+        assert_eq!(apply(Vec::new(), &a, true, None).stale.len(), 1, "the mod as a whole judges it");
     }
 }

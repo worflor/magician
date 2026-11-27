@@ -151,7 +151,7 @@ fn allowances_findings_files_and_baselines() {
     let base = "# magician baseline build=6864 files=2\nmodels/a.vmdl_c\t0034b4e1\t12\nmaterials/b.vmat_c\tffffffff\t0\nmodels/heroes_wip/lash/lash.vmdl_c CRC:006711352c size:5490631\n";
     fuzz::run_text("lint-text", fuzz::DEFAULT_CASES * 2, &[allow, findings, base], |t| {
         if let Ok(a) = lint::allow::parse(t) {
-            let _ = lint::allow::apply(Vec::new(), &a, true);
+            let _ = lint::allow::apply(Vec::new(), &a, true, None);
         }
         if let Ok((d, f)) = lint::report::read(t) {
             let again = lint::report::write(&f, d, "6864", "pak10_dir.vpk");

@@ -1028,8 +1028,9 @@ impl LintOut {
     }
 }
 
-fn apply_allowances(f: Vec<lint::Finding>, allowances: &[lint::allow::Allowance], deep: bool, build: &str, vpk: &str, json_out: Option<&str>) -> Result<LintOut, Stop> {
-    let r = lint::allow::apply(f, allowances, deep);
+fn apply_allowances(f: Vec<lint::Finding>, allowances: &[lint::allow::Allowance], deep: bool, shipped: &std::collections::HashSet<String>, build: &str, vpk: &str, json_out: Option<&str>) -> Result<LintOut, Stop> {
+    let shipped: std::collections::HashSet<&str> = shipped.iter().map(String::as_str).collect();
+    let r = lint::allow::apply(f, allowances, deep, Some(&shipped));
     // A file the caller asked for and did not get is a failed run (exit 2), not a note: a release reading it would
     // otherwise report the previous run's file, or none.
     if let Some(out) = json_out {
@@ -1315,6 +1316,7 @@ pub(crate) fn lint_run(path: &Path, args: &[String]) -> Result<LintOut, Stop> {
     let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     say!("lint {} against build {} ({} files)", path.display(), base.build, files.len());
     let originals = original_refs(&files, args)?;
+    let shipped: std::collections::HashSet<String> = files.iter().map(|f| f.path.clone()).collect();
     mark("originals' references", &mut setup);
     let deep = args.iter().any(|a| a == "--deep");
     let t0 = std::time::Instant::now();
@@ -1346,7 +1348,7 @@ pub(crate) fn lint_run(path: &Path, args: &[String]) -> Result<LintOut, Stop> {
     let default_allow = flag(args, "--addon-root").map(|r| PathBuf::from(r).join("magician.allow"));
     let allowances = load_allowances(args, default_allow)?;
     let json_out = flag(args, "--json-out");
-    apply_allowances(f, &allowances, deep, &base.build, &name_for_json(path), json_out.as_deref())
+    apply_allowances(f, &allowances, deep, &shipped, &base.build, &name_for_json(path), json_out.as_deref())
 }
 
 fn name_for_json(path: &Path) -> String {
@@ -1852,6 +1854,8 @@ pub(crate) struct GradeOut {
     pub lint_errors: usize,
     pub lint_warnings: usize,
     pub lint_allowed: usize,
+    /// Allowances no pak of the mod used: each as lint words it (`line N: CODE path 'match'`).
+    pub lint_stale: Vec<String>,
     pub lint_depth: &'static str,
     /// The run's findings that no allowance accepted, fair play's included, at the severity the policy gives them.
     pub kept: Vec<lint::Finding>,
@@ -1932,7 +1936,8 @@ pub(crate) fn grade_run(args: &[String]) -> Result<GradeOut, Stop> {
     };
     let (allowances, allow_names) = grade_allowances(args, toml_path.as_deref().zip(toml.as_deref()))?;
     let lf = grade::lintfacts::lint_facts(findings.clone(), &allowances, depth);
-    let kept = lint::allow::apply(findings.clone(), &allowances, matches!(depth, lint::report::Depth::Deep)).kept;
+    let applied = lint::allow::apply(findings.clone(), &allowances, matches!(depth, lint::report::Depth::Deep), None);
+    let (kept, stale) = (applied.kept, applied.stale);
 
     // What the grade credits: every path, less files byte-identical to Valve's at the same path (they change nothing).
     let valve_files: Vec<String> = files.iter().filter(|f| base.get(&f.path).is_some_and(|b| b.crc == f.stored_crc && b.size == f.data.len() as u64)).map(|f| f.path.clone()).collect();
@@ -2050,6 +2055,7 @@ pub(crate) fn grade_run(args: &[String]) -> Result<GradeOut, Stop> {
         lint_errors: record.i.lint.errors,
         lint_warnings: record.i.lint.warnings,
         lint_allowed: record.i.lint.allowed_by_code.values().sum(),
+        lint_stale: stale.iter().map(|a| format!("line {}: {} {} '{}'", a.line, a.code, a.path, a.needle)).collect(),
         lint_depth: record.i.lint.depth.label(),
         kept,
     })
