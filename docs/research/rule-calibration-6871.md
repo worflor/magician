@@ -57,7 +57,7 @@ Removed: nothing. Every rule that spoke about Valve's construction could be meas
 - `NSFR` is spelled out once as "not safe for ranked", and `FP?` as "not checked";
 - Maid Lash's lint row went from 81 warnings to 36, of which "the pak" holds one.
 
-Still open: the `next:` line points a newcomer at `magician session qa`, which needs the in-game harness. A first-time user who only wants to know whether their pak is sound has nothing in that line to tell them they can stop at the lint row.
+Left open in this round, and closed after 0.2.1: the `next:` line pointed a newcomer at `magician session qa`, which needs the in-game harness, and nothing in it told a first-time user who only wanted to know whether their pak was sound that they could stop at the lint row. On a mod nobody has proven, with nothing in its files that breaks it, the line now says that lint is as far as the files go, that the author can stop there, and that RE-PROVE means only that nobody has seen the mod in game yet; then it offers the in-game pass.
 
 ## Allowances these changes made stale
 

@@ -55,7 +55,7 @@ The installed build number is `ClientVersion` in `<game>/citadel/steam.inf`; eve
 
 A session has a few of its own, and they are the session's alone (`magician session`, `reprove`; 5 from `update --check` is not one of them): 9 (the seat or the game is no longer this session's: nothing was done), 8 (a frozen hero), 7 (the hero never loaded), 6 (the demo ended before the film did), 5 (a game this session did not start is running).
 
-`--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release`, `rules`, `update` and `reprove` prints one JSON document (with a `schema` string) and nothing else; prefer it to reading text. Progress lines and colour appear only on a terminal, never in what you read.
+`--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release`, `rules`, `update`, `install --status` and `reprove` prints one JSON document (with a `schema` string) and nothing else; prefer it to reading text. Progress lines and colour appear only on a terminal, never in what you read.
 
 ## The loops
 
