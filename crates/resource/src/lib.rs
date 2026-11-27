@@ -15,6 +15,7 @@
 
 pub mod kv3;
 pub mod lz4;
+pub mod material;
 pub mod zstd;
 pub mod pixels;
 pub mod texture;

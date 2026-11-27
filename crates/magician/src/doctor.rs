@@ -159,11 +159,26 @@ pub fn checks(args: &[String]) -> Vec<Check> {
             if !has_rc {
                 out.push(c("csdk", State::Fail, format!("{} ({}) has no resourcecompiler.exe in a folder under game/bin", f.path.display(), f.source), Some("point it at the CSDK 13 folder that holds content/ and game/".into())));
             } else {
+                let d = crate::csdk::describe(&f.path);
                 // Valve's compiler is a Windows program: elsewhere Wine runs it (paths::wine)
                 match paths::wine() {
-                    Ok(None) => out.push(c("csdk", State::Ok, format!("{} ({})", f.path.display(), f.source), None)),
-                    Ok(Some((w, p))) => out.push(c("csdk", State::Ok, format!("{} ({}); resourcecompiler.exe runs under Wine {} ({}), prefix {} ({})", f.path.display(), f.source, w.path.display(), w.source, p.path.display(), p.source), None)),
+                    Ok(None) => out.push(c("csdk", State::Ok, format!("{} ({}): {}", f.path.display(), f.source, d.summary()), None)),
+                    Ok(Some((w, p))) => out.push(c("csdk", State::Ok, format!("{} ({}): {}; resourcecompiler.exe runs under Wine {} ({}), prefix {} ({})", f.path.display(), f.source, d.summary(), w.path.display(), w.source, p.path.display(), p.source), None)),
                     Err(e) => out.push(c("csdk", State::Todo, format!("{} ({}), but build and release can't compile: {e}", f.path.display(), f.source), Some("apt install wine64 (Debian and Ubuntu), or set MAGICIAN_WINE".into()))),
+                }
+                if let (Some(a), Some(b)) = (&d.game_build, &build) {
+                    if a != b {
+                        out.push(c("csdk-game", State::Ok, format!("the CSDK's game files are build {a}, the installed game {b}: it compiles against its own copy of the shaders and defaults"), None));
+                    }
+                }
+                // a gap Magician does not work round, said with what it breaks; the rest are in `magician csdk`
+                for g in d.open_gaps() {
+                    let fix = match g.id {
+                        "onedrive" => Some("move the CSDK out of the synced folder (and set `csdk =` to the new place)".to_string()),
+                        "asset-info" => Some("rename game/citadel/readonly_tools_asset_info.binOFF to readonly_tools_asset_info.bin".to_string()),
+                        _ => g.handled.clone(),
+                    };
+                    out.push(c("csdk-gap", State::Todo, format!("{}: {}{}", g.what, g.breaks, if g.seen { "" } else { " (community report)" }), fix));
                 }
             }
         }

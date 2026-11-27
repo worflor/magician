@@ -30,6 +30,7 @@ pub struct GameFiles {
     /// Why the shared-file rule could not run, when it could not: no index, or one in an older format.
     pub index_missing: Option<String>,
     pub particle_classes: Option<lint::deep::ParticleClasses>,
+    pub material_params: Option<lint::matparams::MaterialParams>,
     /// The archives' sizes and times: what keys cached results to this install of the game.
     pub identity: String,
     /// The addon content trees the mod was compiled from, for M032.
@@ -69,7 +70,7 @@ impl GameFiles {
             })
             .collect::<Vec<_>>()
             .join(",");
-        GameFiles { paks, users, index_missing, particle_classes: None, identity, addon_sources: None }
+        GameFiles { paks, users, index_missing, particle_classes: None, material_params: None, identity, addon_sources: None }
     }
 }
 
@@ -90,6 +91,9 @@ impl lint::Game for GameFiles {
     }
     fn particle_classes(&self) -> Option<&lint::deep::ParticleClasses> {
         self.particle_classes.as_ref()
+    }
+    fn material_params(&self) -> Option<&lint::matparams::MaterialParams> {
+        self.material_params.as_ref()
     }
     fn addon_sources(&self) -> Option<&HashSet<String>> {
         self.addon_sources.as_ref()
@@ -129,6 +133,37 @@ pub fn particle_classes(game: &Path, cache: &Path, build: &str) -> Result<lint::
     Ok(c)
 }
 
+/// The names Valve's materials set per shader (lint::matparams), from `cache` when present, else by reading every
+/// compiled material of the game once and writing the cache. One cache per build.
+pub fn material_params(game: &Path, cache: &Path, build: &str) -> Result<lint::matparams::MaterialParams, String> {
+    if let Ok(text) = std::fs::read_to_string(cache) {
+        if text.starts_with(&format!("{}\n", lint::matparams::header(build))) {
+            return Ok(lint::matparams::parse_tsv(&text));
+        }
+    }
+    say!("note: collecting the parameters Valve's materials set for build {build} (once per build) -> {}", cache.display());
+    let mut p = lint::matparams::MaterialParams::new();
+    let mut n = 0;
+    for pak in ["citadel", "core"] {
+        let Ok(v) = vpk::Vpk::open(game.join(pak).join("pak01_dir.vpk")) else { continue };
+        let mut todo: Vec<&vpk::Entry> = v.entries.iter().filter(|e| e.path.ends_with(".vmat_c")).collect();
+        todo.sort_by_key(|e| (e.archive_index, e.offset));
+        for e in todo {
+            if let Some(m) = v.read(e).ok().and_then(|d| resource::material::from_compiled(&d).ok()) {
+                lint::matparams::collect(&m, &mut p);
+                n += 1;
+            }
+        }
+    }
+    if n == 0 {
+        return Err("no game materials decoded".into());
+    }
+    if let Some(d) = cache.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    std::fs::write(cache, lint::matparams::to_tsv(&p, build)).map_err(|e| format!("{}: {e}", cache.display()))?;
+    Ok(p)
+}
 /// The format revision a users index's header names (`rev=N`): 1 for an index written before the header carried one,
 /// 0 for a file that is not an index.
 pub fn index_rev(text: &str) -> u32 {

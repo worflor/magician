@@ -15,6 +15,7 @@ pub mod corpus;
 pub mod deep;
 pub mod distfield;
 pub mod matconst;
+pub mod matparams;
 pub mod pbrcombo;
 pub mod policy;
 pub mod reach;
@@ -222,6 +223,10 @@ pub const RULES: &[Rule] = &[
         in_game: "A replaced material whose texture slot Valve leaves to an engine default (materials/default/...) now holds a one-colour texture more than half the range away from that default's value: the whole surface reads the new value instead. A Source 2 Viewer decompile prints such defaults as literal colours, often the wrong one, and the recompile bakes it in silently (a glass mask of 0 for Valve's 1 drew a summon solid with the hero invisible inside it). Valve's own file is never blamed; a slot the mod fills with a real texture is its own design." },
     Rule { code: "M149", name: "material-texture-dropped", severity: Severity::Warn,
         in_game: "A replaced material lacks a texture slot Valve's material at the same path sets (a decompile and recompile drops one it did not understand): the game's code still samples it, logs 'Texture g_tAltColor_Reveal doesn't exist in ...vmat!' and 'returning error texture', and draws the error texture wherever that slot is used. Seen in game on a published mod's bow (50 error textures in one pass, none in vanilla), which no other rule reported." },
+    Rule { code: "M150", name: "material-param-unread", severity: Severity::Warn,
+        in_game: "A material sets a feature or parameter that none of Valve's materials of the same shader sets on this build. The compiler keeps any name it is given, a typo or another shader's parameter included, and exits 0, so the setting is in the compiled file and does nothing in game. A rim-light strength is the scene's (the game's light rig), not the material's. Valve's materials are the evidence of what the shader reads: a name only one Valve material sets still counts as read." },
+    Rule { code: "M151", name: "material-param-mistyped", severity: Severity::Warn,
+        in_game: "A material stores a parameter as an integer that every one of Valve's materials of the same shader stores as a float or a vector, or the other way round. The compiler types a value by how it is written: \"1\" is an integer and \"1.0\" a float, so a float parameter written without its decimal point compiles into the integer list, where the shader, which reads the float, most likely does not find it and draws its default (the compile is measured, the effect in game UNVERIFIED; measured on CSDK 13: g_flSelfIllumScale1 \"1\" came out an integer)." },
     Rule { code: "M060", name: "model-document-replaced", severity: Severity::Info,
         in_game: "Replacing a .vmdl_c replaces the WHOLE model document: hitboxes, attachments, cloth, LODs and anim events come from your file. Run the contract check against the original." },
 ];
@@ -279,6 +284,11 @@ pub trait Game: Sync {
     /// The particle classes Valve uses in each function list across the build (cached per build). `None` when
     /// unavailable: then M083 can't run.
     fn particle_classes(&self) -> Option<&deep::ParticleClasses> {
+        None
+    }
+    /// The names Valve's materials set per shader on the build (cached per build). `None` when unavailable: then
+    /// M150 can't run.
+    fn material_params(&self) -> Option<&matparams::MaterialParams> {
         None
     }
     /// The addon content trees the mod was compiled from (relative paths, forward slashes, lowercase), when lint
@@ -860,6 +870,21 @@ fn deep_rules(input: &Input, referenced: &HashSet<String>, out: &mut Vec<Finding
             "vmat_c" => {
                 for m in pbrcombo::problems(&f.data) {
                     out.push(finding("M143", Some(p), m));
+                }
+                // M150: names no Valve material of this shader sets: the compiler kept them, the shader reads none
+                if let Some(unread) = input.game.and_then(|g| g.material_params()).and_then(|mp| resource::material::from_compiled(&f.data).ok().and_then(|m| matparams::unread(&m, mp).map(|u| (m, u)))) {
+                    let (m, unread) = unread;
+                    if !unread.is_empty() {
+                        let rim = if unread.iter().any(|n| n.to_ascii_lowercase().contains("rimlight") && !n.starts_with("g_t")) { "; a rim light's strength is the scene's, not the material's" } else { "" };
+                        out.push(finding("M150", Some(p), format!("sets {} that no Valve material of {} sets on this build: the compiler keeps any name, so the shader most likely ignores {}{rim}", unread.join(", "), m.shader, if unread.len() == 1 { "it" } else { "them" })));
+                    }
+                }
+                // M151: a name stored as another kind than Valve's materials of the shader store it as
+                if let Some((m, bad)) = input.game.and_then(|g| g.material_params()).and_then(|mp| resource::material::from_compiled(&f.data).ok().and_then(|m| matparams::mistyped(&m, mp).map(|b| (m, b)))) {
+                    for (n, ours, valve) in bad {
+                        let why = if ours == "int" { "written without a decimal point, it compiled as an integer" } else { "it compiled as another kind" };
+                        out.push(finding("M151", Some(p), format!("{n} is stored as {ours}, and Valve's materials of {} store it as {valve}: {why}, so the shader most likely does not get it and draws its default (UNVERIFIED in game)", m.shader)));
+                    }
                 }
                 // M149: a texture slot Valve's material has and ours lacks: the game still asks for it
                 if let (Some(ours), Some(valve)) = (data_of(&f.data), replaces(p).then(|| valve_kv(p)).flatten()) {

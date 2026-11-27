@@ -85,7 +85,7 @@ pub fn version() -> String {
 }
 
 /// The commands that print one JSON document on stdout with `--json` (and nothing else).
-pub const JSON_COMMANDS: &[&str] = &["lint", "grade", "drift", "patchday", "release", "rules", "check", "doctor", "prove", "update", "install"];
+pub const JSON_COMMANDS: &[&str] = &["lint", "grade", "drift", "patchday", "release", "rules", "check", "doctor", "prove", "update", "install", "csdk", "material"];
 
 /// Options every command takes, answered before any other check: help and the version (they run nothing), and
 /// `--json`, whose own check (`JSON_COMMANDS`) says where it is available.

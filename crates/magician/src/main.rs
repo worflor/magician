@@ -46,6 +46,7 @@ mod cli;
 mod checkcmd;
 mod diffcmd;
 mod clothcmd;
+mod csdk;
 mod corpuscmd;
 mod witness;
 mod doctor;
@@ -57,6 +58,7 @@ mod install;
 mod jsonout;
 mod lock;
 mod markcmd;
+mod materialcmd;
 mod meshcmd;
 mod modctx;
 mod newcmd;
@@ -304,6 +306,37 @@ Every command:
                                                 cache and config file resolved to, and why (tab-separated); for the mod
                                                 (--mod, or the one of this folder) its hero, paks, addon, allowance files
                                                 and scene patches, each with where it was found
+  magician csdk [--json]                        which CSDK this is (12 on CS2's tools, 13 on Dota 2's), read from its own
+                                                files: the evidence for the version, every binary set and which hold a
+                                                resourcecompiler (with its date), the game build its files came from
+                                                beside the installed one, its ModelDoc features, and each known gap with
+                                                what it breaks and whether build works round it (magician.csdk/1)
+  magician material inspect <material> [--json]
+                                                a material as data: its shader, features, parameters, dynamic
+                                                expressions, and each texture slot with its size, format and mips and
+                                                what each channel holds (a source: each input and the slot and channel
+                                                it compiles to), the images it was compiled from, and the names no Valve
+                                                material of its shader sets (M150). A material is a file (x.vmat,
+                                                x.vmat_c), <pak.vpk>:<path>, or valve:<path> (the installed game's)
+  magician material diff <a> [<b> | --against valve] [--verbose] [--json]
+                                                two materials side by side in the compiled material's terms (a source's
+                                                inputs as the slots they fill), or one against Valve's at its own path;
+                                                exit 0 when nothing differs, 1 when something does
+  magician material export <material> [--out FILE]
+                                                a portable preset of the setup (shader, features, parameters, inputs
+                                                with the slot and channel each fills, dynamic expressions, a .vtex input
+                                                and an image's settings .txt), its paths written against the material's
+                                                own ({base}_color.png); from a compiled file the inputs are guessed from
+                                                the images it was compiled from, and say so
+  magician material apply <preset> --to <.../materials/.../new.vmat> [--force]
+                                                write the preset's setup as a new .vmat, its paths rewritten for the new
+                                                material, and name each image it still needs; never over a file without
+                                                --force (exit 3)
+  magician material verify <addon | content folder> [--pak FILE] [--verbose] [--json]
+                                                hold every compiled material of an addon (its CSDK game folder, or
+                                                --pak) to its source: shader, features, parameters, dynamic expressions,
+                                                each input in its slot, and the pixels of every packed channel against
+                                                the source image's; exit 1 when one does not hold
   magician update --check [--source LOCATION] [--json]
                                                 is there a newer Magician? Reads the release's VERSION from the update
                                                 source and compares it with this build (version, then commit): current,
@@ -361,7 +394,7 @@ use cli::{Shared, Takers};
 /// The commands that read the game folder (the game itself, its build, its ledger or its hero table).
 const GAME_TAKERS: &[&str] = &[
     "doctor", "new", "init", "check", "baseline", "index", "corpus", "witness", "scan", "mesh", "cloth", "lint", "pack", "footprint", "grade", "install", "uninstall", "scene", "build", "release",
-    "drift", "patchday", "prove", "paths",
+    "drift", "patchday", "prove", "paths", "csdk", "material",
 ];
 
 /// The options several commands take, declared once: the usage text's section on them and every command's help are
@@ -376,7 +409,7 @@ const SHARED: &[Shared] = &[
         what: "judge by a policy file instead of the built-in lines (or MAGICIAN_POLICY, or `policy =`); an unknown key or an out-of-range value is a usage error naming it",
     },
     Shared { name: "--game", value: "DIR", takers: Takers::Only(GAME_TAKERS), what: "Deadlock's game folder (Locations, below)" },
-    Shared { name: "--csdk", value: "DIR", takers: Takers::Only(&["doctor", "new", "check", "lint", "grade", "build", "release", "sign", "paths"]), what: "Valve's CSDK, for its addons and its compiler (Locations, below)" },
+    Shared { name: "--csdk", value: "DIR", takers: Takers::Only(&["doctor", "new", "check", "lint", "grade", "build", "release", "sign", "paths", "csdk", "material"]), what: "Valve's CSDK, for its addons and its compiler (Locations, below)" },
     Shared { name: "--vrf", value: "FILE", takers: Takers::Only(&["doctor", "check", "index", "footprint", "grade", "patchday", "paths"]), what: "the Source 2 Viewer CLI (Locations, below)" },
     Shared { name: "--source", value: "LOCATION", takers: Takers::Only(&["doctor", "update", "paths"]), what: "where a release is, for the update check (`magician help update`; Locations, below)" },
 ];
@@ -488,6 +521,8 @@ fn dispatch(args: &[String]) -> R {
         Some("scene") => scene::cmd_scene(&args[1..]),
         Some("sign") => markcmd::cmd_sign(&args[1..]).map_err(Stop::from),
         Some("paths") => cmd_paths(&args[1..]),
+        Some("csdk") => csdk::cmd_csdk(&args[1..]),
+        Some("material") => materialcmd::cmd_material(&args[1..]),
         Some("init") => initcmd::cmd_init(&args[1..]),
         Some("new") => newcmd::cmd_new(&args[1..]),
         Some("doctor") => doctor::cmd_doctor(&args[1..]),
@@ -604,7 +639,7 @@ fn flag(args: &[String], name: &str) -> Option<String> {
 /// Every command `main` dispatches, for "did you mean" on a typo.
 const COMMANDS: &[&str] = &[
     "baseline", "ls", "diff", "refs", "dump", "kv", "index", "corpus", "witness", "textures", "mesh", "cloth", "lint", "cache", "pack", "rules", "scan", "footprint", "grade", "rubric",
-    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "verify", "init", "new", "doctor", "check", "update", "help", "session", "reprove", "bundle", "source", "publish",
+    "policy", "expr", "build", "release", "drift", "patchday", "prove", "install", "uninstall", "scene", "sign", "paths", "csdk", "material", "verify", "init", "new", "doctor", "check", "update", "help", "session", "reprove", "bundle", "source", "publish",
 ];
 
 /// Options that take no value. Every other `--option` takes the argument after it, so `positional` skips that one.
@@ -1409,6 +1444,10 @@ fn game_files(args: &[String], build: &str) -> Result<gamefiles::GameFiles, Stri
         Ok(c) => gf.particle_classes = Some(c),
         Err(e) => say!("note: Valve's particle classes unavailable ({e}); particle class lists (M083) not checked"),
     }
+    match gamefiles::material_params(&game, &reference_root().join(build).join("material_params.tsv"), build) {
+        Ok(p) => gf.material_params = Some(p),
+        Err(e) => say!("note: Valve's material parameters unavailable ({e}); material parameters (M150) not checked"),
+    }
     Ok(gf)
 }
 
@@ -2209,6 +2248,16 @@ fn compile_addon(addon: &str, args: &[String], compile: bool, explicit_bin: Opti
             return Err(format!("{addon}: no compiler at {} ({why})", rc.display()).into());
         }
     say!("{addon}: compiler {} ({why}){}", bin.display(), if compile { "" } else { ", not run (--no-compile)" });
+    if compile {
+        // which kit this is, so a log says what compiled it; CSDK 12 is described from the community's pages only
+        let kit = csdk::describe(&csdk);
+        let note = match kit.version {
+            csdk::Version::V13 => String::new(),
+            csdk::Version::V12 => ": its compiler has not been compared with CSDK 13's here; lint the pak and look at it in game".into(),
+            csdk::Version::Unknown => format!(" ({}): `magician csdk` says what was found", kit.version_from),
+        };
+        say!("{addon}: {}, {}{}{note}", kit.version.label(), kit.version.base(), kit.game_build.as_ref().map(|b| format!(", game files from build {b}")).unwrap_or_default());
+    }
     let mut sources = build::classify(&rels);
     // Nothing changed since the last good compile (same sources, same compiler, same outputs): resourcecompiler
     // would spend ~10 s starting up to report "up to date", so it isn't started. `--force-compile` runs it anyway.

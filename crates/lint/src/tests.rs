@@ -49,7 +49,7 @@ const PROVEN: &[&str] = &[
     "M100", "M101", "M102", "M103", "M104", "M105", "M106", "M107", "M108", "M109", "M110", "M111", "M112", "M113",
     "M114", "M115", "M116", "M117", "M118", "M119", "M120", "M121", "M122", "M123", "M124", "M125", "M126", "M127",
     "M128", "M129", "M130", "M131", "M132", "M133", "M134", "M135", "M136", "M137", "M138", "M139", "M140",
-    "M141", "M142", "M143", "M144", "M145", "M146", "M147", "M148", "M149",
+    "M141", "M142", "M143", "M144", "M145", "M146", "M147", "M148", "M149", "M150", "M151",
 ];
 
 #[path = "mesh_fixtures.rs"]
@@ -363,6 +363,7 @@ struct Fake {
     files: HashMap<String, Vec<u8>>,
     users: HashMap<String, Vec<String>>,
     classes: Option<deep::ParticleClasses>,
+    params: Option<matparams::MaterialParams>,
     sources: Option<std::collections::HashSet<String>>,
     /// Set: the game has no users index to read (`users_unchecked`).
     no_index: Option<String>,
@@ -376,6 +377,9 @@ impl Game for Fake {
     }
     fn particle_classes(&self) -> Option<&deep::ParticleClasses> {
         self.classes.as_ref()
+    }
+    fn material_params(&self) -> Option<&matparams::MaterialParams> {
+        self.params.as_ref()
     }
     fn addon_sources(&self) -> Option<&std::collections::HashSet<String>> {
         self.sources.as_ref()
@@ -1377,4 +1381,41 @@ fn m081_reads_the_radius_an_initializer_writes() {
     // the true catch: the same smoke drawn at up to 80 is twice Valve's size
     let big = deep::particle_profile(&smoke("", 80.0));
     assert!(deep::particle_energy(&big, &valve, &policy::DEFAULT).iter().any(|m| m.contains("radius 80")), "{:?}", deep::particle_energy(&big, &valve, &policy::DEFAULT));
+}
+
+#[test]
+fn m150_a_material_name_no_valve_material_of_its_shader_sets() {
+    // Measured (CSDK 13, 2026-11-27): the compiler keeps any parameter and feature a .vmat gives it
+    // (g_flMagicianProbe1, F_MAGICIAN_PROBE, g_flRimLightScale1 all came out in the vmat_c), so a name is in the
+    // compiled file whether the shader reads it or not.
+    let mut params = matparams::MaterialParams::new();
+    let valve = resource::material::Material { shader: "pbr.vfx".into(), floats: vec![("g_flSelfIllumScale1".into(), 1.0)], ints: vec![("F_SHEEN".into(), 1)], compiled: true, ..Default::default() };
+    matparams::collect(&valve, &mut params);
+    let mat = |extra: &str| res_kv(&[], &[(b"DATA", kv(&format!("{{ m_shaderName = \"pbr.vfx\" m_intParams = [ {{ m_name = \"F_SHEEN\" m_nValue = 1 }} ] m_floatParams = [ {{ m_name = \"g_flSelfIllumScale1\" m_flValue = 2.0 }} {extra} ] }}")))]);
+    let fake = Fake { params: Some(params), ..Default::default() };
+    let g = game();
+    let f = run_game(vec![file("materials/x/new.vmat_c", mat("{ m_name = \"g_flRimLightScale1\" m_flValue = 3.0 }"))], &g, &fake);
+    let m = f.iter().find(|x| x.code == "M150").unwrap_or_else(|| panic!("{f:#?}"));
+    assert!(m.message.contains("g_flRimLightScale1") && m.message.contains("pbr.vfx") && m.message.contains("the scene's"), "{}", m.message);
+    assert!(!m.message.contains("g_flSelfIllumScale1"), "a name Valve sets is read: {}", m.message);
+    assert_eq!(m.severity, Severity::Warn);
+    // only names Valve sets: silent; and without Valve's names nothing is judged
+    assert!(!codes(&run_game(vec![file("materials/x/new.vmat_c", mat(""))], &g, &fake)).contains("M150"));
+    assert!(!codes(&run_game(vec![file("materials/x/new.vmat_c", mat("{ m_name = \"g_flX\" m_flValue = 3.0 }"))], &g, &Fake::default())).contains("M150"));
+}
+
+#[test]
+fn m151_a_float_parameter_compiled_as_an_integer() {
+    // Measured (CSDK 13, 2026-11-27): "g_flSelfIllumScale1" "1" compiles into m_intParams, "1.000" into m_floatParams.
+    let mut params = matparams::MaterialParams::new();
+    let valve = resource::material::Material { shader: "pbr.vfx".into(), floats: vec![("g_flSelfIllumScale1".into(), 1.0)], compiled: true, ..Default::default() };
+    matparams::collect(&valve, &mut params);
+    let fake = Fake { params: Some(params), ..Default::default() };
+    let g = game();
+    let as_int = res_kv(&[], &[(b"DATA", kv("{ m_shaderName = \"pbr.vfx\" m_intParams = [ { m_name = \"g_flSelfIllumScale1\" m_nValue = 1 } ] }"))]);
+    let f = run_game(vec![file("materials/x/new.vmat_c", as_int)], &g, &fake);
+    let m = f.iter().find(|x| x.code == "M151").unwrap_or_else(|| panic!("{f:#?}"));
+    assert!(m.message.contains("g_flSelfIllumScale1") && m.message.contains("decimal point") && m.message.contains("float"), "{}", m.message);
+    let as_float = res_kv(&[], &[(b"DATA", kv("{ m_shaderName = \"pbr.vfx\" m_floatParams = [ { m_name = \"g_flSelfIllumScale1\" m_flValue = 1.0 } ] }"))]);
+    assert!(!codes(&run_game(vec![file("materials/x/new.vmat_c", as_float)], &g, &fake)).contains("M151"));
 }

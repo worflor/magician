@@ -47,7 +47,7 @@ Each kind of knowledge has one home. Read it there, and put new knowledge there.
 
 ```
 crates/vpk        VPK read/write, deterministic pack
-crates/resource   block table, RERL, native KV3 v4/v5 read and write (LZ4, zstd), texture headers and pixels
+crates/resource   block table, RERL, native KV3 v4/v5 read and write (LZ4, zstd), texture headers and pixels, materials
 crates/mesh       compiled model meshes (meshoptimizer v0/v1), skeleton, hitboxes, glb proof, synth.rs (every mesh fixture),
                   cloth.rs (the FeModel in PHYS: the one decoder for `magician cloth` and the cloth lint)
 crates/geom       geometry kernel (exact predicates, BVH, raster, topology)
@@ -69,7 +69,7 @@ crates/magician   the CLI: main.rs, cli.rs (--help, --version, options, exit cod
                   source and publish: the Python tools through the CLI), update.rs (`update --check`, the release's `VERSION`,
                   the update source and the curl fetch) and updateapply.rs (applying one: the checksum, the swap and
                   its rollback, the git fast-forward and rebuild), out.rs (every write to stdout and stderr), style.rs,
-                  progress.rs, build.rs, lock.rs (per-addon build lock), install.rs (slots, ledger, scene route, seat
+                  progress.rs, build.rs, csdk.rs (which CSDK, read from its files), materialcmd.rs (`magician material`), lock.rs (per-addon build lock), install.rs (slots, ledger, scene route, seat
                   check), scene.rs (scene patches), patchday.rs and patchcmd.rs (eras, the rig and engine sidecars,
                   drift verdicts, prove), proofs.rs (the proof ledger: which bytes were proven on which build, and the
                   one "is it proven here" question), gamefiles.rs, meshcmd.rs, clothcmd.rs, markcmd.rs, jsonout.rs

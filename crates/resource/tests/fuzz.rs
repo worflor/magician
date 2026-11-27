@@ -308,3 +308,27 @@ fn typed_arrays_of_constants_decode_to_no_more_than_the_data_could_hold() {
     let e = kv3::decode(&typed_null_arrays(8200)).unwrap_err();
     assert!(e.contains("more than the data could hold"), "{e}");
 }
+
+#[test]
+fn material_sources_and_compiled_materials() {
+    // a .vmat source in KeyValues 1 and in KV3 text, and a compiled .vmat_c, each on hostile input
+    let seeds = [
+        "// x\n\"Layer0\"\n{\n\t\"shader\"\t\"pbr.vfx\"\n\t\"F_SHEEN\"\t\"1\"\n\t\"TextureColor1\"\t\"materials/x_color.png\"\n\t\"TextureNprTramsissiveColor1\"\t\"[0 0.5 0 0]\"\n\t\"g_flA1\"\t\"1.0\"\n\t\"g_vB1\"\t\"[1 2 3 4]\"\n\t\"DynamicParams\"\n\t{\n\t\t\"g_vB1\"\t\"return float3(1,1,1);\"\n\t}\n}\n",
+        "<!-- kv3 encoding:text:version{e21c7f3c-8a33-41c5-9977-a76d3a32aa0d} format:generic:version{7412167c-06e9-4698-aff2-e63eb59037e7} -->\n{ Layer0 = { shader = \"pbr.vfx\" F_SHEEN = 1 TextureColor1 = \"materials/x.png\" } }",
+        "\"Layer0\" { \"shader\" \"pbr.vfx\" \"a\" { \"b\" { \"c\" \"\\\"q\\\"\" } } }",
+    ];
+    fuzz::run_text("vmat", fuzz::DEFAULT_CASES * 2, &seeds, |t| {
+        if let Ok(m) = resource::material::from_source(t) {
+            for (k, _) in &m.textures {
+                let _ = resource::material::expected_slot(&m, k);
+            }
+        }
+    });
+    let data = text(r#"{ m_materialName = "materials/x.vmat" m_shaderName = "pbr.vfx" m_intParams = [ { m_name = "F_SHEEN" m_nValue = 1 } ] m_floatParams = [ { m_name = "g_flA" m_flValue = 0.5 } ] m_vectorParams = [ { m_name = "g_vB" m_value = [ 1.0, 2.0, 3.0, 4.0 ] } ] m_textureParams = [ { m_name = "g_tColor" m_pValue = "materials/x_color_png_1.vtex" } ] m_dynamicParams = [ { m_name = "g_vB" m_value = #[ 01 02 ] } ] m_renderAttributesUsed = [ "$ent_abs_velocity" ] }"#);
+    let red = text(r#"{ m_ArgumentDependencies = [ { m_ParameterName = "materials/x_color.png" m_ParameterType = "ImageArg" } ] }"#);
+    let seed = resource::synth_with(&[], &[(*b"RED2", kv3::encode(&red)), (*b"DATA", kv3::encode(&data))]);
+    assert!(resource::material::from_compiled(&seed).is_ok());
+    fuzz::run("vmat_c", fuzz::DEFAULT_CASES, vec![seed], |b| {
+        let _ = resource::material::from_compiled(b);
+    });
+}
