@@ -14,7 +14,9 @@
 //! - **voice length** (M063 on `sounds/vo/`): M063's own duration test, run between two of Valve's heroes on the same
 //!   line (`orion_effort_dash_02` against `fencer_effort_dash_02`): how often one Valve voice reads as a hidden cue
 //!   against another.
-//! - **attachments** (M062): which attachment names every Valve hero model carries, and which only some do.
+//! - **attachments** (M062): which attachment names every Valve hero model carries, and which only some do; and how
+//!   far each attachment on a body bone sits off the body, in units of the hero's size, against the line past which
+//!   a moved attachment is more than a cosmetic move: none of Valve's may be over it.
 //! - **folds and crossings** (M109, M110): each hero's visible fold and crossing line in units of its size, against
 //!   the line the rule draws at the most any Valve hero has: none of Valve's heroes may be over it.
 
@@ -158,6 +160,19 @@ pub fn attachment_census(models: &[(String, Vec<String>)]) -> (BTreeMap<String, 
     (by, Calibration { rule: "M062", measure: "attachment names across Valve's hero models", fires: partial.len(), of: all, worst, worst_at, reading })
 }
 
+/// M062's line for a moved attachment over Valve's heroes: each attachment on a body bone, (model path, attachment,
+/// how far it sits off the body in units of the model's size), judged at `line`.
+pub fn attachment_reach_calibration(rows: &[(String, String, f64)], line: f64) -> Calibration {
+    let fires = rows.iter().filter(|r| r.2 > line).count();
+    let (worst_at, worst) = rows.iter().max_by(|a, b| a.2.total_cmp(&b.2)).map_or((String::new(), 0.0), |(p, a, x)| (format!("{} {a}", file_name(p)), *x));
+    let reading = if fires == 0 {
+        format!("no attachment on a Valve hero's body sits over the line ({line}); the furthest is {worst:.4}: a moved one past it leaves the body further than Valve places any")
+    } else {
+        format!("{fires} of Valve's own attachments sit over the line ({line}), the furthest {worst:.4}: the line is inside Valve's own placement and must move to the furthest (rules.rs)")
+    };
+    Calibration { rule: "M062", measure: "attachments on body bones, distance off the body in units of the hero's size", fires, of: rows.len(), worst, worst_at, reading }
+}
+
 fn file_name(p: &str) -> &str {
     p.rsplit('/').next().unwrap_or(p)
 }
@@ -219,6 +234,15 @@ mod tests {
         let c = line_calibration("M109", "fold line", &rows, 4.81);
         assert_eq!((c.fires, c.of, c.worst_at.as_str()), (0, 2, "b.vmdl_c"));
         let c = line_calibration("M109", "fold line", &rows, 4.0);
+        assert!(c.fires == 1 && c.reading.contains("must move"), "{c:?}");
+    }
+
+    #[test]
+    fn an_attachment_line_inside_valve_s_placement_says_it_must_move() {
+        let rows = vec![("models/a/a.vmdl_c".to_string(), "idol".to_string(), 0.09), ("models/b/b.vmdl_c".to_string(), "palm".to_string(), 0.0)];
+        let c = attachment_reach_calibration(&rows, 0.094);
+        assert_eq!((c.fires, c.of, c.worst_at.as_str()), (0, 2, "a.vmdl_c idol"));
+        let c = attachment_reach_calibration(&rows, 0.05);
         assert!(c.fires == 1 && c.reading.contains("must move"), "{c:?}");
     }
 

@@ -39,6 +39,13 @@ pub const CROSS_DEPTH: f64 = 0.04;
 /// median hero has 0.4 and 18.8. A model past these crosses more than Valve builds any hero.
 pub const FOLD_RATE_VALVE: f64 = 4.82;
 pub const CROSS_RATE_VALVE: f64 = 52.5;
+/// M062: how far off the body a moved attachment on a body bone may sit before it is more than a cosmetic move, in
+/// units of the model's own size (as M109 and M110). Off the body is the nearer of the skinned LOD0 surface and the
+/// nearest bone. Of the 1,384 attachments on body bones on Valve's 43 playable heroes (6873 and 6875), the furthest is
+/// McGinnis's turret_carry_mid_fx, 18.2 units off a model of size 195.2 (0.0931), rounded up so it is not over its
+/// own line; the median sits on the body (0.0003). On a hero of Lash's size (148) the line is 13.9 units, about 35
+/// cm. Attachments held in the hero's own frame (the root) are not judged by it: Valve's 789 sit up to 3.1 sizes away.
+pub const ATTACH_OFF_BODY_VALVE: f64 = 0.094;
 /// Coplanar overlap worth a flicker (SKIN-FLAWS A6: more than 1 cm^2).
 pub const ZFIGHT_AREA: f64 = 0.155;
 /// H1 policy (the author, 2026-11-19): "some overflow where it's tasteful, not 'ok that's a bit much lol'".

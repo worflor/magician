@@ -22,6 +22,13 @@ pub fn run(game: &Path, build: &str, out: &Path, baseline: &lint::Baseline) -> R
         .filter_map(|(p, d)| lint::deep::contract(d).map(|c| (p.clone(), c.attachments.into_iter().map(|(n, _)| n).collect())))
         .collect();
     let (attachments, census) = corpus::attachment_census(&attach);
+    // M062's line: how far each attachment on a body bone sits off the body, in units of the hero's size
+    let reach: Vec<(String, String, f64)> = models
+        .iter()
+        .filter_map(|(p, d)| lint::reach::read(d).ok().map(|r| (p, r)))
+        .flat_map(|(p, r)| r.points.iter().filter(|x| !x.hero_frame).map(|x| (p.clone(), x.name.clone(), x.off_body() / r.size)).collect::<Vec<_>>())
+        .collect();
+    let reach = corpus::attachment_reach_calibration(&reach, rules::ATTACH_OFF_BODY_VALVE);
     let (cloth_rows, cloth) = corpus::cloth_census(&models);
     let mut voices: Vec<&String> = baseline.files.keys().filter(|p| p.starts_with("sounds/vo/") && p.contains("/emote/") && p.ends_with(".vsnd_c")).collect();
     voices.sort();
@@ -51,7 +58,7 @@ pub fn run(game: &Path, build: &str, out: &Path, baseline: &lint::Baseline) -> R
     drop(hint);
     let fold = corpus::line_calibration("M109", "visible fold line in units of the hero's size", &folds, rules::FOLD_RATE_VALVE);
     let cross = corpus::line_calibration("M110", "visible crossing line in units of the hero's size", &crossings, rules::CROSS_RATE_VALVE);
-    let c = Corpus { build: build.to_string(), calibrations: vec![cloth, voice, census, fold, cross], attachments, models: models.iter().map(|(p, _)| p.clone()).collect(), cloth: cloth_rows };
+    let c = Corpus { build: build.to_string(), calibrations: vec![cloth, voice, census, reach, fold, cross], attachments, models: models.iter().map(|(p, _)| p.clone()).collect(), cloth: cloth_rows };
     if let Some(dir) = out.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }

@@ -47,6 +47,9 @@ pub struct SynthModel {
     pub extra_materials: Vec<String>,
     /// More blocks after DATA (e.g. a PHYS block with a cloth FeModel), as (tag, bytes).
     pub extra_blocks: Vec<([u8; 4], Vec<u8>)>,
+    /// Attachments, written with the first mesh: name, the one bone it rides on (empty: the model's root transform)
+    /// and its offset in that bone's frame (identity rotation).
+    pub attachments: Vec<(String, String, [f32; 3])>,
 }
 
 fn s(x: &str) -> V {
@@ -164,6 +167,29 @@ pub fn model(m: &SynthModel) -> Vec<u8> {
                 .map(|(k, (n, b, a, z, r))| obj(vec![("m_name", s(n)), ("m_sBoneName", s(b)), ("m_vMinBounds", v3(*a)), ("m_vMaxBounds", v3(*z)), ("m_flShapeRadius", f(*r as f64)), ("m_nShapeType", i(m.hitbox_shapes.get(k).copied().unwrap_or(2))), ("m_nGroupId", i(1))]))
                 .collect();
             mdat_fields.push(("m_hitboxsets", V::Array(vec![obj(vec![("key", s("default")), ("value", obj(vec![("m_name", s("default")), ("m_HitBoxes", V::Array(hbs))]))])])));
+        }
+        if mi == 0 && !m.attachments.is_empty() {
+            let v3 = |p: [f32; 3]| V::Array(p.iter().map(|&c| f(c as f64)).collect());
+            let zero = || v3([0.0; 3]);
+            let q = || V::Array(vec![f(0.0), f(0.0), f(0.0), f(1.0)]);
+            let atts: Vec<V> = m
+                .attachments
+                .iter()
+                .map(|(n, bone, at)| {
+                    let value = obj(vec![
+                        ("m_name", s(n)),
+                        ("m_influenceNames", V::Array(vec![s(bone), s(""), s("")])),
+                        ("m_vInfluenceRotations", V::Array(vec![q(), q(), q()])),
+                        ("m_vInfluenceOffsets", V::Array(vec![v3(*at), zero(), zero()])),
+                        ("m_influenceWeights", V::Array(vec![f(1.0), f(0.0), f(0.0)])),
+                        ("m_bInfluenceRootTransform", V::Array(vec![b(bone.is_empty()), b(false), b(false)])),
+                        ("m_nInfluences", i(1)),
+                        ("m_bIgnoreRotation", b(false)),
+                    ]);
+                    obj(vec![("key", s(n)), ("value", value)])
+                })
+                .collect();
+            mdat_fields.push(("m_attachments", V::Array(atts)));
         }
         let mdat = obj(mdat_fields);
         let dblock = blocks.len();

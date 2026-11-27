@@ -16,6 +16,7 @@ pub mod distfield;
 pub mod matconst;
 pub mod pbrcombo;
 pub mod policy;
+pub mod reach;
 pub mod report;
 pub mod sources;
 pub mod mesh;
