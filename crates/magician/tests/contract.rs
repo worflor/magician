@@ -1345,3 +1345,37 @@ fn update_check_exits_5_for_an_available_update_and_nothing_else_does() {
     assert_eq!(magician(&d, &["update", "--chek"]).status.code(), Some(2));
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn material_diff_holds_one_number_as_one_and_names_what_it_was_given() {
+    // A float written without its decimal point compiles as an integer and draws the same (seen in game, 6877): a
+    // community skin's material differed from Valve's in 15 such names of 16, and diff exited 1 over them.
+    let d = scratch("matdiff");
+    let dir = d.join("game").join("materials").join("x");
+    std::fs::create_dir_all(&dir).unwrap();
+    let compiled = |params: &str| kv3_file(&format!("{{ m_materialName = \"materials/x/a.vmat\" m_shaderName = \"pbr.vfx\" {params} }}"));
+    let (a, b) = (dir.join("a.vmat_c"), dir.join("b.vmat_c"));
+    std::fs::write(&a, compiled("m_intParams = [ { m_name = \"g_flSelfIllumScale1\" m_nValue = 20 } ]")).unwrap();
+    std::fs::write(&b, compiled("m_floatParams = [ { m_name = \"g_flSelfIllumScale1\" m_flValue = 20.0 } ]")).unwrap();
+    let (sa, sb) = (a.to_string_lossy().into_owned(), b.to_string_lossy().into_owned());
+    let o = magician(&d, &["material", "diff", &sa, &sb]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(text(&o).contains("0 differ; 1 hold the same number as an integer on one side and a float on the other"), "{}", text(&o));
+    let o = magician(&d, &["material", "diff", &sa, &sb, "--json"]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("\"differ\":0,\"same_number_other_kind\":1"), "{}", text(&o));
+    std::fs::write(&b, compiled("m_floatParams = [ { m_name = \"g_flSelfIllumScale1\" m_flValue = 21.0 } ]")).unwrap();
+    assert_eq!(magician(&d, &["material", "diff", &sa, &sb]).status.code(), Some(1), "another number still differs");
+    // a pak where a material was meant, and a pak where an addon was meant: said as what they are
+    let pak = d.join("pak02_dir.vpk");
+    vpk::write(&pak, &[("materials/x/a.vmat_c".to_string(), b"m".to_vec())]).unwrap();
+    let p = pak.to_string_lossy().into_owned();
+    let o = magician(&d, &["material", "diff", &p]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("is a pak, not a material: name one inside it as") && !text(&o).contains("kv1"), "{}", text(&o));
+    let o = magician(&d, &["material", "verify", &p]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("is a pak: verify holds an addon's compiled materials to their sources"), "{}", text(&o));
+    let o = magician(&d, &["material", "diff", &sa, "--against", "valvee"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    let _ = std::fs::remove_dir_all(&d);
+}

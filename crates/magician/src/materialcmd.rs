@@ -75,6 +75,9 @@ fn load(spec: &str, args: &[String]) -> Result<Loaded, String> {
         return Ok(Loaded { m, path: source_path(&path), label: format!("Valve's {path}"), srcs: vec![Src::Game(Box::new(gf))] });
     }
     let lower = spec.to_ascii_lowercase();
+    if lower.ends_with(".vpk") {
+        return Err(format!("{spec} is a pak, not a material: name one inside it as {spec}:<path> (`magician ls {spec}` lists its files)"));
+    }
     if let Some(i) = lower.find(".vpk:") {
         let (vp, rest) = (spec.get(..i + 4).unwrap_or(spec), spec.get(i + 5..).unwrap_or(""));
         let pak = vpk::Vpk::open(vp).map_err(|e| format!("{vp}: {e}"))?;
@@ -306,7 +309,14 @@ fn diff(args: &[String]) -> crate::R {
     let la = load(a, args)?;
     let lb = match (pos.get(1), crate::flag(args, "--against").as_deref()) {
         (Some(b), None) => load(b, args)?,
-        (None, Some("valve")) => load(&format!("valve:{}", la.path), args)?,
+        (None, Some("valve")) => load(&format!("valve:{}", la.path), args).map_err(|e| {
+            if e.starts_with("the game has no ") {
+                format!("{}.vmat_c is a new material: Valve ships none at its path, so there is nothing to diff it against. `magician material inspect` shows it as it is; to compare it with the material it was made from, give that one too (`material diff <a> <b>`)", la.path.trim_end_matches(".vmat"))
+            } else {
+                e
+            }
+        })?,
+        (None, Some(other)) => return Err(crate::Stop::Usage(format!("--against {other}: the only material diff compares against by name is valve; give a second material instead"))),
         _ => return Err(crate::Stop::Usage("material diff takes a second material or --against valve".into())),
     };
     let (ta, tb) = (terms(&la), terms(&lb));
@@ -315,10 +325,17 @@ fn diff(args: &[String]) -> crate::R {
     keys.sort_by_key(|k| k.to_ascii_lowercase());
     keys.dedup_by(|x, y| x.eq_ignore_ascii_case(y));
     let mut rows = Vec::new();
+    let mut retyped = 0;
     for k in &keys {
         let (va, vb) = (get(&ta, k), get(&tb, k));
         let state = match (&va, &vb) {
             (Some(x), Some(y)) if x == y => "same",
+            // a float written without its decimal point compiles as an integer, and the game reads it as the float
+            // (engine.md, Materials): the same value, kept apart only for --verbose
+            (Some(x), Some(y)) if same_number(x, y) => {
+                retyped += 1;
+                "same"
+            }
             (Some(_), Some(_)) => "differs",
             (Some(_), None) => "only-a",
             (None, Some(_)) => "only-b",
@@ -336,6 +353,7 @@ fn diff(args: &[String]) -> crate::R {
                 .str("a", &la.label)
                 .str("b", &lb.label)
                 .int("differ", differ as i64)
+                .int("same_number_other_kind", retyped as i64)
                 .raw("rows", arr(rows.iter().map(|(k, s, x, y)| Obj::new().str("name", k).str("state", s).opt_str("a", x.as_deref()).opt_str("b", y.as_deref()).build())))
                 .build()
         );
@@ -347,9 +365,20 @@ fn diff(args: &[String]) -> crate::R {
                 outln!("{s}\t{k}\t{}\t{}", x.as_deref().unwrap_or("-"), y.as_deref().unwrap_or("-"));
             }
         }
-        outln!("{} name(s) compared, {differ} differ{}", rows.len(), if args.iter().any(|a| a == "--verbose") { "" } else { " (--verbose lists the same ones too)" });
+        outln!(
+            "{} name(s) compared, {differ} differ{}{}",
+            rows.len(),
+            if retyped > 0 { format!("; {retyped} hold the same number as an integer on one side and a float on the other, which the game reads alike") } else { String::new() },
+            if args.iter().any(|a| a == "--verbose") { "" } else { " (--verbose lists the same ones too)" }
+        );
     }
     Ok(if differ == 0 { ExitCode::SUCCESS } else { ExitCode::from(crate::cli::BROKEN) })
+}
+
+/// `int 1` and `float 1`: one value, stored as an integer on one side for want of a decimal point.
+fn same_number(a: &str, b: &str) -> bool {
+    let n = |s: &str| s.strip_prefix("int ").or_else(|| s.strip_prefix("float ")).and_then(|v| v.parse::<f64>().ok());
+    a.starts_with("int ") != b.starts_with("int ") && matches!((n(a), n(b)), (Some(x), Some(y)) if x == y)
 }
 
 /// Words in a source image's name that say which input it is, longest first so `_sheenrough` is not `_sheen`.
@@ -678,9 +707,18 @@ fn verify(args: &[String]) -> crate::R {
         let out = crate::paths::csdk(crate::flag(args, "--csdk")).ok().map(|f| f.path.join("game").join("citadel_addons").join(&name));
         (c, out)
     } else {
+        if target.to_ascii_lowercase().ends_with(".vpk") {
+            return Err(crate::Stop::Usage(format!(
+                "{target} is a pak: verify holds an addon's compiled materials to their sources, so it takes the addon (`material verify <addon> --pak {target}`); one material of the pak alone is `material inspect {target}:<path>`"
+            )));
+        }
         crate::paths::addon_name(target)?;
         let csdk = crate::paths::csdk(crate::flag(args, "--csdk"))?.path;
-        (csdk.join("content").join("citadel_addons").join(target.as_str()), Some(csdk.join("game").join("citadel_addons").join(target.as_str())))
+        let content = csdk.join("content").join("citadel_addons").join(target.as_str());
+        if !content.is_dir() {
+            return Err(crate::Stop::Usage(format!("no addon {target}: {} is not there (an addon's sources, or a content folder given by its path)", content.display())));
+        }
+        (content, Some(csdk.join("game").join("citadel_addons").join(target.as_str())))
     };
     let pak = match crate::flag(args, "--pak") {
         Some(p) => Some(vpk::Vpk::open(&p).map_err(|e| format!("{p}: {e}"))?),
