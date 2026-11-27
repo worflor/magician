@@ -72,6 +72,17 @@ fn rules_print_their_catalogue_as_json() {
     let out = String::from_utf8_lossy(&o.stdout).into_owned();
     assert_eq!(o.status.code(), Some(0));
     assert!(out.starts_with("{\"schema\":\"magician.rules/1\",\"rules\":[{\"code\":\"M001\"") && out.contains("\"code\":\"M144\""), "{out}");
+    // one rule by its code or its name, as check's next line names it; a code that is no rule is a usage error
+    let o = magician(&d, &["rules", "m062", "floating-shell"]);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(out.starts_with("M062 model-contract") && out.contains("\nM111 floating-shell") && !out.contains("M001"), "{out}");
+    let o = magician(&d, &["rules", "M062", "--json"]);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(out.contains("\"code\":\"M062\"") && !out.contains("\"code\":\"M001\""), "{out}");
+    let o = magician(&d, &["rules", "floating-shel"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("did you mean `floating-shell`?"), "{}", text(&o));
     let _ = std::fs::remove_dir_all(&d);
 }
 
@@ -1123,6 +1134,10 @@ fn init_takes_a_download_into_a_folder_of_its_own_and_diff_proves_a_copy() {
     assert_eq!(o.status.code(), Some(0), "{}", text(&o));
     assert_eq!(std::fs::read(d.join("mods").join("x").join("whole.vpk")).unwrap(), wb);
     assert!(text(&o).contains("copied from"), "{}", text(&o));
+    // without --out, a pak named from another folder is described where it lies, and init says so
+    let o = magician_in(&d, &d, &["init", &whole.to_string_lossy()]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(built.join("mod.toml").is_file() && text(&o).contains("where  beside the pak, which stays where it is"), "{}", text(&o));
     let _ = std::fs::remove_dir_all(&d);
 }
 
@@ -1157,9 +1172,16 @@ fn a_mod_folder_needs_nothing_after_the_verb() {
     vpk::write(&other, &[("materials/x/y.vmat_c".to_string(), b"m".to_vec())]).unwrap();
     let o = magician_in(&d, &m, &["lint", &other.to_string_lossy()]);
     assert!(String::from_utf8_lossy(&o.stdout).contains("pak40_dir.vpk") && !String::from_utf8_lossy(&o.stderr).contains("pak33"), "{}", text(&o));
+    // a first look at a mod nobody has proven: lint is the end of what files tell, and the next line says a mod author
+    // may stop there; the in-game pass is offered, not demanded
+    assert_eq!(magician(&d, &["baseline", "--game", &game.to_string_lossy()]).status.code(), Some(0));
+    let o = magician_in(&d, &m, &["check", "--light"]);
+    assert_eq!(o.status.code(), Some(4), "{}", text(&o));
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(out.contains("proof  warn   not proven on any build yet") && out.contains("drift  skip   nothing to compare yet"), "{out}");
+    assert!(out.contains("next: nothing in its files breaks the mod") && out.contains("you can stop here") && out.contains("magician session qa --mod"), "{out}");
     // a build the summary claims, with no proof of these bytes: check says so, and drift has no older era to use
     std::fs::write(m.join("mod.toml"), toml.replace("builds = []", "builds = [6864]")).unwrap();
-    assert_eq!(magician(&d, &["baseline", "--game", &game.to_string_lossy()]).status.code(), Some(0));
     let o = magician_in(&d, &m, &["check", "--light"]);
     assert_eq!(o.status.code(), Some(4), "{}", text(&o));
     assert!(String::from_utf8_lossy(&o.stdout).contains("these bytes proven on none; 6864 (claimed for other bytes or never recorded)"), "{}", text(&o));

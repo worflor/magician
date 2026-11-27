@@ -49,6 +49,14 @@ pub(crate) fn what_it_is(files: &[String]) -> String {
     }
 }
 
+/// The label's first word and what it means (`Echo`, "a new character"): said once beside the label, since the word
+/// alone tells a first-time reader nothing.
+fn kind_gloss(label: &str) -> Option<(&'static str, &'static str)> {
+    use grade::identity::{means, word, Kind};
+    let first = label.split_whitespace().next()?;
+    [Kind::New, Kind::Same, Kind::SameModel, Kind::NoModel].into_iter().find(|k| word(*k) == first).map(|k| (word(k), means(k)))
+}
+
 pub fn cmd_check(args: &[String]) -> R {
     let pos = positional(args);
     let ctx = match pos.first().map(|p| p.as_str()).or(flag(args, "--mod").as_deref().map(|_| "")) {
@@ -115,16 +123,25 @@ pub fn cmd_check(args: &[String]) -> R {
             let lint_state = if g.broken { "broken" } else if g.lint_warnings > 0 { "warn" } else { "ok" };
             // fair play stops lint and install only when the policy enforces it, and then it is a gate blocker
             broken |= g.broken || g.blockers.iter().any(|b| b.starts_with("fair play"));
+            // the grade counts the warnings that are not fair play; the line counts them all, as `magician lint` and the
+            // rows under it do, so the numbers a reader adds up agree (the JSON keeps the grade's count)
+            let warnings = g.kept.iter().filter(|f| f.severity == Severity::Warn).count();
             items.push(Item {
                 what: "lint",
                 state: lint_state,
-                text: format!("{} error(s), {} warning(s), {} allowed{} ({}; fair play {})", g.lint_errors, g.lint_warnings, g.lint_allowed, if g.lint_stale.is_empty() { String::new() } else { format!(", {} stale", g.lint_stale.len()) }, g.lint_depth, match g.fair_play { "fail" => format!("{}, not safe for ranked", style::mark("NSFR")), "unknown" => format!("{}, not checked", style::mark("FP?")), x => style::mark(x) }),
+                text: format!("{} error(s), {} warning(s), {} allowed{} ({}; fair play {})", g.lint_errors, warnings, g.lint_allowed, if g.lint_stale.is_empty() { String::new() } else { format!(", {} stale", g.lint_stale.len()) }, g.lint_depth, match g.fair_play { "fail" => format!("{}, not safe for ranked", style::mark("NSFR")), "unknown" => format!("{}, not checked", style::mark("FP?")), x => style::mark(x) }),
                 json: jsonout::Obj::new().str("state", lint_state).int("errors", g.lint_errors as i64).int("warnings", g.lint_warnings as i64).int("allowed", g.lint_allowed as i64).strs("stale", &g.lint_stale).str("depth", g.lint_depth).str("fair_play", g.fair_play).build(),
             });
             items.push(Item {
                 what: "grade",
                 state: if g.gate_passes { "ok" } else { "warn" },
-                text: format!("{} for {}; release gate {}", style::label(&g.label), g.hero, if g.gate_passes { "pass".to_string() } else { format!("blocked: {}", g.blockers.join("; ")) }),
+                text: format!(
+                    "{} for {}{}; release gate {}",
+                    style::label(&g.label),
+                    g.hero,
+                    kind_gloss(&g.label).map(|(w, m)| format!(" ({w}: {m})")).unwrap_or_default(),
+                    if g.gate_passes { "pass".to_string() } else { format!("blocked: {}", g.blockers.join("; ")) }
+                ),
                 json: jsonout::Obj::new().str("state", if g.gate_passes { "ok" } else { "blocked" }).str("label", &g.label).bool("gate", g.gate_passes).strs("blockers", &g.blockers).build(),
             });
             stale = g.lint_stale.clone();
@@ -180,6 +197,8 @@ pub fn cmd_check(args: &[String]) -> R {
     if !errors.is_empty() {
         by_rule.push(("errors", tally_line(&errors)));
     }
+    let first_error: Option<&str> = errors.first().map(|t| t.code);
+    let warned = tally.iter().any(|t| t.severity == Severity::Warn);
     for seen in lint::SEEN {
         let these: Vec<&Tally> = tally.iter().filter(|t| t.severity == Severity::Warn && !fair(t) && lint::seen(t.code) == *seen).collect();
         if !these.is_empty() {
@@ -235,9 +254,11 @@ pub fn cmd_check(args: &[String]) -> R {
     }
     proof_lines.extend(ledger.problems.iter().map(|p| format!("{}: {p} (the line counts for nothing)", proofs::FILE)));
     proof_lines.extend(ledger.incomplete().into_iter().map(|(b, id)| format!("{}: proof {id} of build {b} lost a row (a merge?) and counts for nothing", proofs::FILE)));
+    // A mod nobody has proven anywhere: say what a proof is, rather than "proven on none" to someone who never heard of one.
+    let never_proven = binding.bound.is_empty() && unbound.is_empty();
     let proof_text = format!(
-        "these bytes proven on {}{}{}",
-        binding.bound_text(),
+        "{}{}{}",
+        if never_proven { "not proven on any build yet (a proof is recorded once someone has seen these bytes work in game)".to_string() } else { format!("these bytes proven on {}", binding.bound_text()) },
         if unbound.is_empty() { String::new() } else { format!("; {unbound}") },
         if proof_lines.is_empty() { String::new() } else { format!("; {}", proof_lines.join("; ")) }
     );
@@ -259,7 +280,8 @@ pub fn cmd_check(args: &[String]) -> R {
     let mut drift_text = String::new();
     let drift_from: Option<&String> = if reprove { binding.last() } else { proven_before(&binding.bound, &build) };
     match drift_from {
-        None if reprove => items.push(Item { what: "drift", state: "warn", text: "these bytes are proven on no build yet: nothing to compare from".into(), json: jsonout::Obj::new().str("state", "unproven").build() }),
+        // nothing is wrong here, there is only nothing yet to compare: the proof line above carries the warning
+        None if reprove => items.push(Item { what: "drift", state: "skip", text: "nothing to compare yet: drift starts from the first build these bytes are proven on".into(), json: jsonout::Obj::new().str("state", "unproven").build() }),
         None => items.push(Item { what: "drift", state: "ok", text: format!("proven on {build}, the installed build"), json: jsonout::Obj::new().str("state", "current").str("from", &build).str("to", &build).build() }),
         Some(from) => {
             if !default_baseline_path(&build).exists() {
@@ -333,12 +355,22 @@ pub fn cmd_check(args: &[String]) -> R {
         // name only the list that holds what broke it: a drift with nothing to compare from has nothing to list
         let drift_broke = items.iter().any(|i| i.what == "drift" && i.state == "broken");
         let lint_broke = items.iter().any(|i| i.what == "lint" && i.state == "broken");
+        // `lint` alone is light; name the run that lists what this check counted
+        let lint = if light { "magician lint" } else { "magician lint --deep" };
         let lists = match (lint_broke, drift_broke, drift_from) {
-            (true, true, Some(from)) => format!("`magician lint` lists every finding, `magician drift --from {from}` every change"),
+            (true, true, Some(from)) => format!("`{lint}` lists every finding with its file, `magician drift --from {from}` every change"),
             (false, true, Some(from)) => format!("`magician drift --from {from}` lists every change"),
-            _ => "`magician lint` lists every finding".to_string(),
+            _ => format!("`{lint}` lists every finding with its file"),
         };
-        next.push(format!("fix what is BROKEN above; {lists}, and `magician rules` says what each rule costs in game"));
+        let rule = first_error.filter(|_| lint_broke).map(|c| format!("`magician rules {c}`")).unwrap_or_else(|| "`magician rules <code>`".into());
+        next.push(format!("fix what is BROKEN above{}; {lists}, and {rule} says what a rule costs in game", if lint_broke { " (the errors row is what the game will not load or play)" } else { "" }));
+    } else if reprove && never_proven {
+        // A first look at a mod: lint is as far as the files go, and a mod author may want no more than that.
+        next.push(format!(
+            "nothing in its files breaks the mod{}. That is as far as lint can see: if it is what you wanted to know, you can stop here, and RE-PROVE says only that nobody has seen the mod in game on {build} yet. To prove it: the in-game pass (`magician session qa --mod {} --out <dir>`, which launches the game on this machine), a look at its frames, then `magician prove --evidence <dir>`",
+            if warned { format!(", and its warnings are what a player might notice (`{}` lists them)", if light { "magician lint" } else { "magician lint --deep" }) } else { String::new() },
+            ctx.dir.display()
+        ));
     } else if reprove {
         let quiet_patch = items.iter().any(|i| i.what == "drift" && i.state == "ok");
         next.push(format!(

@@ -362,6 +362,11 @@ pub fn cmd_init(args: &[String]) -> R {
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("{}: {e}", out_dir.display()))?;
     install::write_atomic(&out, text.as_bytes()).map_err(|e| format!("{}: {e}", out.display()))?;
     say!("wrote {}", out.display());
+    // A pak named from another folder is described where it lies: say so, since the mod.toml lands beside it.
+    let elsewhere = !copying && addon_dir.is_none() && std::path::absolute(&out_dir).ok() != std::path::absolute(&cwd).ok();
+    if elsewhere {
+        say!("  where  beside the pak, which stays where it is (`--out DIR` copies it into a folder of its own instead)");
+    }
     say!("  slug   {}{}", draft.slug, if flag(args, "--slug").is_some() { " (--slug)" } else { " (from the folder's name)" });
     say!("  hero   {hero_note}");
     for a in &also {
@@ -385,7 +390,7 @@ pub fn cmd_init(args: &[String]) -> R {
     if let Some(a) = &draft.addon {
         say!("  addon  {a} (the folder given)");
     }
-    say!("  rights unreviewed (yours to set: [rights] state)");
+    say!("  rights unreviewed (whether the mod may be shared is your call, not Magician's: [rights] state in mod.toml)");
     say!("\nnext, from {}:", out_dir.display());
     say!("  magician check     lint, grade and drift-check this mod: one verdict");
     say!("  magician install   put it in the game (lints first, refuses while the game runs)");

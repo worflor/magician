@@ -69,7 +69,7 @@ From the mod's folder:
 
 ```
 magician check                    # the verdict: lint, grade, proofs, drift (--json for one document)
-magician lint                     # every finding, ending with the count by rule
+magician lint --deep              # every finding check counted, ending with the count by rule
 ```
 
 `check` prints the verdict, then under its lint line the findings by rule: errors, warnings, fair play, and fair play's advisories (reported, never a violation, so `fair play pass` above a row of them is right). `lint` prints a run of one rule on one file that differs only in a counting number as one line (`swing_long_01..25.vsnd_c' (25 findings)`), and an explanation several of a block's findings share once, marked `(*)`. Report by rule code in Magician's own words, a count per rule, and the few findings that matter most with what each does in game (`magician rules` says it for every code). The verdict will be one of:

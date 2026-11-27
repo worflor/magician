@@ -17,12 +17,12 @@ Deadlock Mod Manager from [its page](https://woflo.dev/deadlock-skins/maid-lash/
 
 ```
 maid-lash: ok  Costume (look, effects, sound)  (build 6868)
-  lint   warn   0 error(s), 36 warning(s), 4 allowed (deep; fair play pass)
+  lint   warn   0 error(s), 40 warning(s), 4 allowed (deep; fair play pass)
          on the hero    M111 floating-shell x8, M102 open-sheet-void x6, M108 z-fighting x5, M113 uv-degenerate x3, M104 normals-flipped x1, M105 degenerate-triangles x1, M107 backface-shading x1, M109 self-intersection x1, M110 shell-intersection x1, M117 skin-influences x1, M118 skin-distant-bone x1, M125 seam-crack x1, M136 albedo-range x1, M148 default-slot-literal x1
          frame cost     M122 lod-budget x2, M123 mesh-budget x1
          the pak        M100 mesh-unchecked x1
          advisory       M081 particle-energy x3, M130 hitbox-envelope-wide x1 (fair play's advisories: reported, never a violation)
-  grade  ok     Costume (look, effects, sound) for Lash; release gate pass
+  grade  ok     Costume (look, effects, sound) for Lash (Costume: the same character, a new model); release gate pass
   proof  ok     these bytes proven on 6868; 6864, 6865, 6866 (claimed for other bytes or never recorded)
   drift  ok     proven on 6868, the installed build
   scene  ok     lash: the stock map matches the patch
@@ -31,7 +31,7 @@ maid-lash: ok  Costume (look, effects, sound)  (build 6868)
 What stands behind each line:
 
 - **The lint.** No errors: nothing the game will not load or play. The warnings are counted by rule and grouped by
-  where a player meets them, all of them from the mesh family, which measures the model against Valve's; `magician lint` prints each site and
+  where a player meets them, all but fair play's four advisories from the mesh family, which measures the model against Valve's; `magician lint --deep` prints each site and
   `magician rules` says what each rule means in game.
 
 - **The grade.** Lash is 2,201 files in the game's own data. The skin ships 644, and the grade says which parts of
@@ -91,7 +91,7 @@ loops-viscous: ok  Echo (look, effects, sound)  (build 6868)
          on the hero    M102 open-sheet-void x6, M107 backface-shading x1, M113 uv-degenerate x1, M125 seam-crack x1, M136 albedo-range x1
          other heroes   M090 shared-file x4
          frame cost     M122 lod-budget x2, M123 mesh-budget x1
-  grade  ok     Echo (look, effects, sound) for Viscous; release gate pass
+  grade  ok     Echo (look, effects, sound) for Viscous (Echo: a new character); release gate pass
   proof  ok     these bytes proven on 6868
   drift  ok     proven on 6868, the installed build
   scene  ok     viscous: the stock map matches the patch

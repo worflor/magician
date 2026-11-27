@@ -99,9 +99,16 @@ pub fn drift(vpk: &str, files: usize, d: &crate::patchday::Drift, from: &str, to
         .build()
 }
 
+#[cfg(test)]
 pub fn rules() -> String {
+    rules_where(|_| true)
+}
+
+/// The catalogue as `magician.rules/1`, the rules `keep` takes by code.
+pub fn rules_where(keep: impl Fn(&str) -> bool) -> String {
     let items: Vec<String> = RULES
         .iter()
+        .filter(|r| keep(r.code))
         .map(|r| format!("{{\"code\":{},\"name\":{},\"severity\":{},\"in_game\":{}}}", s(r.code), s(r.name), s(severity(r.severity)), s(r.in_game)))
         .collect();
     format!("{{\"schema\":\"magician.rules/1\",\"rules\":[{}]}}\n", items.join(","))

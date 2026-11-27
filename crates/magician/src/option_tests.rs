@@ -210,7 +210,7 @@ fn shown_calls(text: &str, fences: bool) -> Vec<(usize, String)> {
     out
 }
 
-/// A command line up to its end: a pipe or `||` outside brackets, `;`, `&&`, a comment.
+/// A command line up to its end: a pipe or `||` outside brackets, `;`, a backtick, `&&`, a comment.
 fn cut_call(s: &str) -> String {
     let mut depth = 0i32;
     let b: Vec<char> = s.chars().collect();
@@ -223,7 +223,8 @@ fn cut_call(s: &str) -> String {
                 end = i;
                 break;
             }
-            ';' => {
+            // a code span closing: a command's output quotes calls in backticks inside prose
+            ';' | '`' => {
                 end = i;
                 break;
             }

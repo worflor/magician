@@ -93,11 +93,12 @@ Start here:
                                                 lacks and names the rest; never over a mod, never copies a Valve file
   magician init [<pak>... | <archive>... | <addon dir>] [--out DIR] [--hero HERO] [--slug SLUG] [--name NAME] [--force]
                                                 write a mod.toml for paks (or the paks here) or an addon's sources: the
-                                                hero from the files it replaces, slug and name from the folder. Paks
-                                                from elsewhere, and the paks in a download (.zip; .7z and .rar through
-                                                bsdtar), are copied into the mod's folder (--out, else a new folder
-                                                named for the download), each copy proven the same bytes; a pak whose
-                                                every file another ships byte for byte is left out
+                                                hero from the files it replaces, slug and name from the folder. A pak
+                                                is described where it lies, its mod.toml beside it; with --out it is
+                                                copied into that folder instead. The paks in a download (.zip; .7z and
+                                                .rar through bsdtar) are taken out into --out, else a new folder named
+                                                for the download. Each copy is proven the same bytes; a pak whose every
+                                                file another ships byte for byte is left out
   magician check [<folder> | <mod.toml> | --mod <mod.toml>] [--light] [--verbose] [--baseline FILE] [--json]
                                                 the mod's one verdict on the installed build: its paks linted and graded
                                                 together, drift since its last proven build, its scene patches; exit 1
@@ -192,9 +193,10 @@ Every command:
                                                 finding predicted are listed; every outcome is added to
                                                 <reference>/<build>/witness.tsv under --pass (default: the log's folder)
   magician pack <src_dir> <out/pakNN_dir.vpk>   deterministic single-file VPK, then lint it (with lint's options)
-  magician rules [--json]                       list lint rules and what each means in-game, with each rule's record
+  magician rules [<rule>...] [--json]           list lint rules and what each means in-game, with each rule's record
                                                 on the installed build: Valve's own content it fires on (`corpus`) and
-                                                what the game confirmed or contradicted (`witness`)
+                                                what the game confirmed or contradicted (`witness`); a code or name
+                                                (`rules M062`, `rules floating-shell`) shows only that rule
   magician footprint <hero> [--list]            everything a hero is made of, from the game's own data
   magician grade <pak>... [--hero <hero> | --mod <mod.toml>] [--target BUILD] [--light | --findings FILE] [--allow FILE]...
                 [--addon-root DIR]... [--scene-root DIR]... [--gate] [--json] [--record-out FILE] [--baseline FILE]
@@ -2931,8 +2933,21 @@ fn cmd_uninstall(args: &[String]) -> R {
 }
 
 fn cmd_rules(_args: &[String]) -> R {
+    // `magician rules M062 m111 floating-shell`: only those rules, by code or name, in any case
+    let mut only: Vec<&'static str> = Vec::new();
+    for w in positional(_args) {
+        let r = RULES.iter().find(|r| r.code.eq_ignore_ascii_case(w) || r.name.eq_ignore_ascii_case(w));
+        match r {
+            Some(r) => only.push(r.code),
+            None => {
+                let words: Vec<&str> = RULES.iter().flat_map(|r| [r.code, r.name]).collect();
+                return Err(Stop::Usage(format!("{w}: no such rule{}; `magician rules` lists them all", cli::did_you_mean(w, &words, |c| format!("`{c}`")))));
+            }
+        }
+    }
+    let shown = |code: &str| only.is_empty() || only.contains(&code);
     if json_mode() {
-        out!("{}", jsonout::rules());
+        out!("{}", jsonout::rules_where(shown));
         return Ok(ExitCode::SUCCESS);
     }
     // each rule's record on the installed build, when there is one: Valve's own content it fires on, and what the game
@@ -2941,7 +2956,7 @@ fn cmd_rules(_args: &[String]) -> R {
     let read = |f: &str| build.as_ref().and_then(|b| std::fs::read_to_string(reference_root().join(b).join(f)).ok()).unwrap_or_default();
     let corpus = lint::corpus::read_calibrations(&read("corpus.tsv"));
     let record = build.as_ref().map(|b| witness::record(&read("witness.tsv"), b)).unwrap_or_default();
-    for r in RULES {
+    for r in RULES.iter().filter(|r| shown(r.code)) {
         say!("{} {:<26} {:?}\n     {}", r.code, r.name, r.severity, r.in_game);
         for (_, fires, of, reading) in corpus.iter().filter(|c| c.0 == r.code) {
             say!("     on Valve's own content ({}): fires on {fires} of {of}: {reading}", build.as_deref().unwrap_or(""));
@@ -2949,6 +2964,9 @@ fn cmd_rules(_args: &[String]) -> R {
         if let Some([c, x, n, f]) = record.get(r.code) {
             say!("     witnessed in game ({}): {c} confirmed, {x} contradicted, {n} not reached, {f} for a frame or the files", build.as_deref().unwrap_or(""));
         }
+    }
+    if !only.is_empty() && !only.iter().any(|c| *c == "M144" || grade::rubric::FAIR_PLAY_RULES.contains(c)) {
+        return Ok(ExitCode::SUCCESS);
     }
     say!("\nThe severities are each rule's own. Fair play is lenient unless the policy enforces it ([fair_play] enforce = true): until then the fair-play rules ({}; M062 for hitboxes only) and M144 report as warnings.", grade::rubric::FAIR_PLAY_RULES.join(" "));
     Ok(ExitCode::SUCCESS)

@@ -92,13 +92,13 @@ my-lash-skin: RE-PROVE  Echo (look, effects, sound) · NSFR · unproven  (build 
          the pak        M031 orphan-new-file x1, M100 mesh-unchecked x1
          fair play      M140 hitbox-envelope-taste x1
          advisory       M081 particle-energy x3, M130 hitbox-envelope-wide x1 (fair play's advisories: reported, never a violation)
-  grade  warn   Echo (look, effects, sound) · NSFR · unproven for Lash; release gate blocked: freshness: not proven on 6871 (no proven build on record for these bytes)
-  proof  warn   these bytes proven on none
-  drift  warn   these bytes are proven on no build yet: nothing to compare from
-next: the in-game pass on build 6871 (`magician session qa --mod /home/you/mods/my-lash-skin --out <dir>`), look at the frames, then `magician prove --evidence <dir>`
+  grade  warn   Echo (look, effects, sound) · NSFR · unproven for Lash (Echo: a new character); release gate blocked: freshness: not proven on 6871 (no proven build on record for these bytes)
+  proof  warn   not proven on any build yet (a proof is recorded once someone has seen these bytes work in game)
+  drift  skip   nothing to compare yet: drift starts from the first build these bytes are proven on
+next: nothing in its files breaks the mod, and its warnings are what a player might notice (`magician lint --deep` lists them). That is as far as lint can see: if it is what you wanted to know, you can stop here, and RE-PROVE says only that nobody has seen the mod in game on 6871 yet. To prove it: the in-game pass (`magician session qa --mod /home/you/mods/my-lash-skin --out <dir>`, which launches the game on this machine), a look at its frames, then `magician prove --evidence <dir>`
 ```
 
-`check` exits 1 when something is broken, 4 when the mod loads but is not proven on the installed build, 0 when it is proven here and clean. Under the lint line the findings are counted by rule, grouped by where a player meets them (the first row is cut short here); `magician lint` prints each one. The same bare verbs work for `lint`, `ls`, `grade`, `drift` (from the mod's last proven build), `release` (its addon), `uninstall`, `prove`, `footprint` and `scene check`; whatever you pass explicitly wins. `magician help` lists every command and option, `magician help <command>` shows one, and a mistyped command, option or hero is answered with what it most likely meant. A hero can be named the way you would say it: `lash`, `Lash`, `hero_lash`, `"Lady Geist"`, or its model's path.
+`check` exits 1 when something is broken, 4 when the mod loads but is not proven on the installed build, 0 when it is proven here and clean. On a first look, 4 is the answer you hoped for: nothing in the files breaks the mod, and what is left is a look in game, which can wait until you want a proof. Under the lint line the findings are counted by rule, grouped by where a player meets them (the first row is cut short here); `magician lint --deep` prints each one (`check` lints deep, and a bare `lint` is the light run). The same bare verbs work for `lint`, `ls`, `grade`, `drift` (from the mod's last proven build), `release` (its addon), `uninstall`, `prove`, `footprint` and `scene check`; whatever you pass explicitly wins. `magician help` lists every command and option, `magician help <command>` shows one, and a mistyped command, option or hero is answered with what it most likely meant. A hero can be named the way you would say it: `lash`, `Lash`, `hero_lash`, `"Lady Geist"`, or its model's path.
 
 A `mod.toml` is plain text, read line by line: flat tables of strings, numbers and lists, the shape `new` and `init` write. The keys a mod usually carries:
 
