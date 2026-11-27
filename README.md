@@ -84,15 +84,15 @@ magician install                   # lints first, backs up gameinfo.gi, never un
 ```
 
 ```
-my-lash-skin: RE-PROVE  Echo (look, effects, sound) · NSFR · unproven  (build 6871)
-  lint   warn   0 error(s), 39 warning(s), 0 allowed (deep; fair play NSFR, not safe for ranked)
+my-lash-skin: RE-PROVE  Echo (look, effects, sound) · freeform · unproven  (build 6871)
+  lint   warn   0 error(s), 39 warning(s), 0 allowed (deep; fair play freeform)
          on the hero    M111 floating-shell x8, M102 open-sheet-void x6, M108 z-fighting x5, M113 uv-degenerate x3, ...
          other heroes   M090 shared-file x2
          frame cost     M122 lod-budget x2, M123 mesh-budget x1
          the pak        M031 orphan-new-file x1, M100 mesh-unchecked x1
          fair play      M140 hitbox-envelope-taste x1
          advisory       M081 particle-energy x3, M130 hitbox-envelope-wide x1 (fair play's advisories: reported, never a violation)
-  grade  warn   Echo (look, effects, sound) · NSFR · unproven for Lash (Echo: a new character); release gate blocked: freshness: not proven on 6871 (no proven build on record for these bytes)
+  grade  warn   Echo (look, effects, sound) · freeform · unproven for Lash (Echo: a new character); release gate blocked: freshness: not proven on 6871 (no proven build on record for these bytes)
   proof  warn   not proven on any build yet (a proof is recorded once someone has seen these bytes work in game)
   drift  skip   nothing to compare yet: drift starts from the first build these bytes are proven on
 next: nothing in its files breaks the mod, and its warnings are what a player might notice (`magician lint --deep` lists them). That is as far as lint can see: if it is what you wanted to know, you can stop here, and RE-PROVE says only that nobody has seen the mod in game on 6871 yet. To prove it: the in-game pass (`magician session qa --mod /home/you/mods/my-lash-skin --out <dir>`, which launches the game on this machine), a look at its frames, then `magician prove --evidence <dir>`
@@ -217,7 +217,7 @@ A finding can be accepted only per site, in the addon's `magician.allow`, with a
 
 ```
 Echo (look, effects, sound)              a new character, its look, effects and sound all its own
-Costume (look, some effects) · NSFR      the same character in a new model, effects begun, a confirmed fair-play violation
+Costume (look, some effects) · freeform  the same character in a new model, effects begun, measured past a fair-play limit
 Kit (sound) · stale(6864)                no model, its own sound, last proven on 6864
 Variant (look) · broken                  Valve's mesh in new materials, with lint errors: something won't load
 not graded (prop mod)                    no rubric for it, and it says so
@@ -225,11 +225,11 @@ not graded (prop mod)                    no rubric for it, and it says so
 
 - **The kind** is identity, decided from what is in the paks: Echo (a new character), Costume (the same character, a new model), Variant (Valve's mesh kept, new materials), Kit (no model). A new character takes two signals out of a replaced head, a new name, new portrait and card art, and a new voice, which counts for half and is declared in the `mod.toml` (`[identity] voice = "new"`), because bytes can't tell a new voice from a treatment of the old one. Maid Lash keeps Valve's head and is still Lash: a Costume.
 - **The groups** are measured against the hero's footprint, every file the hero is made of, discovered from the game's own data (2,201 files for Lash on build 6864). **look** is the model, materials, UI art and showcase scenes; **effects** the ability VFX and animation; **sound** the kit sound, and the voice once the mod treats it. A group is named when the mod covers it, `some <group>` when it has begun it, and left out while it is still Valve's. Coverage is per ability and per moment, not per file, and below the label the report says what was counted, in the game's terms (`look     model, materials, UI art 11 of 13, scenes 1 of 3`).
-- **The flags** never change the description. `broken` is lint errors that are not fair play, the same test `magician check` uses. `NSFR` (not safe for ranked) is a confirmed fair-play violation, and `FP?` a fair-play check that should have run and could not: unknown never becomes pass. A fair-play finding accepted at one site holds only within its rule's limit, and the record lists it with its measured value. `stale(<last proven build>)` and `unproven` say the paks graded are not proven on the build they are judged for, which is asked [of the bytes](#a-proof-belongs-to-bytes).
+- **The flags** never change the description. `broken` is lint errors that are not fair play, the same test `magician check` uses. `freeform` means a measurement went past a fair-play limit: the skin took liberties with how the hero reads, which is often the point, and it still builds, installs and ships. A skin inside every limit is ranked-safe and carries no flag. `fair play not checked` is a fair-play check that should have run and could not: unknown never becomes pass. A fair-play finding accepted at one site holds only within its rule's limit, and the record lists it with its measured value. `stale(<last proven build>)` and `unproven` say the paks graded are not proven on the build they are judged for, which is asked [of the bytes](#a-proof-belongs-to-bytes).
 
-The **release gate** is separate from the label: it decides whether automated packaging or publishing may go ahead. Its blockers are lint errors that are not fair play, files byte-identical to Valve's at the same path, not proven on the target build, and rights denied. Fair play and rights are lenient by default: NSFR, FP? and unreviewed rights are listed as gate warnings, and a policy turns each into a blocker with one switch (`[fair_play] enforce = true`, `[rights] enforce = true`). Rights are a person's call, never Magician's: `[rights] state = "cleared"` (or `"denied"`, default `"unreviewed"`) in the `mod.toml`. `grade` exits 0 whatever the grade; `--gate` makes it exit 1 when the gate has a blocker.
+The **release gate** is separate from the label: it decides whether automated packaging or publishing may go ahead. Its blockers are lint errors that are not fair play, files byte-identical to Valve's at the same path, not proven on the target build, and rights denied. Fair play and rights are lenient by default: freeform, fair play not checked and unreviewed rights are listed as gate warnings, and a policy turns each into a blocker with one switch (`[fair_play] enforce = true`, `[rights] enforce = true`). Rights are a person's call, never Magician's: `[rights] state = "cleared"` (or `"denied"`, default `"unreviewed"`) in the `mod.toml`. `grade` exits 0 whatever the grade; `--gate` makes it exit 1 when the gate has a blocker.
 
-`--json` prints the record (`magician.grade/3`): the toolchain and commit, the build, fingerprints of the baseline, the policy and every pak, each group and criterion with its measured coverage, the identity signals with what was measured for each, every fair-play check run or not run with its violations and allowances, freshness, rights, the gate, and the next steps. Whoever reads it later can explain the grade from it alone, or weigh the criteria their own way. `grade` lints deep unless `--light` (fair play then reads `FP?` for a mod with a model). `magician rubric` prints the criteria, their groups and the weights in force, and [docs/TDD.md](docs/TDD.md#grading) says how each part is decided. There are rubrics for hero mods only: a map, HUD, music, prop, effects or sound mod for no hero is `not graded`, and says which.
+`--json` prints the record (`magician.grade/3`): the toolchain and commit, the build, fingerprints of the baseline, the policy and every pak, each group and criterion with its measured coverage, the identity signals with what was measured for each, every fair-play check run or not run with what went past a limit and its allowances, freshness, rights, the gate, and the next steps. Whoever reads it later can explain the grade from it alone, or weigh the criteria their own way. `grade` lints deep unless `--light` (fair play then reads `fair play not checked` for a mod with a model). `magician rubric` prints the criteria, their groups and the weights in force, and [docs/TDD.md](docs/TDD.md#grading) says how each part is decided. There are rubrics for hero mods only: a map, HUD, music, prop, effects or sound mod for no hero is `not graded`, and says which.
 
 ## Policy
 

@@ -128,7 +128,7 @@ Deadlock build 6865 (was 6864), data only. 3 mods checked.
 Wrote: baseline and sidecars for 6865, two passes under work/passes (reference folder); maid-lash proofs.tsv and mod.toml (uncommitted).
 ```
 
-Always say: the build number; each mod's patch-day label and grade label (`Echo (look, some effects) · NSFR`, quoted as printed); the release-gate blockers if a release was asked about; error counts with rule codes (`M062`, not "a model problem"); what you saw in the frames, or that nobody looked; every write you made (a baseline captured, a pak installed or removed, a proof recorded, files created) and every refusal you hit; what you did not do and why. Quote Magician's own words for findings rather than paraphrasing them. When a command exits 2, give its `magician:` line verbatim.
+Always say: the build number; each mod's patch-day label and grade label (`Echo (look, some effects) · freeform`, quoted as printed); the release-gate blockers if a release was asked about; error counts with rule codes (`M062`, not "a model problem"); what you saw in the frames, or that nobody looked; every write you made (a baseline captured, a pak installed or removed, a proof recorded, files created) and every refusal you hit; what you did not do and why. Quote Magician's own words for findings rather than paraphrasing them. When a command exits 2, give its `magician:` line verbatim.
 
 ## Where things are
 
