@@ -636,6 +636,15 @@ pub fn lint(input: &Input) -> Vec<Finding> {
                     if matches!(ext.as_str(), "vcss_c" | "vxml_c" | "vjs_c" | "vts_c") {
                         referenced.extend(panorama_refs(&f.data));
                     }
+                    // A layout compiled into a `LaCo` block keeps its tree LZ4-compressed, so its scripts and styles
+                    // (`panorama/scripts/x.vjs_c` under SCRIPTS) are read from the decoded tree, not the raw bytes.
+                    if ext == "vxml_c" {
+                        if let Some(Ok(tree)) = resource::kv3_block(&f.data, b"LaCo") {
+                            for s in tree.strings() {
+                                referenced.extend(panorama_refs(s.as_bytes()));
+                            }
+                        }
+                    }
                     let original = input.original_refs.get(p);
                     // Sound-event files name their .vsnd files as strings in the data, with no RERL entry.
                     let mut inherited_strings: Vec<String> = Vec::new();

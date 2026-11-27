@@ -1700,6 +1700,22 @@ fn m031_counts_what_panorama_names_in_its_own_text() {
     let unnamed = run(vec![sheet("#Heal { }"), file(image, res(&[]))], Some(&g), None);
     assert!(unnamed.iter().any(|x| x.code == "M031" && x.path.as_deref() == Some(image)), "{unnamed:?}");
 }
+
+#[test]
+fn m031_counts_the_scripts_a_compiled_layout_tree_names() {
+    // Real case (6880, a community HUD mod, 20 scripts read as never loaded): the layout's LaCo block is LZ4 in the
+    // game's compile, so `panorama/scripts/aspect_ratio.vjs_c` under SCRIPTS is broken up in the raw bytes and only the
+    // decoded tree names it. (The fixture's KV3 is written uncompressed, so this holds the read, not the codec.)
+    let g = game();
+    let script = "panorama/scripts/aspect_ratio.vjs_c";
+    let tree = kv(&format!(r#"{{ m_AST = {{ eType = "ROOT" children = [ {{ eType = "SCRIPTS" children = [ {{ eType = "INCLUDE" name = "{script}" }} ] }} ] }} }}"#));
+    let layout = file("panorama/layout/my_hud.vxml_c", res_kv(&[], &[(b"LaCo", tree)]));
+    let f = run(vec![layout, file(script, res(&[]))], Some(&g), None);
+    assert!(!f.iter().any(|x| x.code == "M031" && x.path.as_deref() == Some(script)), "{f:?}");
+    // a script no layout or other file names is still never loaded
+    let f = run(vec![file(script, res(&[]))], Some(&g), None);
+    assert!(f.iter().any(|x| x.code == "M031" && x.path.as_deref() == Some(script)), "{f:?}");
+}
 #[test]
 fn m081_reads_the_radius_an_initializer_writes() {
     // Real case (6871, a community skin, the smoke at a cast): Valve's constant radius is 2 and an InitFloat on the
