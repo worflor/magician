@@ -264,6 +264,17 @@ fn a_changed_rubric_or_rule_set_is_reported_as_changed_judgement() {
     let o = magician(&d, &tk, &s(&src), &["update", "--check"]);
     let t = out(&o);
     assert!(t.contains("judgement    would change: the grading rubric is 9.9.9") && t.contains("the lint rule set is 999 rules") && t.contains("re-run `magician lint` and `magician grade`"), "{t}");
+    // a release older than this build that judges otherwise: said, and nothing to run again, since nothing is updated
+    // (seen against the live release: "re-run `magician lint`" from a build ahead of it)
+    let mut old = Release::new("0.0.1", "aaaaaaaaaaaa");
+    old.keys = vec![("lint_rules", "81".into())];
+    let old = old.write(&d, "older-judges-otherwise");
+    let o = magician(&d, &tk, &s(&old), &["update", "--check"]);
+    let t = out(&o);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(t.contains("the latest release judges otherwise: the lint rule set is 81 rules") && t.contains("nothing to update or run again") && !t.contains("re-run"), "{t}");
+    let o = magician(&d, &tk, &s(&old), &["update", "--check", "--json"]);
+    assert!(out(&o).contains("\"changed\":true,\"differences\":[\"the lint rule set is 81 rules") && out(&o).contains("\"rerun\":[]"), "{}", out(&o));
     // the same judgement: said unchanged
     let same = Release::new("99.0.0", "aaaaaaaaaaaa").write(&d, "same-judgement");
     let o = magician(&d, &tk, &s(&same), &["update", "--check", "--json"]);

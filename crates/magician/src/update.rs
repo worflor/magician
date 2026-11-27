@@ -288,6 +288,7 @@ impl Judgement {
         match self.changed {
             None => "the release does not say what it judges by (its VERSION carries no fingerprints)".to_string(),
             Some(false) => "unchanged: the same grading rubric, built-in policy and lint rules".to_string(),
+            Some(true) if self.rerun.is_empty() => format!("the latest release judges otherwise: {}; this build is newer, so there is nothing to update or run again", self.differences.join("; ")),
             Some(true) => format!(
                 "{}: {}; re-run {} on your mods ({})",
                 if future { "would change" } else { "changed" },
@@ -449,7 +450,9 @@ impl Report {
     }
 
     pub fn judgement(&self) -> Option<Judgement> {
-        self.latest.as_ref().ok().map(|l| judgement(&self.local, l))
+        // ahead of the release, nothing is updated, so nothing is to run again: the difference is only said
+        let ahead = self.state().0 == State::Ahead;
+        self.latest.as_ref().ok().map(|l| judgement(&self.local, l)).map(|j| if ahead { Judgement { rerun: Vec::new(), ..j } } else { j })
     }
 
     /// The fields every `magician.update/1` document has.
