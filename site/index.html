@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Magician</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="A headless toolchain that builds, checks and maintains Deadlock mods, made for autonomous systems.">
+<meta name="description" content="An unofficial SDK for Deadlock mods, built around the game build you have: it builds, packs, checks and maintains mods from the command line, a script or an agent.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0a0a0a">
 <meta property="og:title" content="Magician">
-<meta property="og:description" content="A headless toolchain that builds, checks and maintains Deadlock mods, made for autonomous systems.">
+<meta property="og:description" content="An unofficial SDK for Deadlock mods, built around the game build you have: it builds, packs, checks and maintains mods from the command line, a script or an agent.">
 <meta property="og:image" content="https://woflo.dev/magician/img/maid-lash.jpg">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0a0a'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='18' font-weight='700' text-anchor='middle' fill='%23f5f5f5'%3EM%3C/text%3E%3C/svg%3E">
 <style>
@@ -113,6 +113,28 @@ p { margin: 0; }
 .shot figcaption { white-space: pre-wrap; font-family: var(--mono); font-size: 0.74rem; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
 .shot figcaption b { font-weight: 400; color: var(--ink); }
 @media (max-width: 640px) { .shots { flex-direction: column; } .shot.square .frame { aspect-ratio: 4 / 3; } }
+
+/* works with what you have */
+.with { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
+.with td { padding: 0.75rem 0; border-top: 1px solid var(--line); vertical-align: top; color: var(--muted); }
+.with tr:first-child td { border-top: 0; }
+.with td:first-child { width: 13rem; padding-right: 1.5rem; color: var(--ink); font-weight: 500; }
+@media (max-width: 560px) { .with td { display: block; } .with td:first-child { width: auto; padding-bottom: 0.15rem; } .with td + td { border-top: 0; padding-top: 0; } }
+
+/* the compiler's quirks */
+.quirks { border: 1px solid var(--line); border-radius: 0.45rem; overflow: hidden; }
+.quirk { display: grid; grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) minmax(0, 1fr); gap: 0.35rem 1.4rem; padding: 0.8rem 1.1rem; border-top: 1px solid var(--line); align-items: baseline; }
+.quirk:first-child { border-top: 0; }
+.quirk.head { font-family: var(--mono); font-size: 0.7rem; color: var(--faint); padding-block: 0.7rem; }
+.quirk b { font-weight: 500; font-size: var(--step--1); }
+.quirk span { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+.quirk span.m { color: var(--ink); }
+.quirk code { font-size: 0.74rem; }
+@media (max-width: 720px) {
+  .quirk { grid-template-columns: minmax(0, 1fr); }
+  .quirk.head { display: none; }
+  .quirk span::before { content: attr(data-l); display: block; font-family: var(--mono); font-size: 0.66rem; color: var(--faint); margin-top: 0.2rem; }
+}
 
 /* sections and steps */
 .sec { border-top: 1px solid var(--line); padding-block: clamp(2.5rem, 1.5rem + 4vw, 5rem); }
@@ -396,9 +418,10 @@ footer p { max-width: 60ch; }
   <div class="wrap">
     <h1>Magician<span class="dot">.</span></h1>
     <div class="hero-grid">
-      <p class="lede">A headless toolchain that builds, checks and maintains Deadlock mods, made for <em>autonomous systems</em>.</p>
+      <p class="lede">An unofficial SDK for Deadlock mods, built around <em>the game build you have</em>.</p>
       <div class="hero-copy">
-        <p>It runs where nobody is sitting: on a schedule first, from a script second, or under an AI agent. It builds a mod from its sources, checks every file against the game you have installed, and when Valve ships an update, says what changed under each mod. Every step ends in a plain report and an exit code that means something.</p>
+        <p>Magician builds a mod from its sources and packs it into a VPK, the same bytes every time. It checks every file against the game you have installed, and when Valve ships an update, it says what changed under each mod and what needs another look.</p>
+        <p>It has no windows. It runs on a schedule, from a script, under an AI agent, or in a terminal while you mod by hand, and every step ends in a plain report and an exit code that means something.</p>
         <div class="actions">
           <a class="btn primary" href="https://github.com/worflor/magician"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>worflor/magician</a>
           <a class="btn" href="https://github.com/worflor/magician/releases">Releases</a>
@@ -420,26 +443,97 @@ footer p { max-width: 60ch; }
   </div>
 </section>
 
+<section class="sec" id="with" aria-labelledby="with-h">
+  <div class="wrap">
+    <div class="split">
+      <div class="prose">
+        <h2 id="with-h">Works with what you have</h2>
+        <p>Magician runs alongside the tools Deadlock modders already use.</p>
+      </div>
+      <table class="with">
+        <tbody>
+          <tr><td>CSDK</td><td>The compiler. Magician runs the CSDK's resourcecompiler and handles its known quirks (step 1). It is tested on CSDK 13, built on Dota 2's tools; CSDK 12, built on CS2's, has not been through a full build yet. The CSDK's editors stay yours to use.</td></tr>
+          <tr><td>Source 2 Viewer</td><td>Magician decodes the same compiled files with its own readers, checked against the Viewer's. <code>grade</code>, <code>footprint</code> and <code>index</code> call its CLI, and lint catches what a recompiled decompile loses.</td></tr>
+          <tr><td>Blender, or whatever exports DMX or FBX</td><td>Your exports compile through your model document. Magician keeps them out of the compiler's input and, in a new mod, out of git.</td></tr>
+          <tr><td><a href="https://github.com/deadlock-mod-manager/deadlock-mod-manager">Deadlock Mod Manager</a></td><td>How players install. <code>magician bundle</code> writes a release it imports, and <code>magician source</code> a mod source players add to it once.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
 <section class="sec" aria-labelledby="how-h">
   <div class="wrap">
     <div class="intro">
       <h2 id="how-h">What happens to a mod</h2>
-      <p>A Deadlock skin is a set of files that replace the game's own. These are the five things Magician does with them, shown on skins it was used to make.</p>
+      <p>A Deadlock mod is a set of files that replace the game's own. These are the six things Magician does with one, shown on skins it was used to make.</p>
     </div>
     <ol class="steps-nav">
-      <li><a href="#lint"><b>1</b>Check every file</a></li>
-      <li><a href="#fairplay"><b>2</b>Fair play</a></li>
-      <li><a href="#ingame"><b>3</b>Look in the game</a></li>
-      <li><a href="#proof"><b>4</b>Record the proof</a></li>
-      <li><a href="#patchday"><b>5</b>Survive the patch</a></li>
+      <li><a href="#build"><b>1</b>Build and pack</a></li>
+      <li><a href="#lint"><b>2</b>Check every file</a></li>
+      <li><a href="#fairplay"><b>3</b>Fair play</a></li>
+      <li><a href="#ingame"><b>4</b>Look in the game</a></li>
+      <li><a href="#proof"><b>5</b>Record the proof</a></li>
+      <li><a href="#patchday"><b>6</b>Survive the patch</a></li>
     </ol>
+  </div>
+</section>
+
+<section class="sec" id="build" aria-labelledby="build-h">
+  <div class="wrap">
+    <div class="step-head">
+      <div class="step-meta"><span class="n">1 of 6</span><code><i>$</i>magician build</code><code><i>$</i>magician pack</code></div>
+      <h2 id="build-h">Build the mod and pack it</h2>
+      <p><code>magician build</code> compiles an addon's sources with the CSDK's resourcecompiler, packs what belongs in the mod into one VPK and lints it. Packing is deterministic: the same compiled files give the same pak, byte for byte, so a proof can name exact bytes and a rebuild that changed nothing shows as one.</p>
+    </div>
+    <div class="part">
+      <div class="part-text">
+        <h3>What the compiler does, and what Magician does about it</h3>
+        <p>Valve's resourcecompiler comes with the community CSDK. These are the quirks Magician handles on every build, found on CSDK 13 while making skins with it. Anything it leaves out of a pak is named in the output.</p>
+      </div>
+      <div>
+        <div class="quirks">
+          <div class="quirk head" aria-hidden="true"><span></span><span>the compiler</span><span>Magician</span></div>
+          <div class="quirk"><b>Hang on exit</b><span data-l="the compiler">It can print <code>OK: N compiled, 0 failed</code> and then never exit.</span><span class="m" data-l="Magician">Ends it 20 seconds after the summary line.</span></div>
+          <div class="quirk"><b>Raw inputs</b><span data-l="the compiler">Given the whole addon, it tries every png, dmx, fbx and <code>.gitignore</code> and fails on each.</span><span class="m" data-l="Magician">Feeds it only real sources. Images and meshes compile through the documents that use them.</span></div>
+          <div class="quirk"><b>Stale outputs</b><span data-l="the compiler">Outputs whose source was deleted stay in its output folder, and a file that still names one pulls it into the pak.</span><span class="m" data-l="Magician">Packs only outputs that map to a live source, and fails the build on a live file that names a stale one.</span></div>
+          <div class="quirk"><b>Engine defaults</b><span data-l="the compiler">Writes its own copies of the engine's default textures into every addon with a material. Shipped, they replace the game's fallbacks.</span><span class="m" data-l="Magician">Leaves them out of the pak.</span></div>
+          <div class="quirk"><b>Byte-order mark</b><span data-l="the compiler">A source that starts with a UTF-8 BOM fails to compile. Windows PowerShell 5.1 writes one.</span><span class="m" data-l="Magician">Refuses that source by name, and never rewrites it.</span></div>
+          <div class="quirk"><b>Tagged-sound clips</b><span data-l="the compiler">CSDK 13's default compiler can't build an animation clip with a tagged-sound event.</span><span class="m" data-l="Magician">Compiles those clips with <code>win64_nm</code>, a copy of the compiler with Deadlock's own dlls in it, which you make once.</span></div>
+          <div class="quirk"><b>Distance fields</b><span data-l="the compiler">The CSDK's gameinfo can't compile a model's distance fields, and a Source 2 Viewer decompile drops them without a word.</span><span class="m" data-l="Magician">Compiles those models against a copy of the gameinfo with the feature added, and says when a model would lose Valve's.</span></div>
+          <div class="quirk"><b>Hero card images</b><span data-l="the compiler">Compiled through an image list, they come out with one mip and alias when drawn small. A card's own <code>.vtex</code> fixes that, but with both present, two sources race for one output.</span><span class="m" data-l="Magician">Writes the image list for loose images and removes it after. A card with its own <code>.vtex</code> compiles through that and stays off the list.</span></div>
+        </div>
+        <details class="raw">
+          <summary>The output</summary>
+          <div class="body">
+            <div class="out">
+<div class="ln h">$ magician build maid_lash out/a/pak10_dir.vpk --no-compile</div>
+<div class="ln" style="--hang:2ch">maid_lash: compiler &lt;csdk&gt;\game\bin\win64 (default), not run (--no-compile)</div>
+<div class="ln" style="--hang:2ch">packaging 551 resource(s) -&gt; out/a/pak10_dir.vpk</div>
+<div class="ln" style="--hang:4ch">  left out 9 compiler's engine-default textures (M071): materials/default/default_ao_tga_559f1ac6.vtex_c, materials/default/default_black_mask_tga_e7be3cc.vtex_c, materials/default/default_color_tga_96b3aa03.vtex_c, materials/default/default_color_tga_a3e13104.vtex_c, ...</div>
+<div class="ln" style="--hang:4ch">  left out 5 stale outputs (their source is gone): particles/abilities/lash/lash_ground_strike_cone.vpcf_c, particles/abilities/lash/lash_ground_strike_v2_cone.vpcf_c, particles/maid_lash/doily_probe_blue.vpcf_c, particles/maid_lash/doily_probe_green.vpcf_c, ...</div>
+<div class="ln el">…</div>
+<div class="ln" style="--hang:2ch">lint out/a/pak10_dir.vpk against build 6875 (551 files)</div>
+<div class="ln el">…</div>
+<div class="ln">0 error(s), 9 warning(s), 1 note(s), 2 allowed, 0 stale</div>
+<div class="ln gap"></div>
+<div class="ln h">$ magician build maid_lash out/b/pak10_dir.vpk --no-compile</div>
+<div class="ln el">…</div>
+<div class="ln h">$ magician diff out/a/pak10_dir.vpk out/b/pak10_dir.vpk</div>
+<div class="ln" style="--hang:2ch"><span class="k-ok">the same file</span>: 551 files, sha256 4664c1cdd8b27c72d219f655c1a4c65d2751484e7a8e3e1f89e79c7492e8fbca</div>
+            </div>
+            <p class="part-text">Maid Lash's compiled files packed twice on build 6875, without compiling again. Both paks are the same bytes.</p>
+          </div>
+        </details>
+      </div>
+    </div>
   </div>
 </section>
 
 <section class="sec" id="lint" aria-labelledby="lint-h">
   <div class="wrap">
     <div class="step-head">
-      <div class="step-meta"><span class="n">1 of 5</span><code><i>$</i>magician lint</code></div>
+      <div class="step-meta"><span class="n">2 of 6</span><code><i>$</i>magician lint</code></div>
       <h2 id="lint-h">Check every file the way the game will read it</h2>
       <p>Magician opens each file in the mod, puts it beside Valve's file at the same path in the build you have installed, and says what a player would see if it shipped. What Valve's own file already does is never blamed on the mod.</p>
     </div>
@@ -471,9 +565,9 @@ footer p { max-width: 60ch; }
 <section class="sec" id="fairplay" aria-labelledby="fair-h">
   <div class="wrap">
     <div class="step-head">
-      <div class="step-meta"><span class="n">2 of 5</span><code><i>$</i>magician lint --deep</code></div>
+      <div class="step-meta"><span class="n">3 of 6</span><code><i>$</i>magician lint --deep</code></div>
       <h2 id="fair-h">Fair play</h2>
-      <p>Some players don't mind what an enemy looks like as long as they know where to shoot. Others want a skin that changes nothing about how the hero reads in a fight. Magician compares a skin with the stock hero so those players can check before they install.</p>
+      <p>Some players don't mind what an enemy looks like as long as they know where to shoot. Others want a skin that changes nothing about how the hero reads in a fight. Magician compares a skin with the stock hero so those players can check before they install. Nothing is blocked by it: a skin past a line is labelled freeform, and it still builds, installs and ships.</p>
       <p>If you make skins, the same numbers show how far a part goes past the limit and where. You can pull it back in, or keep it and write down why while it stays under the limit. Maid Lash's skirt and the Rem skin's ears were tuned this way.</p>
     </div>
 
@@ -541,6 +635,9 @@ footer p { max-width: 60ch; }
       </div>
     </div>
 
+    <details class="raw">
+      <summary>Where shots land, and the cues</summary>
+      <div class="body">
     <div class="part">
       <div class="part-text">
         <h3>Where shots land</h3>
@@ -587,13 +684,15 @@ footer p { max-width: 60ch; }
         <figcaption>Pillow Toss landing on a grey ground, at 0.08, 0.22 and 0.40 seconds. An old-cartoon skin for Rem.</figcaption>
       </figure>
     </div>
+      </div>
+    </details>
   </div>
 </section>
 
 <section class="sec" id="ingame" aria-labelledby="ingame-h">
   <div class="wrap">
     <div class="step-head">
-      <div class="step-meta"><span class="n">3 of 5</span><code><i>$</i>magician session qa</code></div>
+      <div class="step-meta"><span class="n">4 of 6</span><code><i>$</i>magician session qa</code></div>
       <h2 id="ingame-h">Look at it in the game</h2>
       <p>A clean check is not the end. Some things only show when the hero moves. Magician launches the real game, plays the mod's own scenarios and cuts every take into a contact sheet. Then someone looks: a person, or an agent that can read images. The game's console log is held against a run without the mod, so a new warning stands out.</p>
     </div>
@@ -634,7 +733,7 @@ footer p { max-width: 60ch; }
 <section class="sec" id="proof" aria-labelledby="proof-h">
   <div class="wrap">
     <div class="step-head">
-      <div class="step-meta"><span class="n">4 of 5</span><code><i>$</i>magician reprove accept &lt;pass&gt;</code></div>
+      <div class="step-meta"><span class="n">5 of 6</span><code><i>$</i>magician reprove accept &lt;pass&gt;</code></div>
       <h2 id="proof-h">Record the proof</h2>
       <p>Once the frames have been looked at, Magician records the proof: this game build, these exact bytes. Rebuild the mod and it starts unproven again, so nothing ships on an old proof.</p>
     </div>
@@ -669,7 +768,7 @@ footer p { max-width: 60ch; }
 <section class="sec" id="patchday" aria-labelledby="patchday-h">
   <div class="wrap">
     <div class="step-head">
-      <div class="step-meta"><span class="n">5 of 5</span><code><i>$</i>magician patchday</code></div>
+      <div class="step-meta"><span class="n">6 of 6</span><code><i>$</i>magician patchday</code></div>
       <h2 id="patchday-h">Survive the patch</h2>
       <p>Valve updates Deadlock often, and an update can break a skin without a word. On an always-on machine, a scheduled job sees the new build and runs one command, offline. In a few seconds it knows what changed under every installed mod and what has to be looked at again.</p>
       <p>Mine is called Understudy. It watches Steam for each new build and checks every release against its proofs. Not public yet.</p>
@@ -734,7 +833,7 @@ footer p { max-width: 60ch; }
     <div class="split">
       <div class="prose">
         <h2 id="check-h">All of it, in one command</h2>
-        <p><code>magician check</code> in a mod's folder runs all five and gives one verdict. The same pak, on the build it was proven on and on the next one:</p>
+        <p><code>magician check</code> in a mod's folder puts the checks, the proof and the drift together into one verdict. The same pak, on the build it was proven on and on the next one:</p>
         <div><div class="seg" role="group" aria-label="Game build">
           <button type="button" id="b6868" data-build="6868" aria-pressed="true">6868 · <span class="k-ok">exit 0</span></button>
           <button type="button" id="b6871" data-build="6871" aria-pressed="false">6871 · <span class="k-re">exit 4</span></button>
@@ -757,7 +856,6 @@ footer p { max-width: 60ch; }
       <div class="prose">
         <h2 id="machines-h">Built for the machine that's still running when nobody is</h2>
         <p>No windows and no prompts. Commands read files and print text, or one JSON document when a machine is reading. The same paks, build and policy give the same answer, byte for byte.</p>
-        <p>It isn't a mod loader. <a href="https://github.com/deadlock-mod-manager/deadlock-mod-manager">Deadlock Mod Manager</a> does that well, and what Magician builds installs through it.</p>
       </div>
       <div>
         <table class="codes">
