@@ -1405,17 +1405,12 @@ fn m150_a_material_name_no_valve_material_of_its_shader_sets() {
 }
 
 #[test]
-fn m151_a_float_parameter_compiled_as_an_integer() {
-    // Measured (CSDK 13, 2026-11-27): "g_flSelfIllumScale1" "1" compiles into m_intParams, "1.000" into m_floatParams.
-    let mut params = matparams::MaterialParams::new();
-    let valve = resource::material::Material { shader: "pbr.vfx".into(), floats: vec![("g_flSelfIllumScale1".into(), 1.0)], compiled: true, ..Default::default() };
-    matparams::collect(&valve, &mut params);
-    let fake = Fake { params: Some(params), ..Default::default() };
+fn m151_a_replaced_material_on_another_shader() {
+    let shader = |s: &str| res_kv(&[], &[(b"DATA", kv(&format!("{{ m_shaderName = \"{s}\" }}")))]);
+    let fake = Fake { files: HashMap::from([(MAT.to_string(), shader("pbr.vfx"))]), ..Default::default() };
     let g = game();
-    let as_int = res_kv(&[], &[(b"DATA", kv("{ m_shaderName = \"pbr.vfx\" m_intParams = [ { m_name = \"g_flSelfIllumScale1\" m_nValue = 1 } ] }"))]);
-    let f = run_game(vec![file("materials/x/new.vmat_c", as_int)], &g, &fake);
+    let f = run_game(vec![file(MAT, shader("environment_texture_set.vfx"))], &g, &fake);
     let m = f.iter().find(|x| x.code == "M151").unwrap_or_else(|| panic!("{f:#?}"));
-    assert!(m.message.contains("g_flSelfIllumScale1") && m.message.contains("decimal point") && m.message.contains("float"), "{}", m.message);
-    let as_float = res_kv(&[], &[(b"DATA", kv("{ m_shaderName = \"pbr.vfx\" m_floatParams = [ { m_name = \"g_flSelfIllumScale1\" m_flValue = 1.0 } ] }"))]);
-    assert!(!codes(&run_game(vec![file("materials/x/new.vmat_c", as_float)], &g, &fake)).contains("M151"));
+    assert!(m.message.contains("environment_texture_set.vfx") && m.message.contains("Material Editor") && m.message.contains("pbr.vfx"), "{}", m.message);
+    assert!(!codes(&run_game(vec![file(MAT, shader("pbr.vfx"))], &g, &fake)).contains("M151"), "Valve's own shader");
 }

@@ -225,8 +225,8 @@ pub const RULES: &[Rule] = &[
         in_game: "A replaced material lacks a texture slot Valve's material at the same path sets (a decompile and recompile drops one it did not understand): the game's code still samples it, logs 'Texture g_tAltColor_Reveal doesn't exist in ...vmat!' and 'returning error texture', and draws the error texture wherever that slot is used. Seen in game on a published mod's bow (50 error textures in one pass, none in vanilla), which no other rule reported." },
     Rule { code: "M150", name: "material-param-unread", severity: Severity::Warn,
         in_game: "A material sets a feature or parameter that none of Valve's materials of the same shader sets on this build. The compiler keeps any name it is given, a typo or another shader's parameter included, and exits 0, so the setting is in the compiled file and does nothing in game. A rim-light strength is the scene's (the game's light rig), not the material's. Valve's materials are the evidence of what the shader reads: a name only one Valve material sets still counts as read." },
-    Rule { code: "M151", name: "material-param-mistyped", severity: Severity::Warn,
-        in_game: "A material stores a parameter as an integer that every one of Valve's materials of the same shader stores as a float or a vector, or the other way round. The compiler types a value by how it is written: \"1\" is an integer and \"1.0\" a float, so a float parameter written without its decimal point compiles into the integer list, where the shader, which reads the float, most likely does not find it and draws its default (the compile is measured, the effect in game UNVERIFIED; measured on CSDK 13: g_flSelfIllumScale1 \"1\" came out an integer)." },
+    Rule { code: "M151", name: "material-shader-changed", severity: Severity::Warn,
+        in_game: "A replaced material draws with another shader than Valve's material at the same path. A hero's look (its NPR lighting, outline and status-effect overlay) is features of pbr.vfx, so a hero material on any other shader loses them, and the inputs it was given mean something else or nothing. The CSDK's Material Editor starts a new material on environment_texture_set (the DefaultShader in its gameinfo), which is how a skin ends up there." },
     Rule { code: "M060", name: "model-document-replaced", severity: Severity::Info,
         in_game: "Replacing a .vmdl_c replaces the WHOLE model document: hitboxes, attachments, cloth, LODs and anim events come from your file. Run the contract check against the original." },
 ];
@@ -879,11 +879,11 @@ fn deep_rules(input: &Input, referenced: &HashSet<String>, out: &mut Vec<Finding
                         out.push(finding("M150", Some(p), format!("sets {} that no Valve material of {} sets on this build: the compiler keeps any name, so the shader most likely ignores {}{rim}", unread.join(", "), m.shader, if unread.len() == 1 { "it" } else { "them" })));
                     }
                 }
-                // M151: a name stored as another kind than Valve's materials of the shader store it as
-                if let Some((m, bad)) = input.game.and_then(|g| g.material_params()).and_then(|mp| resource::material::from_compiled(&f.data).ok().and_then(|m| matparams::mistyped(&m, mp).map(|b| (m, b)))) {
-                    for (n, ours, valve) in bad {
-                        let why = if ours == "int" { "written without a decimal point, it compiled as an integer" } else { "it compiled as another kind" };
-                        out.push(finding("M151", Some(p), format!("{n} is stored as {ours}, and Valve's materials of {} store it as {valve}: {why}, so the shader most likely does not get it and draws its default (UNVERIFIED in game)", m.shader)));
+                // M151: another shader than Valve's at this path
+                if let (Ok(ours), Some(Ok(valve))) = (resource::material::from_compiled(&f.data), replaces(p).then(|| game_read(p)).flatten().map(|d| resource::material::from_compiled(&d))) {
+                    if !ours.shader.eq_ignore_ascii_case(&valve.shader) {
+                        let editor = if ours.shader.eq_ignore_ascii_case("environment_texture_set.vfx") { " (the CSDK's Material Editor starts new materials on it)" } else { "" };
+                        out.push(finding("M151", Some(p), format!("draws with {}{editor} where Valve's material draws with {}: the features and inputs of {} are not there", ours.shader, valve.shader, valve.shader)));
                     }
                 }
                 // M149: a texture slot Valve's material has and ours lacks: the game still asks for it

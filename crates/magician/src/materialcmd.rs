@@ -114,7 +114,8 @@ fn fmt4(v: &[f64; 4]) -> String {
     format!("[{}]", v.iter().map(|x| num(*x)).collect::<Vec<_>>().join(" "))
 }
 
-/// A float as the compiler must read it: with a decimal point, or it compiles as an integer (M151).
+/// A float written with its decimal point, as Valve's materials store one (without it the compiler stores an integer,
+/// which the game reads the same; engine.md, Materials).
 fn fnum(x: f64) -> String {
     let s = num(x);
     if s.contains('.') || s.contains('e') { s } else { format!("{s}.0") }
@@ -633,7 +634,7 @@ fn compare(src: &mark::image::Image, sc: usize, tex: &[u8], tc: usize) -> Option
 }
 
 /// What a parameter missing from the compiled file means. On CSDK 13 the compiler kept every name it was given in
-/// every compile measured here (a float written without a decimal point comes out an integer instead, M151), so a
+/// every compile measured here (a float written without a decimal point comes out an integer instead, which the game reads the same), so a
 /// missing one is a stale compile or another compiler.
 const DROPPED: &str = "the CSDK 13 compiler keeps every name it is given, so this compile is stale or came from another compiler; the game draws the shader's default";
 
@@ -770,7 +771,7 @@ fn verify_one(rel: &str, content: &Path, read_compiled: &dyn Fn(&str) -> Option<
         match c.float(k) {
             Some(x) if (x - v).abs() <= 1e-4 * v.abs().max(1.0) => push(Level::Ok, k, num(*v)),
             Some(x) => push(Level::Fail, k, format!("the source sets {}, the compiled file has {}", num(*v), num(x))),
-            None if c.int(k).is_some() => push(Level::Warn, k, format!("the source sets {} with no decimal point, so it compiled as an integer, where Valve's materials store a float: the shader most likely draws its default instead (UNVERIFIED in game); write {} (M151)", num(*v), fnum(*v))),
+            None if c.int(k).is_some() => push(Level::Ok, k, format!("{}, compiled as an integer for want of a decimal point; the game reads it as the float (seen in game, 6877)", num(*v))),
             None => push(Level::Warn, k, format!("the source sets {}, the compiled file has none: {DROPPED}", num(*v))),
         }
     }

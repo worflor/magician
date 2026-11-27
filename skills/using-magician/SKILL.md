@@ -118,7 +118,7 @@ magician material export <material> --out setup.preset                          
 magician material apply setup.preset --to <content>/materials/<x>/new.vmat         # the setup for a new material; names the images it still needs
 magician material verify <addon>                                                   # after a build: every compiled material against its source, down to the packed channels' pixels
 ```
-`verify` exits 1 when a compiled material does not hold what its source asked for. A WARN for M151 is a float written without a decimal point: fix it in whatever generates the `.vmat` (write `1.0`, never `1`), never by hand in a compiled file. A preset from a compiled file guesses its inputs from the images it was compiled from and says so on each line; say that when you hand one over. `magician csdk` says which kit compiles (12 or 13) and what it cannot do; read it before blaming the mod for a compile that a kit gap explains.
+`verify` exits 1 when a compiled material does not hold what its source asked for. A WARN for M150 is a name no Valve material of the shader sets: most likely a typo or a scene setting that does nothing; fix it in whatever generates the `.vmat`, never by hand in a compiled file. A preset from a compiled file guesses its inputs from the images it was compiled from and says so on each line; say that when you hand one over. `magician csdk` says which kit compiles (12 or 13) and what it cannot do; read it before blaming the mod for a compile that a kit gap explains.
 
 **Hero-page scenes:** `magician scene make | check | compose | install`. `check` is read-only and tells you whether the player's stock map still matches a patch after an update.
 
