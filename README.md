@@ -18,7 +18,7 @@ Two of the three full hero skins made with it: [Maid Lash](https://woflo.dev/dea
 ## What it does to a mod
 
 1. **Check every file the way the game will read it.** Each file in the mod is set beside Valve's at the same path in the build you have installed, and the report says what a player would see if it shipped: a pink checkerboard where a material is missing, a hero that breaks at the next patch because the mod ships Valve's skeleton, a hem you can see through from below. What Valve's own file already does is never blamed on the mod.
-2. **Keep it fair.** A skin is cosmetic. It should never make a hero harder to see, change the shape enemies aim at, or hide a cue they react to. Magician measures each against the stock hero: the silhouette from every side, how far the skin reaches past the hitboxes, an ability's effect against Valve's.
+2. **Know how fair it plays.** Fair play isn't a gate: a weird skin is still a good skin, and plenty of players don't mind what the enemy looks like as long as they know where to shoot. But some want to dress their hero up and give nothing away competitively. For them, Magician measures what a skin changes for other players against the stock hero: the silhouette from every side, how far it reaches past the hitboxes, an ability's effect against Valve's. Anyone who cares can tell which skins stay close enough.
 
    <p>
      <img src="site/img/sil-lash.png" alt="Maid Lash's silhouette over stock Lash, front and side: the skirt adds a bell at the hips" height="200">
