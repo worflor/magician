@@ -153,7 +153,8 @@ pub fn client_version(inf: &str) -> Option<String> {
 /// A path that lies in a folder OneDrive syncs. The community's guides warn that the tools crash there (permissions
 /// on synced folders); Steam's own advice is the same for games.
 pub fn in_onedrive(p: &Path) -> bool {
-    p.components().any(|c| c.as_os_str().to_string_lossy().to_ascii_lowercase().starts_with("onedrive"))
+    // split on both separators: a Windows path is checked the same on any system (a Wine prefix, a test)
+    p.to_string_lossy().to_ascii_lowercase().split(['/', '\\']).any(|c| c.starts_with("onedrive"))
 }
 
 /// The version, from the readme, the binary sets, then the folder's name; with the evidence used.
