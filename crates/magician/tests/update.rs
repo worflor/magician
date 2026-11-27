@@ -37,20 +37,37 @@ fn tar() -> PathBuf {
     PathBuf::from("tar")
 }
 
+/// `Command::output`, retried while Linux says the program is busy: a binary copied a moment ago can still be held
+/// open for writing by a child another test thread forked before its exec (ETXTBSY), which clears within moments.
+trait OutputRetry {
+    fn output_retry(&mut self) -> std::process::Output;
+}
+
+impl OutputRetry for Command {
+    fn output_retry(&mut self) -> std::process::Output {
+        for _ in 0..100 {
+            match self.output() {
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => std::thread::sleep(std::time::Duration::from_millis(20)),
+                r => return r.unwrap(),
+            }
+        }
+        self.output().unwrap()
+    }
+}
 /// A program that says it is `magician <version> (git <commit>)` and nothing else.
 fn fake_magician(d: &Path, version: &str, commit: &str) -> PathBuf {
     let tag = format!("{version}-{commit}").replace('.', "_").replace('-', "_");
     let src = d.join(format!("fake_{tag}.rs"));
     let out = d.join(format!("fake_{tag}{}", if cfg!(windows) { ".exe" } else { "" }));
     std::fs::write(&src, format!("fn main() {{ if std::env::args().any(|a| a == \"--version\") {{ println!(\"magician {version} (git {commit})\"); }} }}")).unwrap();
-    let o = Command::new("rustc").args(["--edition", "2021", "-o"]).arg(&out).arg(&src).output().unwrap();
+    let o = Command::new("rustc").args(["--edition", "2021", "-o"]).arg(&out).arg(&src).output_retry();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     out
 }
 
 /// What the real binary says about itself: the lines of its VERSION.
 fn describe() -> String {
-    let o = Command::new(env!("CARGO_BIN_EXE_magician")).args(["update", "--describe"]).output().unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_magician")).args(["update", "--describe"]).output_retry();
     assert_eq!(o.status.code(), Some(0));
     String::from_utf8(o.stdout).unwrap()
 }
@@ -106,7 +123,7 @@ impl Release {
         } else {
             c.args(["-czf"]);
         }
-        let o = c.arg(&asset).arg("-C").arg(&stage).arg(".").output().unwrap();
+        let o = c.arg(&asset).arg("-C").arg(&stage).arg(".").output_retry();
         assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
         let mut sum = grade::sha256::hex(&std::fs::read(&asset).unwrap());
         if self.bad_sum {
@@ -159,8 +176,7 @@ fn magician(d: &Path, tk: &Path, source: &str, args: &[&str]) -> Output {
         .env("DEADLOCK_GAME", d.join("no-game"))
         .env("MAGICIAN_NO_CACHE", "1")
         .env_remove("CARGO_TARGET_DIR")
-        .output()
-        .unwrap()
+        .output_retry()
 }
 
 fn text(o: &Output) -> String {
@@ -277,7 +293,7 @@ fn an_update_swaps_the_toolkit_in_and_keeps_what_is_not_the_releases() {
     assert_eq!(std::fs::read_to_string(tk.join("docs").join("a.md")).unwrap(), "new doc");
     assert_eq!(std::fs::read_to_string(tk.join("ingame").join("mod_session.py")).unwrap(), "new session");
     assert_eq!(std::fs::read_to_string(tk.join("mine.txt")).unwrap(), "the user's own");
-    let v = Command::new(tk.join(EXE)).arg("--version").output().unwrap();
+    let v = Command::new(tk.join(EXE)).arg("--version").output_retry();
     assert_eq!(String::from_utf8_lossy(&v.stdout).trim(), "magician 99.0.0 (git aaaaaaaaaaaa)", "the program is the release's");
     assert!(!d.join("toolkit.update").exists(), "the staging folder is gone");
     assert!(!tk.join(".magician-previous.partial").exists());
@@ -396,7 +412,7 @@ fn a_swap_that_fails_for_real_is_rolled_back_completely() {
     assert!(text(&o).contains("the update failed") && text(&o).contains("is back as it was"), "{}", text(&o));
     assert_eq!(files(&tk), before, "every entry is as it was");
     assert!(!tk.join(".magician-previous.partial").exists() && !d.join("toolkit.update").exists());
-    let v = Command::new(tk.join(EXE)).arg("--version").output().unwrap();
+    let v = Command::new(tk.join(EXE)).arg("--version").output_retry();
     assert!(String::from_utf8_lossy(&v.stdout).contains(env!("CARGO_PKG_VERSION")), "the program is still this one");
     let _ = std::fs::remove_dir_all(&d);
 }
@@ -404,7 +420,7 @@ fn a_swap_that_fails_for_real_is_rolled_back_completely() {
 // ------------------------------------------------------------------------------------------------- git checkouts
 
 fn git(dir: &Path, args: &[&str]) -> String {
-    let o = Command::new("git").arg("-C").arg(dir).args(["-c", "user.name=t", "-c", "user.email=t@example.org", "-c", "commit.gpgsign=false"]).args(args).output().unwrap();
+    let o = Command::new("git").arg("-C").arg(dir).args(["-c", "user.name=t", "-c", "user.email=t@example.org", "-c", "commit.gpgsign=false"]).args(args).output_retry();
     assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
     String::from_utf8_lossy(&o.stdout).trim().to_string()
 }
@@ -439,8 +455,7 @@ fn run_checkout(d: &Path, tk: &Path, args: &[&str]) -> Output {
         .env("MAGICIAN_REFERENCE", d.join("reference"))
         .env_remove("CARGO_TARGET_DIR")
         .env_remove("RUSTFLAGS")
-        .output()
-        .unwrap()
+        .output_retry()
 }
 
 fn push_commit(seed: &Path, main_rs: &str, msg: &str) {
@@ -464,7 +479,7 @@ fn a_checkout_fast_forwards_and_rebuilds_and_replaces_the_running_program() {
     assert_eq!(o.status.code(), Some(0), "{}", text(&o));
     assert!(out(&o).contains("\"outcome\":\"updated\"") && out(&o).contains(&format!("\"to\":\"{}\"", &new[..12])), "{}", out(&o));
     assert_eq!(git(&tk, &["rev-parse", "HEAD"]), new);
-    let v = Command::new(tk.join("target").join("release").join(EXE)).output().unwrap();
+    let v = Command::new(tk.join("target").join("release").join(EXE)).output_retry();
     assert!(String::from_utf8_lossy(&v.stdout).contains("magician 2 (git two)"), "rebuilt: {}", String::from_utf8_lossy(&v.stdout));
     // already level now (the fake program does not know `update`, so ask with the old one kept beside it)
     let _ = std::fs::remove_dir_all(&d);
@@ -482,7 +497,7 @@ fn a_checkout_whose_build_fails_goes_back_to_where_it_was() {
     assert_eq!(git(&tk, &["rev-parse", "HEAD"]), old, "the tree is back");
     assert_eq!(git(&tk, &["status", "--porcelain", "--untracked-files=no"]), "");
     // the program that was running is back and is still the real one
-    let v = Command::new(tk.join("target").join("release").join(EXE)).arg("--version").output().unwrap();
+    let v = Command::new(tk.join("target").join("release").join(EXE)).arg("--version").output_retry();
     assert!(String::from_utf8_lossy(&v.stdout).contains(env!("CARGO_PKG_VERSION")), "{}", String::from_utf8_lossy(&v.stdout));
     let _ = std::fs::remove_dir_all(&d);
 }
@@ -588,8 +603,7 @@ fn a_server_that_never_answers_is_could_not_check_not_a_hang() {
         .env("MAGICIAN_UPDATE_SOURCE", &url)
         .env("MAGICIAN_UPDATE_TIMEOUT", "2")
         .env("MAGICIAN_CONFIG", d.join("config.txt"))
-        .output()
-        .unwrap();
+        .output_retry();
     assert_eq!(o.status.code(), Some(3), "{}", text(&o));
     assert!(t0.elapsed().as_secs() < 8, "took {:?}", t0.elapsed());
     assert!(out(&o).contains("\"state\":\"unknown\"") && text(&o).contains("could not check"), "{}", text(&o));
