@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-pub const USAGE: &str = "mesh <vpk> <model path> [--against valve|none] [--with <vpk>]... [--out DIR] [--glb FILE] [--no-png] [--json-out FILE] [--game DIR]";
+pub const USAGE: &str = "mesh <vpk> <model path> [--against valve|none] [--with <vpk>]... [--out DIR] [--glb FILE] [--no-png] [--fairplay VIEW] [--fairplay-unit U] [--json-out FILE] [--game DIR]";
 
 fn read_from(paks: &[vpk::Vpk], p: &str) -> Option<Vec<u8>> {
     paks.iter().find_map(|v| v.find(p).and_then(|e| v.read(e).ok()))
@@ -171,6 +171,35 @@ pub fn cmd_mesh(args: &[String], game_dir: &Path, reference: &Path, policy: &gra
         let png = out.join("xray.png");
         std::fs::write(&png, sheet.png()).map_err(|e| format!("{}: {e}", png.display()))?;
         outln!("\nx-ray sheet: {}  (grey both, orange ours adds, cyan ours loses, red back faces seen first)", png.display());
+    }
+    if let Some(name) = flag("--fairplay") {
+        let view = views::view_named(&name).ok_or_else(|| format!("--fairplay {name}: no such view (front, side, back, top, below, left, or an oblique such as front-right-high)"))?;
+        let unit: f64 = match flag("--fairplay-unit") {
+            Some(u) => u.parse().ok().filter(|u: &f64| *u > 0.0 && u.is_finite()).ok_or_else(|| format!("--fairplay-unit {u}: not a positive number of units a pixel"))?,
+            None => 0.1,
+        };
+        let out = flag("--out").map(PathBuf::from).unwrap_or_else(|| reference.join("work").join("mesh").join(path.rsplit('/').next().unwrap_or("model").trim_end_matches(".vmdl_c")));
+        std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+        let lines = [fp.hitbox_warn_units, fp.hitbox_taste_units, fp.hitbox_egregious_units];
+        let v = views::fairplay_view(&ours, valve.as_ref(), view, unit, &lines, &ours_read);
+        let (shaded, test) = (out.join(format!("fairplay-{name}-shaded.png")), out.join(format!("fairplay-{name}-test.png")));
+        for (p, im) in [(&shaded, &v.shaded), (&test, &v.test)] {
+            std::fs::write(p, im.png()).map_err(|e| format!("{}: {e}", p.display()))?;
+        }
+        outln!("\nfair-play view, {name}, {} x {} px at {:.3} u a pixel, one camera for both", v.shaded.w, v.shaded.h, v.unit);
+        outln!("  shaded  {}  (ours, lit with its own colour maps{})", shaded.display(), if v.undecoded.is_empty() { String::new() } else { format!("; grey where a map did not decode: {}", v.undecoded.join(", ")) });
+        outln!(
+            "  test    {}  ({} hitboxes; white our outline, dashed Valve's{}; our surface past every hitbox: {} px beyond {} u, {} beyond {} u, {} beyond {} u)",
+            test.display(),
+            v.hitboxes,
+            if valve.is_some() { "" } else { " (not drawn: --against none)" },
+            v.beyond[0],
+            lines[0],
+            v.beyond[1],
+            lines[1],
+            v.beyond[2],
+            lines[2]
+        );
     }
     outln!("\n{}", views::ascii_front(&ours, valve.as_ref(), 48));
     Ok(if worst == Some(Severity::Error) { ExitCode::from(1) } else { ExitCode::SUCCESS })

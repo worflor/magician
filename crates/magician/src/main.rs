@@ -165,9 +165,13 @@ Every command:
                                                 references that don't resolve in the build (the installed one, or the
                                                 one --baseline holds)
   magician mesh <vpk> <model path> [--against valve|none] [--with <vpk>]... [--out DIR] [--glb FILE] [--no-png]
-                [--json-out FILE]               a compiled model's mesh verdict against Valve's (mesh rules M100-M148),
+                [--fairplay VIEW] [--fairplay-unit U] [--json-out FILE]
+                                                a compiled model's mesh verdict against Valve's (mesh rules M100-M148),
                                                 silhouettes, x-ray sheet; --glb proves the native decode against an
-                                                export; --json-out writes the verdict to a file as JSON
+                                                export; --json-out writes the verdict to a file as JSON; --fairplay
+                                                draws one view twice from the same camera, the model shaded and what
+                                                fair play tests (the hitboxes, both outlines, the surface past the
+                                                lines), at U units a pixel (0.1)
   magician cloth <vpk> <model path> [--against valve|none] [--shapes]
                                                 what the compiler made of a model's cloth, read from the compiled
                                                 FeModel (PHYS): per chain static/free counts, goal and vertex attraction,

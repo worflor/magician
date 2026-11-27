@@ -1879,10 +1879,10 @@ impl Census {
         out
     }
 
-    /// SKIN-FLAWS H1: each LOD0 triangle's centroid against every hitbox of the default set (bind pose), the
-    /// distance outside the nearest one, area-weighted. Additive cards are skipped. A hitbox is a capsule (shape 2),
-    /// a sphere (1: Viscous's head, Dynamo's body) or a box in its bone's frame (0: Haze's torso, Dynamo's pack).
-    pub fn envelope(&self) -> Envelope {
+    /// The default hitbox set in model space at bind, by name: a capsule (shape 2), a sphere (1: Viscous's head,
+    /// Dynamo's body) or a box in its bone's frame (0: Haze's torso, Dynamo's pack). What the envelope measures
+    /// against, and what the fair-play view draws.
+    pub fn hitbox_shapes(&self) -> Vec<(String, HitShape)> {
         let w = self.model.skeleton.world();
         let mut caps: Vec<(String, HitShape)> = Vec::new();
         for h in self.model.hitboxes.iter().filter(|h| (0..=2).contains(&h.shape) && (h.set == "default" || h.set.is_empty())) {
@@ -1903,6 +1903,14 @@ impl Census {
             };
             caps.push((h.name.clone(), shape));
         }
+        caps
+    }
+
+    /// SKIN-FLAWS H1: each LOD0 triangle's centroid against every hitbox of the default set (bind pose), the
+    /// distance outside the nearest one, area-weighted. Additive cards are skipped. A hitbox is a capsule (shape 2),
+    /// a sphere (1: Viscous's head, Dynamo's body) or a box in its bone's frame (0: Haze's torso, Dynamo's pack).
+    pub fn envelope(&self) -> Envelope {
+        let caps = self.hitbox_shapes();
         let mut e = Envelope { capsules: caps.len(), ..Default::default() };
         if caps.is_empty() {
             return e;
