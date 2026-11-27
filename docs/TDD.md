@@ -82,7 +82,8 @@ Plain text, tab-separated where tabular.
 | `.magician-installed.tsv` | `game/citadel/addons/` | The install ledger: file, CRC, the mod it was installed for |
 | `.magician-installed.lock` | `game/citadel/addons/` | Held while one install or uninstall reads, changes and rewrites the ledger; gone when it ends |
 | `gameinfo.gi.magician-backup-<build>` | `game/citadel/` | Stock `gameinfo.gi`, taken once per build before the first edit |
-| `.magician-build.lock`, `magician_build.stamp` | `game/citadel_addons/<addon>/` | One build per addon at a time; skip the compiler when nothing changed |
+| `.magician-build.lock` | `game/citadel_addons/<addon>/` | One build per addon at a time, held only while it runs |
+| `magician_build.stamp`, `magician_build.log` | `game/.magician-build/<addon>/` in the CSDK | Skip the compiler when nothing changed; the last compile's log. Never in the addon's game folder, which the CSDK launcher's Create VPK packs whole (an older build's copies there are removed) |
 | `magician.allow`, `magician.exclude`, `.magician-compiler`, `magician.signed` | addon root | Accepted findings with reasons; paths left out of the pak; the compiler bin to use; the mark manifest |
 | `model/<key>.tsv` | the findings cache (Locations) | The findings cache |
 | `mod.toml` | a mod's folder | Written once by `init` (never over an existing one without `--force`) or by `new` with the rest of a new mod's folder (`newcmd.rs`: the scaffold, from the hero table and the hero's compiled model, into a folder that is there only the files it lacks, never into a mod); after that the author's |

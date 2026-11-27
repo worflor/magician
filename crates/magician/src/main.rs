@@ -2261,7 +2261,12 @@ fn compile_addon(addon: &str, args: &[String], compile: bool, explicit_bin: Opti
     let mut sources = build::classify(&rels);
     // Nothing changed since the last good compile (same sources, same compiler, same outputs): resourcecompiler
     // would spend ~10 s starting up to report "up to date", so it isn't started. `--force-compile` runs it anyway.
-    let stamp_path = game_out.join(build::BUILD_STAMP);
+    // build's own files live outside the game folder the CSDK launcher packs (build::STATE_DIR); an older build's are cleared
+    let state = build::state_dir(&csdk, addon);
+    for f in build::LEGACY_ROOT_FILES {
+        let _ = std::fs::remove_file(game_out.join(f));
+    }
+    let stamp_path = state.join(build::BUILD_STAMP);
     let in_fp = if compile { build::tree_fingerprint(&content, &rels, &build::file_id(&rc)) } else { 0 };
     let up_to_date = compile
         && !args.iter().any(|a| a == "--force-compile")
@@ -2300,7 +2305,8 @@ fn compile_addon(addon: &str, args: &[String], compile: bool, explicit_bin: Opti
         }
         let started = std::time::Instant::now();
         std::fs::create_dir_all(&game_out).map_err(|e| e.to_string())?;
-        let log_path = game_out.join("magician_build.log");
+        std::fs::create_dir_all(&state).map_err(|e| format!("{}: {e}", state.display()))?;
+        let log_path = state.join("magician_build.log");
         let mut log = std::fs::File::create(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
         // PSDs no image list in the tree names get a temporary list of their own.
         let has_list = sources.roots.iter().any(|r| {

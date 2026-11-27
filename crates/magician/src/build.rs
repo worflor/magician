@@ -476,8 +476,19 @@ pub struct Package {
     pub left_out: BTreeMap<&'static str, Vec<String>>,
 }
 
-/// Name of the stamp a successful compile leaves in the addon's output tree.
+/// Name of the stamp a successful compile leaves in the addon's build state (`state_dir`).
 pub const BUILD_STAMP: &str = "magician_build.stamp";
+
+/// Where build keeps its own files for an addon (the stamp and the compile log): beside the CSDK's addon folders, never
+/// in `game/citadel_addons/<addon>/`. The CSDK launcher's Create VPK packs that whole folder and writes a file at its
+/// root under an empty directory name, which ends the directory list early: the pak reads as empty (Source 2 Viewer lists
+/// no file in it). docs/reference/engine.md, Which CSDK it is.
+pub const STATE_DIR: &str = ".magician-build";
+/// What builds before this one left at the root of an addon's game folder; removed at the next build.
+pub const LEGACY_ROOT_FILES: &[&str] = &["magician_build.stamp", "magician_build.log"];
+pub fn state_dir(csdk: &Path, addon: &str) -> PathBuf {
+    csdk.join("game").join(STATE_DIR).join(addon)
+}
 
 /// Fingerprint of a file list: each path with its size and modification time, in path order, folded with
 /// `extra` (the compiler's identity). Changing, adding, removing or touching any file changes it.

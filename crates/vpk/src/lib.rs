@@ -18,6 +18,9 @@ use std::path::{Path, PathBuf};
 
 pub const SIGNATURE: u32 = 0x55AA_1234;
 pub const INLINE_ARCHIVE: u16 = 0x7FFF;
+/// The most file data write puts in one single-file VPK: 2 GiB, the line the community's CS2 Workshop Manager packs
+/// to; its multichunk packer and the CSDK launcher's Create VPK split bigger ones into chunk files.
+pub const SINGLE_FILE_LIMIT: usize = 0x7FFF_FFFF;
 const TERMINATOR: u16 = 0xFFFF;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -364,10 +367,20 @@ pub fn crc32(data: &[u8]) -> u32 {
     !c
 }
 
+/// Offsets and sizes are u32 and the community's single-file packers stop at 2 GiB; past that a pak needs chunk files,
+/// which `write` does not make. Refused rather than written with offsets that wrap.
+pub fn fits_one_file(total: usize) -> Result<()> {
+    if total > SINGLE_FILE_LIMIT {
+        return Err(Error::Format(format!("{total} bytes of files: a single-file VPK holds at most {SINGLE_FILE_LIMIT} (2 GiB), and Magician does not write chunk files; split the mod over two paks")));
+    }
+    Ok(())
+}
+
 /// Write a single-file v2 VPK: every file inline (archive 0x7FFF), no MD5 or signature sections.
 /// Paths are written exactly as given; normalisation is the caller's (and the linter's) job.
 /// Output is deterministic: entries are sorted, so identical inputs give byte-identical archives.
 pub fn write(out: impl AsRef<Path>, files: &[(String, Vec<u8>)]) -> Result<()> {
+    fits_one_file(files.iter().map(|f| f.1.len()).sum())?;
     // ext -> dir -> [(name, index into files)]
     let mut tree: BTreeMap<String, BTreeMap<String, Vec<(String, usize)>>> = BTreeMap::new();
     for (i, (path, _)) in files.iter().enumerate() {
@@ -401,7 +414,6 @@ pub fn write(out: impl AsRef<Path>, files: &[(String, Vec<u8>)]) -> Result<()> {
         t.push(0);
     }
     t.push(0);
-
     let mut f = File::create(out)?;
     f.write_all(&SIGNATURE.to_le_bytes())?;
     f.write_all(&2u32.to_le_bytes())?;
@@ -418,6 +430,12 @@ pub fn write(out: impl AsRef<Path>, files: &[(String, Vec<u8>)]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pak_past_two_gib_is_refused_not_wrapped() {
+        assert!(fits_one_file(SINGLE_FILE_LIMIT).is_ok());
+        assert!(fits_one_file(SINGLE_FILE_LIMIT + 1).unwrap_err().to_string().contains("2 GiB"));
+    }
 
     #[test]
     fn crc32_known_vector() {
