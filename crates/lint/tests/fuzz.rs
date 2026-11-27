@@ -54,6 +54,8 @@ fn hero(skirt: bool) -> Vec<u8> {
         meshes: vec![SynthMesh { name: "body".into(), lod_mask: 1, draws, bones, no_uv: false }],
         skeleton: vec![("root".into(), -1, [0.0; 3]), ("head".into(), 0, [0.0, 0.0, 55.0])],
         hitboxes: vec![("chest".into(), "root".into(), [0.0, 0.0, 10.0], [0.0, 0.0, 50.0], 14.0)],
+        // the skirted hero moves its attachments, so M062 places them against the body (`reach`)
+        attachments: vec![("idol".into(), "head".into(), [-10.0, 0.0, if skirt { -10.0 } else { -5.0 }]), ("aim".into(), "root".into(), [0.0, 0.0, if skirt { 60.0 } else { 64.0 }]), ("shoot".into(), String::new(), [0.0, -15.0, 75.0])],
         ..Default::default()
     };
     mesh::synth::model(&m)
@@ -127,7 +129,7 @@ fn a_whole_lint_over_one_hostile_file() {
         })
         .map(|f| f.code)
         .collect();
-    for code in ["M063", "M081"] {
+    for code in ["M062", "M063", "M081"] {
         assert!(seen.contains(code), "{code} not reached: {seen:?}");
     }
     assert!(seen.iter().any(|c| c.starts_with("M1")), "the mesh family not reached: {seen:?}");

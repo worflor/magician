@@ -816,6 +816,8 @@ fn m062_model_contract() {
     assert_eq!(codes(&bad), BTreeSet::from(["M060", "M062"]));
     assert!(bad.iter().any(|x| x.code == "M062" && x.message.contains("hitbox 'default/head_capsule' changed")));
     assert!(bad.iter().any(|x| x.code == "M062" && x.message.contains("attachment 'aim' changed")));
+    // with no mesh to measure against, a moved attachment cannot be shown to be cosmetic: it stays an error
+    assert!(bad.iter().filter(|x| x.code == "M062").all(|x| x.severity == Severity::Error), "{bad:?}");
 }
 
 #[test]

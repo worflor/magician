@@ -1393,3 +1393,76 @@ fn another_body_group_choice_is_not_measured_with_the_default_one() {
     assert_eq!(parsed.other_choice_meshes(), vec!["inflated"]);
     assert_eq!(parsed.surfaces(0).0.len(), 1, "the body alone");
 }
+
+/// The synthetic hero with these attachments, on Valve's body.
+fn attached(atts: &[(&str, &str, P3)]) -> SynthModel {
+    let mut m = valve();
+    m.attachments = atts.iter().map(|(n, b, at)| (n.to_string(), b.to_string(), *at)).collect();
+    m
+}
+
+fn m062(f: &[Finding]) -> Vec<&Finding> {
+    f.iter().filter(|x| x.code == "M062").collect()
+}
+
+#[test]
+fn m062_a_moved_attachment_on_the_body_is_a_warning_that_says_how_far() {
+    // The body is a 20 x 20 x 60 box (size: the square root of 5,600, 74.8 units), so the line is 0.094 of it, 7.0
+    // units off the body. Valve's idol sits on the back at (-10, 0, 50), riding the spine at height 30.
+    let valve = attached(&[("idol", "spine", [-10.0, 0.0, 20.0])]);
+    assert!(m062(&run_against(&valve, &valve)).is_empty(), "Valve's own model against itself");
+    // a skin with another body shape moves the idol 4 units back: an effect point that still sits by the body
+    let near = run_against(&attached(&[("idol", "spine", [-14.0, 0.0, 20.0])]), &valve);
+    let w = m062(&near);
+    assert_eq!(w.len(), 1, "{near:#?}");
+    assert_eq!(w[0].severity, Severity::Warn);
+    assert!(w[0].message.starts_with("attachment 'idol' moved 4.0 units, 4.0 off the body: on spine at -14.00,0.00,20.00"), "{}", w[0].message);
+    assert!(w[0].message.contains("a cosmetic move, within 7.0 units of the body (9.4% of the model's size"), "{}", w[0].message);
+    // 20 units off the body is past the line: what spawns there shows away from the hero
+    let far = run_against(&attached(&[("idol", "spine", [-30.0, 0.0, 20.0])]), &valve);
+    let e = m062(&far);
+    assert_eq!(e.len(), 1, "{far:#?}");
+    assert_eq!(e[0].severity, Severity::Error);
+    assert!(e[0].message.starts_with("attachment 'idol' moved 20.0 units, 20.0 off the body:") && e[0].message.contains("past 7.0 units off the body"), "{}", e[0].message);
+    // just inside and just outside the line
+    assert_eq!(m062(&run_against(&attached(&[("idol", "spine", [-16.9, 0.0, 20.0])]), &valve))[0].severity, Severity::Warn);
+    assert_eq!(m062(&run_against(&attached(&[("idol", "spine", [-17.2, 0.0, 20.0])]), &valve))[0].severity, Severity::Error);
+}
+
+#[test]
+fn m062_a_moved_attachment_in_the_hero_s_frame_and_a_missing_one_stay_errors() {
+    // On the root an attachment is placed in the hero's own frame (Valve's camera poses, aim and zipline points), not
+    // on the body: moved, it stays a contract break, however near the body it lands.
+    let valve = attached(&[("idol", "spine", [-10.0, 0.0, 20.0]), ("zipline", "root", [0.0, 0.0, 70.0])]);
+    let f = run_against(&attached(&[("idol", "spine", [-10.0, 0.0, 20.0]), ("zipline", "root", [0.0, 0.0, 50.0])]), &valve);
+    let e = m062(&f);
+    assert!(e.len() == 1 && e[0].severity == Severity::Error && e[0].message.starts_with("attachment 'zipline' changed:") && e[0].message.contains("it moved 20.0 units in the hero's own frame"), "{f:#?}");
+    // so is one on the model's root transform (no bone)
+    let valve = attached(&[("shoot_test", "", [0.0, -15.0, 75.0])]);
+    let e = run_against(&attached(&[("shoot_test", "", [0.0, -15.0, 70.0])]), &valve);
+    assert!(m062(&e).iter().all(|x| x.severity == Severity::Error) && m062(&e).len() == 1, "{e:#?}");
+    // an attachment the game asks for that is gone is an error
+    let valve = attached(&[("idol", "spine", [-10.0, 0.0, 20.0]), ("palm_r", "spine", [10.0, 0.0, 0.0])]);
+    let f = run_against(&attached(&[("idol", "spine", [-12.0, 0.0, 20.0])]), &valve);
+    let mut got: Vec<(Severity, &str)> = m062(&f).iter().map(|x| (x.severity, x.message.as_str())).collect();
+    got.sort();
+    assert_eq!(got.len(), 2, "{f:#?}");
+    assert!(got[0].0 == Severity::Warn && got[0].1.starts_with("attachment 'idol' moved 2.0 units"), "{got:?}");
+    assert_eq!(got[1], (Severity::Error, "attachment 'palm_r' missing"));
+}
+
+#[test]
+fn m062_a_hitbox_change_beside_a_cosmetic_move_is_still_an_error() {
+    let valve = attached(&[("idol", "spine", [-10.0, 0.0, 20.0])]);
+    let mut ours = attached(&[("idol", "spine", [-12.0, 0.0, 20.0])]);
+    ours.hitboxes[0].4 = 15.0;
+    let f = run_against(&ours, &valve);
+    let hit: Vec<&Finding> = m062(&f).into_iter().filter(|x| x.message.starts_with("hitbox")).collect();
+    assert_eq!(hit.len(), 1, "{f:#?}");
+    assert_eq!(hit[0].severity, Severity::Error);
+    assert!(hit[0].message.starts_with("hitbox 'default/chest' changed:"), "{}", hit[0].message);
+    assert!(m062(&f).iter().any(|x| x.severity == Severity::Warn && x.message.starts_with("attachment 'idol' moved")));
+    // and a lost bone is still an error, whatever the attachments do
+    assert_eq!(deep::contract_severity("bone 'pelvis' missing"), Severity::Error);
+    assert_eq!(deep::contract_severity("hitbox 'default/chest' changed: x (Valve's y)"), Severity::Error);
+}

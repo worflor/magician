@@ -2653,9 +2653,13 @@ fn drift_vpk(vp: &Path, eras: &Eras, gf: Option<&gamefiles::GameFiles>) -> Resul
     if let Some(gf) = gf {
         d.contract_checked = true;
         for f in files.iter().filter(|f| f.path.ends_with(".vmdl_c") && eras.now.contains(&f.path)) {
-            if let (Some(a), Some(b)) = (lint::deep::contract(&f.data), lint::Game::read(gf, &f.path).and_then(|d| lint::deep::contract(&d))) {
-                for m in lint::deep::contract_breaches(&a, &b) {
-                    d.contract.push(format!("{}: {m}", f.path));
+            let Some(valve) = lint::Game::read(gf, &f.path) else { continue };
+            if let (Some(a), Some(b)) = (lint::deep::contract(&f.data), lint::deep::contract(&valve)) {
+                // a cosmetic move of an attachment on the body is lint's warning, not a break
+                for m in lint::deep::judge_breaches(lint::deep::contract_breaches(&a, &b), &f.data, &valve) {
+                    if lint::deep::contract_severity(&m) == lint::Severity::Error {
+                        d.contract.push(format!("{}: {m}", f.path));
+                    }
                 }
             }
         }

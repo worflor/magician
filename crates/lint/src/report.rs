@@ -62,7 +62,8 @@ pub fn read(text: &str) -> Result<(Depth, Vec<Finding>), String> {
         out.push(Finding {
             code: r.code,
             name: r.name,
-            severity: r.severity,
+            // M062 judges a cosmetic move of an attachment a warning by what the finding says (`contract_severity`)
+            severity: if r.code == "M062" { crate::deep::contract_severity(&message) } else { r.severity },
             path: if path.is_empty() { None } else { Some(path.to_string()) },
             message,
         });
@@ -93,6 +94,10 @@ mod tests {
         assert_eq!(back[0].severity, Severity::Error);
         assert_eq!(back[0].message, "absolute white with a tab");
         assert_eq!(back[1].path, None);
+        // a cosmetic move of an attachment reads back as the warning it was; a lost bone as an error
+        let moved = format!("attachment 'idol' moved 4.0 units, 4.0 off the body: on spine at -14.00,0.00,20.00 rot 0.00,0.00,0.00,1.00 (Valve's on spine at -10.00,0.00,20.00 rot 0.00,0.00,0.00,1.00); {}, within 7.0 units of the body", crate::deep::COSMETIC_MOVE);
+        let (_, back) = read(&write(&[f("M062", Some("m.vmdl_c"), &moved), f("M062", Some("m.vmdl_c"), "bone 'pelvis' missing")], Depth::Deep, "6873", "pak10_dir.vpk")).unwrap();
+        assert_eq!((back[0].severity, back[1].severity), (Severity::Warn, Severity::Error));
     }
 
     #[test]

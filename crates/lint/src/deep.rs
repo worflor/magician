@@ -707,6 +707,57 @@ pub fn contract_breaches(ours: &Contract, valve: &Contract) -> Vec<String> {
     out
 }
 
+/// Said of a moved attachment that stays on the body: the mark of an M062 finding that is a warning (`severity`).
+pub const COSMETIC_MOVE: &str = "a cosmetic move";
+
+/// The contract breaches of a model, with each changed attachment judged by where it now sits (`reach::judge`):
+/// `ours` and `valve` are the two models' bytes. A changed attachment on the body that stays as near it as Valve keeps
+/// any is a cosmetic move, said with its distances; one past that line, one held in the hero's own frame, and one
+/// that could not be measured stay contract breaks. Every other breach (bones, missing attachments, hitboxes) is
+/// returned as it is.
+pub fn judge_breaches(breaches: Vec<String>, ours: &[u8], valve: &[u8]) -> Vec<String> {
+    use crate::reach::{self, Move};
+    let rate = crate::mesh::rules::ATTACH_OFF_BODY_VALVE;
+    let changed = |m: &str| m.strip_prefix("attachment '").and_then(|r| r.split_once("' changed: ")).map(|(n, rest)| (n.to_string(), rest.to_string()));
+    if !breaches.iter().any(|m| changed(m).is_some()) {
+        return breaches;
+    }
+    let (o, v) = (reach::read(ours), reach::read(valve));
+    let pct = |x: f64| format!("{:.1}%", 100.0 * x);
+    breaches
+        .into_iter()
+        .map(|m| {
+            let Some((n, rest)) = changed(&m) else { return m };
+            // the signatures, then any shared explanation (`; ...`) the breach already carries
+            let (sigs, tail) = rest.split_once("; ").map_or((rest.as_str(), String::new()), |(s, t)| (s, format!("; {t}")));
+            match reach::judge(&n, &o, &v, rate) {
+                Move::Cosmetic { by, off, line } => format!(
+                    "attachment '{n}' moved {by:.1} units, {off:.1} off the body: {sigs}; {COSMETIC_MOVE}, within {line:.1} units of the body ({} of the model's size, past which Valve keeps no attachment on any hero's body){tail}",
+                    pct(rate)
+                ),
+                Move::OffBody { by, off, line } => format!(
+                    "attachment '{n}' moved {by:.1} units, {off:.1} off the body: {sigs}; past {line:.1} units off the body ({} of the model's size, further than Valve keeps any attachment on any hero's body): what the game spawns there shows away from the hero{tail}",
+                    pct(rate)
+                ),
+                Move::HeroFrame { by } => format!(
+                    "attachment '{n}' changed: {sigs}; it moved {by:.1} units in the hero's own frame (it rides the root, not the body: the frame Valve places its camera poses, aim and zipline points in){tail}"
+                ),
+                Move::Unmeasured(why) => format!("attachment '{n}' changed: {sigs}; where it sits against the body could not be measured ({why}){tail}"),
+            }
+        })
+        .collect()
+}
+
+/// The severity of a contract finding (M062): a cosmetic move of an attachment on the body is a warning; every other
+/// breach keeps the rule's own, an error.
+pub fn contract_severity(message: &str) -> crate::Severity {
+    if message.starts_with("attachment '") && message.contains(&format!("; {COSMETIC_MOVE}, ")) {
+        crate::Severity::Warn
+    } else {
+        crate::rule("M062").severity
+    }
+}
+
 // ------------------------------------------------------------------------------- particle class lists
 
 /// The function lists of a particle system that lint checks, and `m_Constraints`, which it reads to explain a
