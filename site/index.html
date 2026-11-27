@@ -190,6 +190,10 @@ figure { margin: 0; }
 .ba .lab { position: absolute; top: 0.6rem; font-family: var(--mono); font-size: 0.7rem; background: rgb(10 10 10 / 0.72); padding: 0.15em 0.5em; border-radius: 0.2rem; pointer-events: none; }
 .ba .lab.l { left: 0.6rem; } .ba .lab.r { right: 0.6rem; }
 .ba:has(input:focus-visible) { outline: 2px solid rgb(var(--cyan-rgb) / 0.6); outline-offset: 3px; }
+.xray { display: grid; gap: 1.2rem; }
+@media (min-width: 760px) { .xray { grid-template-columns: minmax(0, 22rem) minmax(0, 1fr); gap: 2.5rem; align-items: start; } }
+.xray .ba { aspect-ratio: 620 / 1048; background: #161513; }
+.xray .fig { max-width: 22rem; }
 
 /* contact sheets */
 .sheets { display: grid; gap: 1.6rem; }
@@ -267,18 +271,40 @@ details.raw > .body { margin-top: 0.9rem; display: grid; gap: 0.9rem; }
 .chip.e { color: var(--broken); } .chip.w { color: var(--reprove); } .chip.i { color: var(--info); } .chip.fp { color: var(--ok); }
 .rule-card p { font-size: 0.8rem; color: var(--muted); line-height: 1.55; }
 
-/* proof strip */
-.strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
-.bld { border-radius: 0.35rem; padding: 0.8rem 0.7rem; display: grid; gap: 0.35rem; border: 1px solid var(--line); min-height: 6rem; align-content: start; }
-.bld b { font-family: var(--mono); font-weight: 400; font-size: 0.86rem; color: var(--ink); }
-.bld span { font-size: 0.72rem; color: var(--faint); line-height: 1.35; }
-.bld.other { background: repeating-linear-gradient(135deg, transparent 0 6px, rgb(var(--ink-rgb) / 0.035) 6px 12px); }
-.bld.other b { color: var(--faint); }
-.bld.yes { border-color: rgb(103 228 225 / 0.55); background: rgb(103 228 225 / 0.07); }
-.bld.yes span { color: var(--ok); }
-.bld.wait { border-color: rgb(240 184 90 / 0.5); border-style: dashed; }
-.bld.wait span { color: var(--reprove); }
-@media (max-width: 520px) { .strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } .bld { min-height: 0; } }
+/* transit map: one line per skin, one stop per build */
+.transit { overflow-x: auto; border: 1px solid var(--line); border-radius: 0.45rem; background: var(--raise); overscroll-behavior-x: contain; }
+.transit svg { display: block; }
+.transit text { font-family: var(--font); fill: var(--muted); font-size: 11px; }
+.transit .b { font-family: var(--mono); fill: var(--ink); font-size: 12.5px; }
+.transit .sub { fill: var(--faint); font-size: 10.5px; }
+.transit .crc { font-family: var(--mono); fill: var(--faint); font-size: 10px; }
+.transit .crc.today { fill: var(--ok); }
+.transit .name { fill: var(--ink); font-size: 13px; font-weight: 500; }
+.transit .note { fill: var(--muted); font-size: 10.5px; }
+.transit .axis { stroke: var(--line); stroke-width: 1; }
+.transit .tick { fill: var(--faint); }
+.transit .base { stroke: var(--edge); stroke-width: 1; stroke-dasharray: 1 4; fill: none; }
+.transit .old { stroke: rgb(var(--ink-rgb) / 0.3); stroke-width: 3; stroke-linecap: round; fill: none; }
+.transit .now { stroke: var(--ok); stroke-width: 4; stroke-linecap: round; fill: none; }
+.transit .gap { stroke: var(--reprove); stroke-width: 2.5; stroke-dasharray: 5 5; fill: none; }
+.transit .bar { stroke: rgb(var(--ink-rgb) / 0.45); stroke-width: 1.5; }
+.transit .s-old { fill: var(--raise); stroke: rgb(var(--ink-rgb) / 0.6); stroke-width: 2; }
+.transit .s-now { fill: var(--ok); }
+.transit .s-gap { fill: var(--raise); stroke: var(--reprove); stroke-width: 2; stroke-dasharray: 3 2.4; }
+.transit .j { fill: var(--raise); stroke: rgb(var(--ink-rgb) / 0.55); stroke-width: 1.5; }
+.transit .j.code { fill: rgb(var(--ink-rgb) / 0.55); }
+.transit .j.under { fill: var(--broken); stroke: var(--broken); }
+.transit .pick { cursor: pointer; outline: none; }
+.transit .ring { fill: transparent; stroke: none; stroke-width: 2; }
+.transit .pick:hover .ring, .transit .pick:focus-visible .ring, .transit .pick.on .ring { stroke: rgb(var(--cyan-rgb) / 0.6); }
+.transit:focus-visible { outline: 2px solid rgb(var(--cyan-rgb) / 0.6); outline-offset: 3px; }
+.readout { font-size: 0.8rem; color: var(--muted); line-height: 1.5; min-height: 3em; margin-top: 0.7rem; max-width: 62ch; }
+.readout b { color: var(--ink); font-weight: 500; }
+.sw.st-now { background: var(--ok); border-radius: 50%; }
+.sw.st-old { background: transparent; box-shadow: inset 0 0 0 2px rgb(var(--ink-rgb) / 0.6); border-radius: 50%; }
+.sw.st-gap { background: transparent; border: 2px dashed var(--reprove); border-radius: 50%; }
+.sw.st-jo { background: transparent; box-shadow: inset 0 0 0 1.5px rgb(var(--ink-rgb) / 0.55); transform: rotate(45deg) scale(0.8); border-radius: 1px; }
+.sw.st-j { background: rgb(var(--ink-rgb) / 0.55); transform: rotate(45deg) scale(0.8); border-radius: 1px; }
 .ledger-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 0.45rem; background: var(--raise); }
 table.ledger { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.74rem; font-variant-numeric: tabular-nums; }
 .ledger th { text-align: left; font-weight: 400; color: var(--faint); padding: 0.7rem 0.9rem 0.55rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
@@ -448,7 +474,40 @@ footer p { max-width: 60ch; }
       <div class="step-meta"><span class="n">2 of 5</span><code><i>$</i>magician lint --deep</code></div>
       <h2 id="fair-h">Fair play</h2>
       <p>Some players don't mind what an enemy looks like as long as they know where to shoot. Others want a skin that changes nothing about how the hero reads in a fight. Magician compares a skin with the stock hero so those players can check before they install.</p>
-      <p>If you make skins, the same numbers show how far a part goes past the limit and where. You can pull it back in, or keep it and write down why while it stays under the limit. Maid Lash's skirt and the Rem skin's ears were tuned this way. Three of the measurements:</p>
+      <p>If you make skins, the same numbers show how far a part goes past the limit and where. You can pull it back in, or keep it and write down why while it stays under the limit. Maid Lash's skirt and the Rem skin's ears were tuned this way.</p>
+    </div>
+
+    <div class="xray">
+      <figure class="fig">
+        <div class="ba" style="--pos:50%">
+          <img class="after" src="img/xray-lash-test.png" width="620" height="1048" alt="What fair play tests on Maid Lash, from the front: grey hitbox capsules over his dark silhouette, his outline in white, stock Lash's dashed, and the skirt marked in amber where it reaches past the capsules.">
+          <img class="before" src="img/xray-lash-shaded.jpg" width="620" height="1048" alt="Maid Lash from the front, drawn with his own textures: the sailor collar, the red bow, the apron and the boots.">
+          <span class="handle" aria-hidden="true"></span>
+          <span class="lab l">shaded</span><span class="lab r">tested</span>
+          <input type="range" min="0" max="100" value="50" aria-label="Compare Maid Lash shaded with what fair play tests">
+        </div>
+        <figcaption>Maid Lash from the front, both sides drawn by <code>magician mesh</code> from one camera. The shaded side is a plain render, not a frame from the game.</figcaption>
+      </figure>
+      <div class="part-text">
+        <h3>What the game tests</h3>
+        <p>Drag across him. The right side is the same view as the game measures it. The capsules are where hits land, the white line is his outline, and the dashed line behind it is stock Lash.</p>
+        <p>Amber is cloth more than 5 units outside every capsule, deeper amber more than 10. On Maid Lash it's the skirt, and none of it reaches the 18-unit line.</p>
+        <div class="key"><span><i class="sw w" style="opacity:0.55"></i>past 5 units</span><span><i class="sw w"></i>past 10</span><span><i class="sw e"></i>past 18, freeform</span></div>
+        <details class="raw">
+          <summary>The output</summary>
+          <div class="body">
+            <div class="out">
+<div class="ln h">$ magician mesh pak10_dir.vpk models/heroes_wip/lash/lash.vmdl --fairplay front --out lash-fp</div>
+<div class="ln el">…</div>
+<div class="ln" style="--hang:4ch">  hitbox envelope: 26.8% beyond 2 u, 14.5% beyond 5 u, 0.3% beyond 10 u, 99.9th percentile 10.4 u   Valve's: 0.0% beyond 5 u, 99.9th 2.7 u</div>
+<div class="ln el">…</div>
+<div class="ln h">fair-play view, front, 620 x 1048 px at 0.103 u a pixel, one camera for both</div>
+<div class="ln" style="--hang:10ch">  shaded  lash-fp\fairplay-front-shaded.png  (ours, lit with its own colour maps)</div>
+<div class="ln" style="--hang:10ch">  test    lash-fp\fairplay-front-test.png  (19 hitboxes; white our outline, dashed Valve's; our surface past every hitbox: 41842 px beyond 5 u, 141 beyond 10 u, 0 beyond 18 u)</div>
+            </div>
+          </div>
+        </details>
+      </div>
     </div>
 
     <div class="part stack">
@@ -549,7 +608,7 @@ footer p { max-width: 60ch; }
         <img class="before" src="img/hem-before.jpg" width="1200" height="428" loading="lazy" alt="Before: orange flaps of skin stick out at both thighs under the petticoat.">
         <span class="handle" aria-hidden="true"></span>
         <span class="lab l">before</span><span class="lab r">after</span>
-        <input type="range" id="ba-range" min="0" max="100" value="50" aria-label="Compare before and after">
+        <input type="range" min="0" max="100" value="50" aria-label="Compare before and after">
       </div>
     </div>
     <div class="part">
@@ -579,19 +638,17 @@ footer p { max-width: 60ch; }
       <h2 id="proof-h">Record the proof</h2>
       <p>Once the frames have been looked at, Magician records the proof: this game build, these exact bytes. Rebuild the mod and it starts unproven again, so nothing ships on an old proof.</p>
     </div>
-    <div class="part">
+    <div class="part stack">
       <div class="part-text">
-        <h3>The pak Maid Lash ships today</h3>
-        <p>Release 1.0.2 was first seen in game on build 6868. The builds before it have proofs too, but of older paks, so they count for nothing here. When build 6871 came out, the same bytes needed a new look.</p>
+        <h3>Every proof so far</h3>
+        <p>Each line is a skin and each stop a game build. A filled stop is a proof of the exact pak the skin ships today. A hollow stop is a proof of an older pak, which no longer counts. An amber ring is a build where today's pak hasn't been seen yet.</p>
+        <p>Above the lines is what Valve changed between builds, from Magician's record of each one. Pick a stop or a change to read it.</p>
       </div>
       <div>
-        <div class="strip" role="list">
-          <div class="bld other" role="listitem"><b>6864</b><span>an older pak</span></div>
-          <div class="bld other" role="listitem"><b>6865</b><span>an older pak</span></div>
-          <div class="bld other" role="listitem"><b>6866</b><span>an older pak</span></div>
-          <div class="bld yes" role="listitem"><b>6868</b><span>proven</span></div>
-          <div class="bld wait" role="listitem"><b>6871</b><span>new build: look again</span></div>
-        </div>
+        <div class="key" style="margin-bottom:0.8rem"><span><i class="sw st-now"></i>proven, today's pak</span><span><i class="sw st-old"></i>proven, an older pak</span><span><i class="sw st-gap"></i>not proven yet</span><span><i class="sw st-jo"></i>what Valve changed</span><span><i class="sw st-j"></i>with new game code</span></div>
+        <div class="transit" id="transit" tabindex="0" role="group" aria-label="Proofs by game build, one line per skin. Each stop is a button that reads out its proof."></div>
+        <p class="readout" id="transit-read" aria-live="polite"></p>
+        <p class="hint">Swipe the map to see every build.</p>
         <details class="raw">
           <summary>The ledger</summary>
           <div class="body">
@@ -601,7 +658,7 @@ footer p { max-width: 60ch; }
                 <tbody></tbody>
               </table>
             </div>
-            <p class="part-text">Maid Lash's <code>proofs.tsv</code>, without its hash and evidence columns. Every rebuild of the pak is a new crc; the rows of the pak installed now are lit.</p>
+            <p class="part-text">Both skins' <code>proofs.tsv</code>, without the hash and evidence columns. Every rebuild of a pak is a new crc, and the rows of the paks they ship today are lit. The map is drawn from these, from <code>magician drift</code> between each pair of builds, and from Magician's record of each build, by <code>site/transit.py</code>.</p>
           </div>
         </details>
       </div>
@@ -755,6 +812,7 @@ footer p { max-width: 60ch; }
   </div>
 </footer>
 
+<script id="transit-data" type="application/json">{"installed":"6875","builds":["6864","6865","6866","6868","6871","6873","6875"],"junctions":[{"from":"6864","to":"6865","areas":["effects","models"],"changed":3,"added":11,"removed":0,"code":null},{"from":"6865","to":"6866","areas":["models","the HUD","game data","hero data"],"changed":7,"added":0,"removed":0,"code":null},{"from":"6866","to":"6868","areas":["hero data"],"changed":1,"added":0,"removed":0,"code":null},{"from":"6868","to":"6871","areas":["models","the HUD","ability data","game data","hero data","sound","effects"],"changed":53,"added":100,"removed":0,"code":["client.dll","server.dll"]},{"from":"6871","to":"6873","areas":["game data"],"changed":1,"added":0,"removed":0,"code":["client.dll","server.dll"]},{"from":"6873","to":"6875","areas":["ability data"],"changed":1,"added":0,"removed":0,"code":["client.dll","server.dll"]}],"mods":[{"slug":"maid-lash","name":"Maid Lash","segments":[{"pak":"3a6a5aff","files":[["pak10_dir.vpk","3a6a5aff"]],"proofs":[{"build":"6864","date":"2026-11-21"}],"current":false},{"pak":"24994007","files":[["maps/ui/hero_prefabs/lash.vpk","d287ca64"],["pak10_dir.vpk","24994007"]],"proofs":[{"build":"6865","date":"2026-11-24"},{"build":"6866","date":"2026-11-24"},{"build":"6868","date":"2026-11-25"}],"current":false},{"pak":"29aea0c5","files":[["maps/ui/hero_prefabs/lash.vpk","d287ca64"],["pak10_dir.vpk","29aea0c5"]],"proofs":[{"build":"6868","date":"2026-11-25"}],"current":false},{"pak":"edfd3beb","files":[["maps/ui/hero_prefabs/lash.vpk","d287ca64"],["pak10_dir.vpk","edfd3beb"]],"proofs":[{"build":"6868","date":"2026-11-25"}],"current":true}],"hero_data":{"hero":"hero_lash","from":"6868","state":"names-unchanged","gone":[],"new":[]},"rows":[["6864","2026-11-21","maid_lash","pak10_dir.vpk","3a6a5aff"],["6865","2026-11-24","lash_showcase","maps/ui/hero_prefabs/lash.vpk","d287ca64"],["6865","2026-11-24","maid_lash","pak10_dir.vpk","24994007"],["6866","2026-11-24","lash_showcase","maps/ui/hero_prefabs/lash.vpk","d287ca64"],["6866","2026-11-24","maid_lash","pak10_dir.vpk","24994007"],["6868","2026-11-25","lash_showcase","maps/ui/hero_prefabs/lash.vpk","d287ca64"],["6868","2026-11-25","maid_lash","pak10_dir.vpk","29aea0c5"],["6868","2026-11-25","lash_showcase","maps/ui/hero_prefabs/lash.vpk","d287ca64"],["6868","2026-11-25","maid_lash","pak10_dir.vpk","24994007"],["6868","2026-11-25","lash_showcase","maps/ui/hero_prefabs/lash.vpk","d287ca64"],["6868","2026-11-25","maid_lash","pak10_dir.vpk","edfd3beb"]],"drift":[{"from":"6864","to":"6865","state":"clean","under":[]},{"from":"6865","to":"6866","state":"clean","under":[]},{"from":"6866","to":"6868","state":"clean","under":[]},{"from":"6868","to":"6871","state":"clean","under":[]},{"from":"6871","to":"6873","state":"clean","under":[]},{"from":"6873","to":"6875","state":"clean","under":[]}]},{"slug":"loops-viscous","name":"Lööps Viscous","segments":[{"pak":"c4e6ad87","files":[["pak20_dir.vpk","c4e6ad87"]],"proofs":[{"build":"6868","date":"2026-11-26"}],"current":true}],"hero_data":{"hero":"hero_viscous","from":"6868","state":"moved","gone":[],"new":["#citadel_weapon_viscous_set_alt_desc"]},"rows":[["6868","2026-11-26","loops_viscous","pak20_dir.vpk","c4e6ad87"]],"drift":[{"from":"6868","to":"6871","state":"clean","under":[]},{"from":"6871","to":"6873","state":"clean","under":[]},{"from":"6873","to":"6875","state":"clean","under":[]}]}]}</script>
 <script id="rules-data" type="application/json">[["M001","path-case","e","Source 2 looks paths up in lowercase. A path with capitals is never found, so the original asset shows instead. Not said of a file the game never reads (M012): its case costs nothing."],["M002","path-shape","e","Backslashes, leading slashes or '..' in a VPK path never match an engine lookup; the file is dead weight."],["M010","uncompiled-source","e","The game only loads compiled resources (*_c). A source .vmdl/.vmat/.vpcf in a VPK is ignored."],["M011","loose-media","w","Raw images and audio (.png, .tga, .wav, .mp3, .psd) are never read by the game; they must be compiled to .vtex_c/.vsnd_c."],["M012","noise-file","i","Not read by Deadlock (addoninfo.txt, readmes, editor files). Harmless, but it adds size and conflict noise."],["M020","crc-mismatch","e","The stored checksum doesn't match the bytes: a corrupt or hand-patched VPK. Mod managers flag it, and the engine may reject it."],["M021","not-a-resource","e","A *_c file that isn't a valid compiled resource fails to load: error model, pink checkerboard, or silence."],["M030","dangling-ref","e","This resource depends on a file that exists in neither the mod nor the game build: missing material (pink checkerboard), error model, or missing effect."],["M070","ships-protected-file","e","Skeletons (.vnmskel), anim graphs (.vnmgraph) and game data (.vdata) replace the hero's real files. It works until the next patch, then the hero breaks. A model replacement keeps Valve's skeleton and graph."],["M071","replaces-engine-default","e","resourcecompiler emits its own copies of the engine's default textures (materials/default/*) next to your materials, and they differ from Valve's. Shipped with other pixels than Valve's, they replace the fallback texture for every material in the game that uses one (an error). A copy that decodes to Valve's own pixels, or sits at a path Valve does not ship, changes nothing in the game and is a warning (seen on three published mods, 6868)."],["M061","dropped-dependency","w","The game's original of this file referenced a resource your replacement no longer does (a particle, sound tag, material or anim graph). That effect or sound silently stops playing."],["M032","stale-leftover","e","A file the mod references has no source left in the addon: a compiled leftover of something deleted. It ships the old content (one release shipped five deleted effects this way, one a shock ring at 1.3x Valve's brightness) and no rebuild can ever change it."],["M033","dev-leftover","w","A particle, material or file whose path marks it as debug content (probe, debug, test, tmp, scratch...) ships in the release. It is a test aid, not art: a probe child spawned on every cast (one release shipped one), a placeholder swatch, an effect nobody meant to show. If it is also a dangling reference, M030/M032 already report that as an error. A material or texture the mod draws with is not reported: it is the art on screen, whatever the exporter named it."],["M031","orphan-new-file","w","The file doesn't replace anything in the game, and nothing in the mod references it, so it never loads."],["M040","drift-original-changed","w","Valve changed the original of a file you replace since you built against it. Your copy may now be missing fixes, attachments or new animations."],["M041","drift-original-removed","e","The file you replace no longer exists in this build (moved or renamed), so your replacement does nothing."],["M050","vpk-name","w","Addon VPKs are mounted as pakNN_dir.vpk (NN = 01..99, lowest wins). Other names are skipped by the addons search path and by mod managers' load-order logic."],["M051","vpk-chunked","w","Data stored in chunk files (_000.vpk...) is easy to ship incomplete. Single-file VPKs are the safe form for addons."],["M052","vpk-empty","e","An empty VPK changes nothing."],["M013","build-artifact","w","A build input or toolchain byproduct (a panorama image list, a nested VPK, a raw .kv3, a compiler cache) that the game never loads from an addon. It adds size, and a vdata among them is noted in the grade. magician build leaves these out."],["M062","model-contract","e","A replaced model lost or moved a bone, attachment or hitbox of Valve's, or added a hitbox. Effects and weapons attach to the wrong place (or the origin), animation breaks, and changed hitboxes change what bullets hit: a fair-play break."],["M063","sound-cue-reduced","e","A replaced sound event or file plays quieter, shorter, over less distance, to fewer players, or not at all compared with Valve's. Enemies rely on those cues: hiding them is a fair-play break. A changed base is read through the game's own base events: one Valve's base inherits from differs only by what lies between, and only a level or a reach there is a finding (louder is M064). A voice line (sounds/vo/) is not judged by its length: Valve's own voices fail that test against each other on 46% of shared lines (`magician corpus`)."],["M064","sound-louder","w","A replaced sound plays louder, longer or carries further than Valve's. Not an advantage, but it pushes the hero over the game's mix and masks other players' cues."],["M072","light-cookie-texture","e","A light cookie (gobo) the engine can't add to its light texture set, so the light renders without its pattern. The set takes BGRA8888 only ('Unable to AddTextureToSet(...): wrong format DXT1 - expected BGRA8888!') and copies a 512x512 mip ('... has no mip levels of size 512x512'). Valve's 15 cookies are all 512x512 BGRA8888: set m_outputFormat \"BGRA8888\" and author at 512."],["M073","texture-not-pow2","w","A model or effect texture whose sides aren't powers of two. Valve ships none under models/ (4 of 12,598 outside panorama and UI, all particle sheets); the compiler refuses non-power-of-two roughness outright ('Cannot filter non-power-of-two texture 74x74'), and other slots lose mips and filter badly at distance."],["M081","particle-energy","w","A replaced particle is much brighter (colour x alpha x overbright) or larger than Valve's original. Bigger, brighter effects cover more of the screen and of the hero: Maid Lash's first pass hid him behind a dive streak with 3.4x the coverage and fired a 9x brighter muzzle flash."],["M082","particle-light-caps","e","A replaced particle tree has more lights than Valve's, brighter or longer-range lights, a colour with more luminous output, or shadows switched on. Lights wash out the area around the hero and the people in it (Maid Lash's gobo at 2.7x)."],["M083","particle-class-list","e","A particle function sits in a list whose registry doesn't have its class: the game logs 'Function \"...\" not found while loading particle system'. A constraint (C_OP_WorldTraceConstraint) in m_Operators crashed the game outright: an access violation executing a null pointer in particles.dll the first time the effect played. Valve's 133 uses of that class all sit in m_Constraints."],["M090","shared-file","w","The game file this replaces is used by more than one hero, ability or item (Lash's Ground Strike icon is also Majestic Leap's). Replacing it changes all of them for everyone who installs the mod."],["M091","shared-file-unchecked","i","Deep lint had no users index for this build (or one from an older Magician), so the files this mod replaces were not checked for other heroes, abilities or items that use them (M090). A shared file it replaces changes those too; unchecked is not clean. `magician index` builds the index, once per build."],["M100","mesh-unchecked","w","Part of the model could not be measured (a buffer that doesn't decode, a capped search). Silence there is not evidence: those rules did not run."],["M101","mesh-non-finite","e","Vertex positions that are NaN or infinite: triangles spike to infinity across the screen."],["M102","open-sheet-void","w","An opening in a single-sided piece lets you look at its inside, which the game culls: from that angle you see straight through it (a train, a hem, a sleeve)."],["M103","winding-inconsistent","w","Neighbouring faces disagree on winding: one of them faces inward, so it is culled from outside or lit inside-out."],["M104","normals-flipped","w","Shading normals point against their faces: visible triangles shade dark or flat, as if lit from behind."],["M105","degenerate-triangles","w","Zero-area and sliver triangles far above Valve's rate: slivers shade and skin badly, zero-area ones flicker as dots."],["M106","cut-body-void","w","Body faces were cut away under a garment and nothing backs the cut: wherever the garment lifts or the camera finds a gap, you see through the hero (the bodice-back voids). A warning: it is seen, not a model that fails to work, and on a published mod (6868) nine openings behind the face and at the neck were not visible from the gameplay camera at any pitch or close behind the head."],["M107","backface-shading","w","Back faces of a two-sided material are what you see from outside: their normals face away, so they shade flat."],["M108","z-fighting","w","Two pieces share a plane closer than the depth buffer can separate (0.3 mm over 1 cm^2): shimmering stripes as the camera moves."],["M109","self-intersection","w","A piece folds through itself at bind: its layers flicker along the fold."],["M110","shell-intersection","w","Two pieces pass through each other at bind (a garment through the body, a spool through the bodice): a visible clip that flickers along the line."],["M111","floating-shell","w","A piece touches nothing it should rest on, or rests on a surface but is skinned to other bones: it hovers with a gap, or lifts off as soon as the hero moves (the arm band)."],["M112","coordinate-precision","w","A piece is so thin for its distance from the origin that float32 cannot hold its shape: it collapses into flickering slivers."],["M113","uv-degenerate","w","Textured triangles with no UV area inside real UV islands: one texel smears across each."],["M114","uv-overlap","i","Texels claimed twice, beyond Valve's own rate: the same paint shows in two places (fine for deliberate mirroring)."],["M115","uv-stretch","i","UVs stretched over 4:1 on much of a material: the texture smears along the stretch."],["M116","skin-unnormalised","e","Vertex weights that don't sum to 1: those vertices shrink toward the model origin when the hero moves."],["M117","skin-influences","w","More influences than the mesh stores, or many noise-level weights: dropped influences pop, tiny ones jitter."],["M118","skin-distant-bone","w","Vertices weighted to a bone far beyond where Valve's model ever weights it: they stretch toward that bone when it moves."],["M119","skin-unweighted","e","Skinned vertices with no usable influence, or influences on bones the skeleton lacks: they stay behind while the body moves."],["M120","lod-missing","w","Fewer LOD levels than Valve's model: at range the engine keeps drawing the heavy mesh."],["M121","lod-silhouette","w","A lower LOD's silhouette departs from LOD0 more than Valve's does: the hero visibly pops at the switch distance."],["M122","lod-budget","w","Vertex economy per LOD worse than Valve's (vertices per triangle, LOD triangles, a lower LOD keeping over 1.5x the share of LOD0's vertices that Valve's keeps): GPU cost at range with no visible gain."],["M123","mesh-budget","w","LOD0 triangles, draw calls, bones or texture memory well over Valve's model: frame cost in team fights."],["M124","silhouette-fair-play","e","Our in-game silhouette is smaller than Valve's in a view: the hero is harder to see than the original, a fair-play break."],["M125","seam-crack","w","Boundary vertices of neighbouring pieces sit a hair apart without welding: a hairline crack shows the background along the seam."],["M126","texture-without-uv","e","A draw call uses a textured material but has no UVs: the whole piece samples one texel."],["M127","unreferenced-vertices","i","Vertices in LOD0's buffers that no triangle uses: memory with no picture."],["M128","material-unused","i","The default material group lists a material no draw call uses: dead weight in the model's references."],["M129","hitbox-envelope","e","Visible surface lies more than 18 units beyond every hitbox (capsule, sphere or box of the default set), or over 3.5% of it lies beyond 10 units, counting only what Valve's own model at this path does not already have in the same hitbox region: enemies aim at cloth that can't be hit and the silhouette reads as excessive, 'a bit much' (Magician's fair-play line, the defaults of a policy). Never allowable: an allowance does not waive it, and the grade reads the skin as freeform."],["M130","hitbox-envelope-wide","w","Over 2% of the surface lies more than 5 units beyond every hitbox, beyond what Valve's own model has there: enemies aim at cloth that can't be hit. Precedent: Lady Geist's long dress, 0.6% with a worst point of 5.8 units."],["M131","status-proxy-missing","e","A hero material without F_USE_STATUS_EFFECTS_PROXY where every one of Valve's has it: the piece stays visible under invisibility and misses damage flashes."],["M132","npr-lighting-missing","w","An opaque hero material without F_USE_NPR_LIGHTING where Valve's all use it: the piece is lit differently from the rest of the hero."],["M133","alpha-test-outline","w","An alpha-tested material with a non-zero NPR outline mask: the outline traces every cut-out, turning lace into a mesh of dark lines."],["M134","particle-prop-unlit","w","A lit opaque pbr.vfx material drawn by a particle's C_OP_RenderModels without NPR or self-illum: particle models get no normal lighting, so it renders black."],["M135","texture-parity","w","A replaced texture has fewer mips, another format or another size than Valve's file: Valve's panels and materials draw it at Valve's sizes, so it aliases or shows block artefacts."],["M136","albedo-range","w","Over 10% of the new materials' area sits outside Valve's own albedo range for this model: the piece reads brighter or darker than everything Valve drew, flattening or blooming in the game's lighting."],["M137","albedo-absolute","e","Over 5% of the area is absolute black (under 0.003 linear) or white (over 0.80): blacks lose every fold and read as holes, whites flatten and bloom (Valve's art guide: no absolute white or black)."],["M138","alpha-coverage-drift","w","An alpha-tested material whose cut-out coverage changes by more than 30% on over 10% of its tiles at the mip the game samples at 8 m: lace turns solid or vanishes as it recedes, and sparkles in motion."],["M139","alpha-coverage-gameplay","e","The same coverage drift already at the gameplay distance (4 m): the lace visibly changes density on screen in normal play."],["M140","hitbox-envelope-taste","w","Visible surface lies more than 10 units beyond every hitbox, beyond what Valve's own model has there and short of M129's line: enemies aim at cloth that can't be hit. Tasteful overflow is allowed: accept it with a written reason in magician.allow if the silhouette piece earns it."],["M141","cloth-flutter","w","Crunchy fabric: a cloth group that rings for many swings at or above the body's own rhythm (the compiled goal, damping and gravity judged as a damped oscillator at the solver's step) flutters like paper-thin silk the moment the hero moves, however heavy the mesh looks, and with no collision radius or shape on its layers it passes through the body. A group with no damper at all (vertex attraction 0, what a goal-0 joint compiles to) keeps the whole of its swing every step and never settles, however slowly it sways. Valve's own numbers are not blamed unless the mod hangs a bigger mesh on them."],["M142","distance-field-dropped","w","Valve's model carries distance fields (one voxel grid per bone, the ambient occlusion the body casts on itself and the world) and ours has none or fewer: the model loses that occlusion and its contact shadowing, silently (a model built from a Source 2 Viewer decompile always drops them). Fair-play neutral: accept it with a reason in magician.allow."],["M143","pbr-combo-invalid","e","A pbr material whose static combo breaks the shader's own rules (F_SHEEN with F_DETAIL, F_GLASS, F_CLOAK, F_TRANSLUCENT, F_UNLIT; F_DETAIL with F_UNLIT; the status proxy without NPR, unlit or self-illum or with F_CLOAK; front-face normals without alpha test and backfaces): the compiler exits 0 and keeps the flags but silently drops the inputs of one feature (F_SHEEN + F_DETAIL loses g_tDetail), and the game has no such shader variant, so the material renders without it."],["M144","fair-play-unchecked","w","A fair-play comparison could not run on this file: its data, or Valve's original at the same path, did not decode (a new format after a patch, a damaged file), or the model gave nothing to measure. Whether it hides a cue, shrinks the silhouette or overflows the hitboxes is unknown, and unknown is never a pass: the grade's fair play reads fair play not checked until it runs."],["M145","inside-out-shell","w","A closed, single-sided piece whose signed volume is negative (and that is over a millimetre thick on average, twice its volume over its area): every face points inward. The game culls it from outside and draws its far inner wall instead, so it reads hollow or flat black (one skin's sleeves). An inverted-hull outline (a slightly larger copy around another piece, wound inside out to draw a line) is not culled into a line in game: it draws an opaque black shape over what it wraps, though Blender and Source 2 Viewer show the line; the finding names it and points to the material's own outline (F_SOLID_COLOR_OUTLINE, F_OVERRIDE_NPR_OUTLINE). Winding and normals agree with each other, so neither M103 nor M104 sees it. Valve's own inside-out pieces at the same place are not blamed."],["M146","lod-inversion","w","A material has more triangles at a lower LOD than at the one before it (over 1% and 32 triangles, unless Valve's does the same there), or a lower LOD reaches more than 0.5 units (two silhouette pixels) outside LOD0's bounding box, beyond Valve's own reach: the piece gains detail as it recedes, or a decimated vertex spikes out of the mesh, and either pops at the switch distance."],["M147","texture-mip-starved","w","A new texture on the model whose mip chain stops early: at 8 m its smallest stored mip still puts over 2 texels on each screen pixel (from the texture's size, its mip count and the UV density on the mesh), so the sampler skips texels and the surface shimmers as the hero or the camera moves."],["M148","default-slot-literal","w","A replaced material whose texture slot Valve leaves to an engine default (materials/default/...) now holds a one-colour texture more than half the range away from that default's value: the whole surface reads the new value instead. A Source 2 Viewer decompile prints such defaults as literal colours, often the wrong one, and the recompile bakes it in silently (a glass mask of 0 for Valve's 1 drew a summon solid with the hero invisible inside it). Valve's own file is never blamed; a slot the mod fills with a real texture is its own design."],["M149","material-texture-dropped","w","A replaced material lacks a texture slot Valve's material at the same path sets (a decompile and recompile drops one it did not understand): the game's code still samples it, logs 'Texture g_tAltColor_Reveal doesn't exist in ...vmat!' and 'returning error texture', and draws the error texture wherever that slot is used. Seen in game on a published mod's bow (50 error textures in one pass, none in vanilla), which no other rule reported."],["M060","model-document-replaced","i","Replacing a .vmdl_c replaces the WHOLE model document: hitboxes, attachments, cloth, LODs and anim events come from your file. Run the contract check against the original."]]</script>
 <script>
 (function () {
@@ -861,29 +919,183 @@ footer p { max-width: 60ch; }
   }
   pick("M030");
 
-  /* Maid Lash's proofs.tsv, without its hash and evidence columns. */
-  var LEDGER = [
-    ["6864", "2026-11-21", "maid_lash", "pak10_dir.vpk", "3a6a5aff"],
-    ["6865", "2026-11-24", "lash_showcase", "maps/ui/hero_prefabs/lash.vpk", "d287ca64"],
-    ["6865", "2026-11-24", "maid_lash", "pak10_dir.vpk", "24994007"],
-    ["6866", "2026-11-24", "lash_showcase", "maps/ui/hero_prefabs/lash.vpk", "d287ca64"],
-    ["6866", "2026-11-24", "maid_lash", "pak10_dir.vpk", "24994007"],
-    ["6868", "2026-11-25", "lash_showcase", "maps/ui/hero_prefabs/lash.vpk", "d287ca64"],
-    ["6868", "2026-11-25", "maid_lash", "pak10_dir.vpk", "29aea0c5"],
-    ["6868", "2026-11-25", "lash_showcase", "maps/ui/hero_prefabs/lash.vpk", "d287ca64"],
-    ["6868", "2026-11-25", "maid_lash", "pak10_dir.vpk", "24994007"],
-    ["6868", "2026-11-25", "lash_showcase", "maps/ui/hero_prefabs/lash.vpk", "d287ca64"],
-    ["6868", "2026-11-25", "maid_lash", "pak10_dir.vpk", "edfd3beb"]
-  ];
+  /* The proofs by build (site/transit.py writes the data): the ledger, then the map. */
+  var T = JSON.parse($("transit-data").textContent);
   var tb = document.querySelector("#ledger tbody");
-  LEDGER.forEach(function (r) {
-    var tr = el("tr", r[4] === "edfd3beb" ? "on" : null, "<td>" + r.join("</td><td>") + "</td>");
-    tb.appendChild(tr);
+  (T.mods || []).forEach(function (m) {
+    var today = {};
+    m.segments.forEach(function (s) { if (s.current) s.files.forEach(function (f) { today[f[0] + " " + f[1]] = 1; }); });
+    m.rows.forEach(function (r) { tb.appendChild(el("tr", today[r[3] + " " + r[4]] ? "on" : null, "<td>" + r.map(esc).join("</td><td>") + "</td>")); });
   });
 
-  /* before / after */
-  var ba = $("ba"), range = $("ba-range");
-  range.addEventListener("input", function () { ba.style.setProperty("--pos", range.value + "%"); });
+  var NS = "http://www.w3.org/2000/svg";
+  function sv(tag, attrs, parent) {
+    var n = document.createElementNS(NS, tag);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function both(a) { return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
+  function files(n) { return n + (n === 1 ? " file" : " files"); }
+  var read = $("transit-read");
+  var IDLE = "Pick a stop or a change between builds.";
+  function say(html, g) {
+    read.innerHTML = html;
+    document.querySelectorAll("#transit .pick.on").forEach(function (x) { x.classList.remove("on"); });
+    if (g) g.classList.add("on");
+  }
+
+  // what Valve changed between two builds, short for the map and whole for the readout
+  function areas(j) {
+    var a = (j.areas || []).slice();
+    a.sort(function (x, y) { return (y === "hero data") - (x === "hero data"); });
+    return a;
+  }
+  function jLines(j) {
+    if (!j.areas) return ["no record"];
+    var l = j.code && j.code.length ? ["new game code"] : [], a = areas(j);
+    while (a.length && l.length < 3) {
+      if (l.length === 2 && a.length > 1) { l.push("and " + a.length + " more"); break; }
+      l.push(a.shift());
+    }
+    return l.length ? l : ["nothing"];
+  }
+  function jText(j) {
+    var t = "<b>" + j.from + " to " + j.to + "</b>: ";
+    if (!j.areas) return t + "Magician has no record of one of these builds.";
+    var parts = [];
+    if (j.changed) parts.push("changed " + files(j.changed));
+    if (j.added) parts.push("added " + j.added);
+    if (j.removed) parts.push("removed " + j.removed);
+    t += parts.length ? "Valve " + both(parts) + " (" + both(areas(j)) + ")." : "Valve changed no content files.";
+    if (j.code && j.code.length) t += " New game code: " + both(j.code) + ".";
+    else if (j.code) t += " The game code is the same.";
+    var clean = [], under = [];
+    T.mods.forEach(function (m) {
+      var d = (m.drift || []).filter(function (x) { return x.from === j.from && x.to === j.to; })[0];
+      if (!d) return;
+      if (d.under.length) under.push("Under " + esc(m.name) + ": " + esc(d.under.join("; ")) + ".");
+      else clean.push(esc(m.name));
+    });
+    if (clean.length) t += " Nothing under " + both(clean).replace(" and ", " or ") + " changed.";
+    return t + (under.length ? " " + under.join(" ") : "");
+  }
+
+  function drawTransit() {
+    var box = $("transit"), B = T.builds || [], n = B.length;
+    if (!n) return;
+    box.innerHTML = "";
+    var COL = Math.max(104, (box.clientWidth - 24) / n), W = Math.round(COL * n + 24);
+    var X = function (b) { return 12 + COL * (B.indexOf(b) + 0.5); };
+    var top = 140, ROW = 92, H = top + ROW * (T.mods.length - 1) + 48;
+    var svg = sv("svg", { width: W, height: H, viewBox: "0 0 " + W + " " + H, role: "presentation" }, box);
+    // the builds, and the axis between them
+    sv("line", { x1: X(B[0]), x2: X(B[n - 1]), y1: 52, y2: 52, "class": "axis" }, svg);
+    B.forEach(function (b) {
+      sv("text", { x: X(b), y: 20, "text-anchor": "middle", "class": "b" }, svg).textContent = b;
+      if (b === T.installed) sv("text", { x: X(b), y: 36, "text-anchor": "middle", "class": "sub" }, svg).textContent = "installed";
+      sv("circle", { cx: X(b), cy: 52, r: 2.5, "class": "tick" }, svg);
+    });
+    // what Valve changed between each pair
+    (T.junctions || []).forEach(function (j) {
+      var x = (X(j.from) + X(j.to)) / 2, under = T.mods.some(function (m) { return (m.drift || []).some(function (d) { return d.from === j.from && d.to === j.to && d.under.length; }); });
+      var g = sv("g", { "class": "pick", tabindex: 0, role: "button", "aria-label": jText(j).replace(/<[^>]+>/g, "") }, svg);
+      sv("circle", { cx: x, cy: 52, r: 10, "class": "ring" }, g);
+      sv("rect", { x: x - 4.5, y: 47.5, width: 9, height: 9, transform: "rotate(45 " + x + " 52)", "class": "j" + (j.code && j.code.length ? " code" : "") + (under ? " under" : "") }, g);
+      jLines(j).forEach(function (l, k) { sv("text", { x: x, y: 74 + 13 * k, "text-anchor": "middle", "class": "note" }, g).textContent = l; });
+      var show = function () { say(jText(j), g); };
+      g.addEventListener("click", show); g.addEventListener("focus", show); g.addEventListener("mouseenter", show);
+    });
+    var names = [];
+    T.mods.forEach(function (m, mi) {
+      var y = top + ROW * mi, segs = m.segments;
+      // stops in each build: the segments proven there, side by side
+      var at = {};
+      segs.forEach(function (s, si) { s.proofs.forEach(function (p) { (at[p.build] = at[p.build] || []).push(si); }); });
+      var pos = function (si, b) { var l = at[b] || [si], k = l.indexOf(si); return X(b) + (k - (l.length - 1) / 2) * 22; };
+      var firstB = B.filter(function (b) { return at[b]; })[0];
+      var cur = segs.filter(function (s) { return s.current; })[0];
+      var lastB = cur ? T.installed : segs[segs.length - 1].proofs.slice(-1)[0].build;
+      var nx = pos(at[firstB][0], firstB) - 7;
+      names.push([sv("text", { x: nx, y: y - 20, "class": "name" }, svg), nx]);
+      names[names.length - 1][0].textContent = m.name;
+      sv("line", { x1: pos(at[firstB][0], firstB), x2: X(lastB), y1: y, y2: y, "class": "base" }, svg);
+      // the older paks' lines, and a bar where each rebuilt pak starts
+      segs.forEach(function (s, si) {
+        var pts = s.proofs.map(function (p) { return pos(si, p.build); });
+        if (!s.current && pts.length > 1) sv("polyline", { points: pts.map(function (px) { return px + "," + y; }).join(" "), "class": "old" }, svg);
+        if (si > 0) sv("line", { x1: pts[0] - 9, x2: pts[0] - 9, y1: y - 7, y2: y + 7, "class": "bar" }, svg);
+        var alone = (at[s.proofs[0].build] || []).length === 1;
+        if (s.current || alone) sv("text", { x: pts[0], y: y + 24, "text-anchor": "middle", "class": "crc" + (s.current ? " today" : "") }, svg).textContent = s.pak;
+      });
+      // today's pak: solid between proven builds, dashed amber where a build has no proof of it yet
+      var todayB = [], ci = segs.indexOf(cur);
+      if (cur) {
+        var proven = {};
+        cur.proofs.forEach(function (p) { proven[p.build] = p; });
+        todayB = B.filter(function (b) { return +b >= +cur.proofs[0].build && +b <= +T.installed; });
+        for (var k = 1; k < todayB.length; k++) {
+          var a = todayB[k - 1], b = todayB[k];
+          sv("line", { x1: pos(ci, a), x2: pos(ci, b), y1: y, y2: y, "class": proven[a] && proven[b] ? "now" : "gap" }, svg);
+        }
+      }
+      // the hero's data since the last proof, when a name it uses moved (patch day)
+      var hd = m.hero_data;
+      if (hd && hd.state === "moved" && todayB.length) {
+        var bits = [];
+        if (hd.new && hd.new.length) bits.push(hd.new.length + " new");
+        if (hd.gone && hd.gone.length) bits.push(hd.gone.length + " gone");
+        var mid = (X(hd.from) + X(T.installed)) / 2;
+        sv("text", { x: mid, y: y + 24, "text-anchor": "middle", "class": "note" }, svg).textContent = "hero data since " + hd.from + ": " + bits.join(", ") + (hd.new && hd.new.length + (hd.gone ? hd.gone.length : 0) === 1 ? " line" : " lines");
+      }
+      // the stops
+      function stop(cls, x, label, html) {
+        var g = sv("g", { "class": "pick", tabindex: 0, role: "button", "aria-label": label }, svg);
+        sv("circle", { cx: x, cy: y, r: 11, "class": "ring" }, g);
+        sv("circle", { cx: x, cy: y, r: cls === "s-now" ? 7 : 6, "class": cls }, g);
+        var show = function () { say(html, g); };
+        g.addEventListener("click", show); g.addEventListener("focus", show); g.addEventListener("mouseenter", show);
+      }
+      var name = esc(m.name);
+      segs.forEach(function (s, si) {
+        s.proofs.forEach(function (p) {
+          var h = "<b>" + name + " on " + p.build + "</b>: proven " + p.date + (s.current ? ", on the pak it ships today (" + s.pak + ")." : ", on an older pak (" + s.pak + "). It counts for nothing now.");
+          stop(s.current ? "s-now" : "s-old", pos(si, p.build), h.replace(/<[^>]+>/g, ""), h);
+        });
+      });
+      if (cur) {
+        var lastProof = cur.proofs[cur.proofs.length - 1].build;
+        todayB.forEach(function (b) {
+          if (cur.proofs.some(function (p) { return p.build === b; })) return;
+          var from = cur.proofs.filter(function (p) { return +p.build < +b; }).slice(-1)[0].build;
+          var moved = (m.drift || []).filter(function (d) { return +d.from >= +from && +d.to <= +b && d.under.length; });
+          var h = "<b>" + name + " on " + b + "</b>: not proven yet. It ships pak " + cur.pak + ", last proven on " + (+lastProof > +b ? from : lastProof) + ". ";
+          h += moved.length ? "Under it since " + from + ": " + esc(moved.map(function (d) { return d.under.join("; "); }).join("; ")) + "." : "Nothing under it changed since " + from + ", so a look in game is all it needs.";
+          stop("s-gap", pos(ci, b), h.replace(/<[^>]+>/g, ""), h);
+        });
+      }
+    });
+    if (!read.innerHTML) say(IDLE);
+    // each skin's name stays in view while the map scrolls; it starts where the news is, at the installed build
+    box.onscroll = function () { names.forEach(function (t) { t[0].setAttribute("x", Math.max(t[1], box.scrollLeft + 12)); }); };
+    box.scrollLeft = box.scrollWidth;
+    box.onscroll();
+  }
+  var lastW = 0;
+  function fit() { var w = $("transit").clientWidth; if (w !== lastW) { lastW = w; drawTransit(); } }
+  fit();
+  window.addEventListener("resize", function () { requestAnimationFrame(fit); });
+
+  /* the compare sliders: drag, tap, or arrow keys on the slider */
+  document.querySelectorAll(".ba").forEach(function (ba) {
+    var range = ba.querySelector("input"), drag = false;
+    function set(v) { range.value = v; ba.style.setProperty("--pos", v + "%"); }
+    function at(e) { var r = ba.getBoundingClientRect(); set(Math.max(0, Math.min(100, Math.round(100 * (e.clientX - r.left) / r.width)))); }
+    range.addEventListener("input", function () { set(range.value); });
+    ba.addEventListener("pointerdown", function (e) { drag = true; try { ba.setPointerCapture(e.pointerId); } catch (x) {} at(e); });
+    ba.addEventListener("pointermove", function (e) { if (drag) at(e); });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (t) { ba.addEventListener(t, function () { drag = false; }); });
+  });
 
   /* copy */
   $("copy-get").addEventListener("click", function () {
