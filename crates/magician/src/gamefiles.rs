@@ -44,6 +44,8 @@ pub struct GameFiles {
     pub unreached: Option<HashSet<String>>,
     /// Who outside a model names each bone, from beside the users index (M062's lost bones).
     pub bone_users: Option<lint::carry::BoneUsers>,
+    /// Who outside a model names each attachment, from beside the users index (M062's lost attachments).
+    pub attachment_users: Option<lint::attach::AttachmentUsers>,
 }
 
 /// The client library of the game, where Deadlock's own code is: the Windows build's, else the Linux build's.
@@ -115,6 +117,12 @@ impl GameFiles {
             (Some(_), Some(head)) => format!("{identity},{head}"),
             _ => format!("{identity},no bone users"),
         };
+        let attach_text = index.and_then(|p| std::fs::read_to_string(attachment_users_path(p)).ok());
+        let attachment_users = attach_text.as_deref().and_then(lint::attach::AttachmentUsers::parse);
+        let identity = match (&attachment_users, attach_text.as_deref().and_then(|t| t.lines().next())) {
+            (Some(_), Some(head)) => format!("{identity},{head}"),
+            _ => format!("{identity},no attachment users"),
+        };
         GameFiles {
             paks,
             users,
@@ -128,6 +136,7 @@ impl GameFiles {
             ui: std::sync::OnceLock::new(),
             unreached: index.and_then(read_unreached),
             bone_users,
+            attachment_users,
         }
     }
 }
@@ -164,6 +173,9 @@ impl lint::Game for GameFiles {
     }
     fn bone_users(&self) -> Option<&lint::carry::BoneUsers> {
         self.bone_users.as_ref()
+    }
+    fn attachment_users(&self) -> Option<&lint::attach::AttachmentUsers> {
+        self.attachment_users.as_ref()
     }
     fn code_names(&self) -> Option<&HashSet<String>> {
         self.code.get_or_init(|| client_library(&self.game).and_then(|p| std::fs::read(p).ok()).map(|b| code_strings(&b))).as_ref()
@@ -298,6 +310,11 @@ pub struct IndexStats {
     pub targets: usize,
     /// Particles nothing in the game names (M084).
     pub unreached: usize,
+    /// Who each top-level entry of a vdata file is run for, keyed `path:entry` (an ability of a hero is that hero's;
+    /// an entry of another vdata file is its own owner, `stem:entry`). Entries no one in a match has are left out.
+    pub entry_owners: HashMap<String, BTreeSet<String>>,
+    /// The users of every file that has any, as written to the index.
+    pub owners_of: HashMap<String, BTreeSet<String>>,
 }
 
 /// Build the users index for the installed build: reverse references over every compiled file, owners from
@@ -371,6 +388,7 @@ pub fn build_index(game: &Path, out: &Path, build: &str, src: &grade::footprint:
     let mut ability_hero: HashMap<String, BTreeSet<String>> = HashMap::new();
     let mut dead_abilities: HashSet<String> = HashSet::new();
     let mut dead_tokens: Vec<String> = Vec::new();
+    let mut entry_owners: HashMap<String, BTreeSet<String>> = HashMap::new();
     for (key, h) in heroes.members() {
         if !key.starts_with("hero_") {
             continue;
@@ -398,6 +416,7 @@ pub fn build_index(game: &Path, out: &Path, build: &str, src: &grade::footprint:
         for f in named_files(h) {
             direct.entry(f).or_default().insert(key.clone());
         }
+        entry_owners.insert(format!("scripts/heroes.vdata_c:{key}"), BTreeSet::from([key.clone()]));
         let mut tokens = vec![key.trim_start_matches("hero_").to_string()];
         if let Some(m) = h.get("m_strModelName").and_then(Value::as_str) {
             let mp = Path::new(m);
@@ -448,6 +467,7 @@ pub fn build_index(game: &Path, out: &Path, build: &str, src: &grade::footprint:
         for f in named_files(a) {
             direct.entry(f).or_default().extend(owners.iter().cloned());
         }
+        entry_owners.insert(format!("scripts/abilities.vdata_c:{key}"), owners);
     }
     for e in pak.entries.iter().filter(|e| e.path.starts_with("scripts/") && e.path.ends_with(".vdata_c")) {
         if e.path == "scripts/heroes.vdata_c" || e.path == "scripts/abilities.vdata_c" {
@@ -459,6 +479,7 @@ pub fn build_index(game: &Path, out: &Path, build: &str, src: &grade::footprint:
             for f in named_files(x) {
                 direct.entry(f).or_default().insert(format!("{stem}:{key}"));
             }
+            entry_owners.insert(format!("{}:{key}", e.path), BTreeSet::from([format!("{stem}:{key}")]));
         }
     }
 
@@ -508,10 +529,12 @@ pub fn build_index(game: &Path, out: &Path, build: &str, src: &grade::footprint:
     all.extend(direct.keys().cloned());
     let mut lines = Vec::new();
     let mut owner_set = BTreeSet::new();
+    let mut owners_by_file: HashMap<String, BTreeSet<String>> = HashMap::new();
     for t in &all {
         let o = owners_of(t, &rev, &names, &direct, &token_owner, &mut memo, &mut busy, 0);
         if !o.is_empty() {
             owner_set.extend(o.iter().cloned());
+            owners_by_file.insert(t.clone(), o.clone());
             lines.push(format!("{t}\t{}", o.into_iter().collect::<Vec<_>>().join(",")));
         }
     }
@@ -575,7 +598,7 @@ pub fn build_index(game: &Path, out: &Path, build: &str, src: &grade::footprint:
     text.push('\n');
     let up = unreached_path(out);
     std::fs::write(&up, text).map_err(|e| format!("{}: {e}", up.display()))?;
-    Ok(IndexStats { files: todo.len(), edges, owners: owner_set.len(), targets: lines.len(), unreached: unreached.len() })
+    Ok(IndexStats { files: todo.len(), edges, owners: owner_set.len(), targets: lines.len(), unreached: unreached.len(), entry_owners, owners_of: owners_by_file })
 }
 
 /// The kinds of file outside a model that can name one of its bones, and what each is called in a finding.
@@ -654,6 +677,89 @@ pub fn build_bone_users(game: &Path, out: &Path, build: &str) -> Result<usize, S
         code_read = true;
     }
     let mut text = format!("# magician bone users build={build} rev={} code={} names={}\n", lint::carry::BONE_USERS_REV, if code_read { "yes" } else { "no" }, named.len());
+    for l in &lines {
+        text.push_str(l);
+        text.push('\n');
+    }
+    std::fs::write(out, text).map_err(|e| format!("{}: {e}", out.display()))?;
+    Ok(named.len())
+}
+
+/// The kinds of file outside a model that can name an attachment, and what each is called in the attachment users.
+const ATTACHMENT_USER_KINDS: &[(&str, &str)] = &[(".vnmgraph_c", "graph"), (".vnmclip_c", "clip"), (".vpcf_c", "particle"), (".vdata_c", "vdata")];
+
+/// Where the attachment users are kept: beside the users index they were built with.
+pub fn attachment_users_path(index: &Path) -> std::path::PathBuf {
+    index.with_file_name("attachment_users.tsv")
+}
+
+/// Write the attachment users of the build: every name a file outside a model (vdata entry, particle, anim graph,
+/// clip) names as an attachment, with who the game runs it for, and every attachment name of Valve's hero models that
+/// the client code holds. One line per use, `name<TAB>kind<TAB>key<TAB>where<TAB>owners`: the name in lowercase (the
+/// engine finds an attachment by name, case aside: Valve's vdata names `palm_r` for the `palm_R` its models carry);
+/// kind `vdata` (where is `path:entry`, owners that entry's), `particle`, `preview` (a particle editor preview),
+/// `graph`, `clip` (owners the file's users) or `code` (where is the library, owners `*`, and the key says how many of
+/// the playable heroes' own models carry the name, `heroes=43/43`); owners `-` when no one in a match runs it. Returns how many attachment names are named.
+pub fn build_attachment_users(game: &Path, out: &Path, build: &str, index: &IndexStats) -> Result<usize, String> {
+    let pak = vpk::Vpk::open(game.join("citadel").join("pak01_dir.vpk")).map_err(|e| e.to_string())?;
+    let mut todo: Vec<(&vpk::Entry, &str)> = pak.entries.iter().filter_map(|e| ATTACHMENT_USER_KINDS.iter().find(|(x, _)| e.path.ends_with(x)).map(|(_, k)| (e, *k))).collect();
+    todo.sort_by_key(|(e, _)| (e.archive_index, e.offset));
+    let show = |o: Option<&BTreeSet<String>>| o.filter(|o| !o.is_empty()).map_or_else(|| "-".to_string(), |o| o.iter().cloned().collect::<Vec<_>>().join(","));
+    let mut lines: BTreeSet<String> = BTreeSet::new();
+    let mut named: BTreeSet<String> = BTreeSet::new();
+    for (e, kind) in todo {
+        let Some(v) = pak.read(e).ok().and_then(|d| data_of(&d)) else { continue };
+        if kind == "vdata" {
+            for (entry, x) in v.members() {
+                for (name, key, _) in lint::attach::attachment_names(x) {
+                    let n = name.to_ascii_lowercase();
+                    let at = format!("{}:{entry}", e.path);
+                    lines.insert(format!("{n}\tvdata\t{key}\t{at}\t{}", show(index.entry_owners.get(&at))));
+                    named.insert(n);
+                }
+            }
+            continue;
+        }
+        for (name, key, preview) in lint::attach::attachment_names(&v) {
+            let n = name.to_ascii_lowercase();
+            let kind = if preview { "preview" } else { kind };
+            lines.insert(format!("{n}\t{kind}\t{key}\t{}\t{}", e.path, show(index.owners_of.get(&e.path))));
+            named.insert(n);
+        }
+    }
+    // the attachment names of Valve's hero models, for the client code's strings
+    let mut names: BTreeSet<String> = BTreeSet::new();
+    let mut models: Vec<&vpk::Entry> = pak.entries.iter().filter(|e| e.path.starts_with("models/heroes") && e.path.ends_with(".vmdl_c")).collect();
+    models.sort_by_key(|e| (e.archive_index, e.offset));
+    // the playable heroes' own models, for how many of them carry each name the code holds
+    let heroes = pak.find("scripts/heroes.vdata_c").and_then(|e| pak.read(e).ok()).and_then(|d| data_of(&d));
+    let playable: BTreeSet<String> = heroes
+        .as_ref()
+        .map(|h| h.members().iter().filter(|(k, _)| index.entry_owners.contains_key(&format!("scripts/heroes.vdata_c:{k}"))).filter_map(|(_, x)| x.get("m_strModelName").and_then(Value::as_str)).map(compiled).collect())
+        .unwrap_or_default();
+    let mut carried: HashMap<String, usize> = HashMap::new();
+    for e in models {
+        let Some(c) = pak.read(e).ok().and_then(|d| lint::deep::contract(&d)) else { continue };
+        let mine: BTreeSet<String> = c.attachments.into_iter().map(|(n, _)| n).collect();
+        if playable.contains(&e.path) {
+            for n in &mine {
+                *carried.entry(n.to_ascii_lowercase()).or_default() += 1;
+            }
+        }
+        names.extend(mine);
+    }
+    let mut code_read = false;
+    if let Some(lib) = client_library(game) {
+        let code = std::fs::read(&lib).map(|b| code_strings(&b)).map_err(|e| format!("{}: {e}", lib.display()))?;
+        let file = lib.file_name().map_or_else(|| "client".to_string(), |f| f.to_string_lossy().into_owned());
+        for (n, _) in code_bone_names(&names, &code) {
+            // how many of the playable heroes carry it: the code copes without one only some heroes carry
+            lines.insert(format!("{n}\tcode\theroes={}/{}\t{file}\t*", carried.get(&n).copied().unwrap_or(0), playable.len()));
+            named.insert(n);
+        }
+        code_read = true;
+    }
+    let mut text = format!("# magician attachment users build={build} rev={} code={} names={}\n", lint::attach::ATTACHMENT_USERS_REV, if code_read { "yes" } else { "no" }, named.len());
     for l in &lines {
         text.push_str(l);
         text.push('\n');

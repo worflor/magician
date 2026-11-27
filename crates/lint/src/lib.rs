@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod allow;
+pub mod attach;
 pub mod baseline;
 pub mod cache;
 pub mod carry;
@@ -64,7 +65,8 @@ pub struct Rule {
 /// numbers (6877). 7: M062 judges a lost bone by who outside the model names it; M001, M030 (AnimGraph 1), M070,
 /// M137 and M139 say a warning where the game still loads and plays (6880). 8: what the 6877 round left unverified,
 /// seen in game (6880): M042 also says a layout's panel types the game no longer registers, and M065 is a note.
-pub const JUDGEMENT: u32 = 8;
+/// 9: M062 judges a lost attachment by who the game runs for the model and who names the attachment (6880).
+pub const JUDGEMENT: u32 = 9;
 
 /// The rule catalogue: one home for codes, names and in-game consequences.
 pub const RULES: &[Rule] = &[
@@ -111,7 +113,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M013", name: "build-artifact", severity: Severity::Warn,
         in_game: "A build input or toolchain byproduct (a panorama image list, a nested VPK, a raw .kv3, a compiler cache) that the game never loads from an addon. It adds size, and a vdata among them is noted in the grade. magician build leaves these out." },
     Rule { code: "M062", name: "model-contract", severity: Severity::Error,
-        in_game: "A replaced model lost or reparented a bone of Valve's, lost an attachment, moved one too far, or changed or added a hitbox. A lost bone is judged by who still names it, since a full skin brings its own mesh, cloth and ragdoll: an error when the model itself still names it (an attachment riding it, a hitbox, a physics part, a cloth node, a mesh's bone list) or the game's client code holds its name and the model has no attachment of that name, the message naming which; otherwise a warning that says what Valve's model hung on it. The hero's anim graphs name bones too (IK and follow targets, root motion), but they pose the animation skeleton, not the model, and Valve's own models lack bones their graphs name (6880). Who names each bone is the bone users index `magician index` writes; without it a lost bone stays an error that says so. The hero's animation poses a bone by name, so a reparented bone its animation skeleton has moves as Valve's whatever its parent, and one it lacks follows its new parent: a reparent is an error only where what the mod hangs on the bone lands or moves a fair-play pixel or more from where Valve's would. What the game spawns at a lost attachment goes to the origin, and a changed hitbox changes what bullets hit: a fair-play break. A moved attachment on a body bone that still sits near the body is a warning that says how far it moved: a skin with another body shape moves where its effects attach, and that is cosmetic. Near is within 9.4% of the model's size (the square root of its surface), just past the furthest any attachment sits off the body on Valve's 43 heroes (6873 and 6875). Further off, its effect visibly spawns away from the hero: an error. So is a moved attachment held in the hero's own frame (on the root bone, as Valve's camera poses, aim and zipline points are), and one whose place could not be measured. The camera attachments the game names (the model's AttachmentCameraData, and the pivots the client code names in the hero's frame) are held to 1e-4 of Valve's numbers: Valve's copies are bit-identical, a Source 2 Viewer round trip leaves 6.1e-5 at most, and an older viewer's -89.972 for -90 centres the camera. The contract also covers what Deadlock reads from the model beyond its skeleton: a missing or other animation skeleton or AnimGraph 2 reference (the A-pose), a unit-status block that is missing or a list (a CSDK 12 compile: the health bar at the feet): errors. A tagged-sound set Valve's model plays from and ours lacks silences the footsteps enemies listen for, and camera settings other than Valve's change what a player sees around the hero: both fair play, never allowable. A health bar placed elsewhere than Valve's, or another game-data block Valve's model has and ours lacks, is a warning that says what falls back to the game's defaults." },
+        in_game: "A replaced model lost or reparented a bone of Valve's, lost an attachment, moved one too far, or changed or added a hitbox. A lost bone is judged by who still names it, since a full skin brings its own mesh, cloth and ragdoll: an error when the model itself still names it (an attachment riding it, a hitbox, a physics part, a cloth node, a mesh's bone list) or the game's client code holds its name and the model has no attachment of that name, the message naming which; otherwise a warning that says what Valve's model hung on it. The hero's anim graphs name bones too (IK and follow targets, root motion), but they pose the animation skeleton, not the model, and Valve's own models lack bones their graphs name (6880). Who names each bone is the bone users index `magician index` writes; without it a lost bone stays an error that says so. The hero's animation poses a bone by name, so a reparented bone its animation skeleton has moves as Valve's whatever its parent, and one it lacks follows its new parent: a reparent is an error only where what the mod hangs on the bone lands or moves a fair-play pixel or more from where Valve's would. A lost attachment is judged by who names it: an error when something the game runs for the model names it (the model's own game data, the vdata of its unit's abilities or of items any hero carries, an animation event in a clip its graphs play, or the client code for a name all of Valve's playable heroes carry), since what is placed there goes to the origin; otherwise a warning that says who does name it (a particle editor preview, another unit's data, nothing). A name Valve's game data gives a role this model's game data gives elsewhere is not looked up on it. Who names each attachment is the attachment users index `magician index` writes. A changed hitbox changes what bullets hit: a fair-play break. A moved attachment on a body bone that still sits near the body is a warning that says how far it moved: a skin with another body shape moves where its effects attach, and that is cosmetic. Near is within 9.4% of the model's size (the square root of its surface), just past the furthest any attachment sits off the body on Valve's 43 heroes (6873 and 6875). Further off, its effect visibly spawns away from the hero: an error. So is a moved attachment held in the hero's own frame (on the root bone, as Valve's camera poses, aim and zipline points are), and one whose place could not be measured. The camera attachments the game names (the model's AttachmentCameraData, and the pivots the client code names in the hero's frame) are held to 1e-4 of Valve's numbers: Valve's copies are bit-identical, a Source 2 Viewer round trip leaves 6.1e-5 at most, and an older viewer's -89.972 for -90 centres the camera. The contract also covers what Deadlock reads from the model beyond its skeleton: a missing or other animation skeleton or AnimGraph 2 reference (the A-pose), a unit-status block that is missing or a list (a CSDK 12 compile: the health bar at the feet): errors. A tagged-sound set Valve's model plays from and ours lacks silences the footsteps enemies listen for, and camera settings other than Valve's change what a player sees around the hero: both fair play, never allowable. A health bar placed elsewhere than Valve's, or another game-data block Valve's model has and ours lacks, is a warning that says what falls back to the game's defaults." },
     Rule { code: "M063", name: "sound-cue-reduced", severity: Severity::Error,
         in_game: "A replaced sound event or file plays quieter, shorter, over less distance, to fewer players, or not at all compared with Valve's. Enemies rely on those cues: hiding them is a fair-play break. A changed base is read through the game's own base events: one Valve's base inherits from differs only by what lies between, and only a level or a reach there is a finding (louder is M064). A voice line (sounds/vo/), its file or its event, is not judged by its length: Valve's own voices fail that test against each other on 46% of shared lines (`magician corpus`)." },
     Rule { code: "M064", name: "sound-louder", severity: Severity::Warn,
@@ -343,6 +345,12 @@ pub trait Game: Sync {
     /// Who outside a model names each bone (`magician index` writes it beside the users index). `None` when there is no
     /// such file for the build: then who names a lost bone is unknown, and M062 keeps it an error that says so.
     fn bone_users(&self) -> Option<&carry::BoneUsers> {
+        None
+    }
+    /// Who outside a model names each attachment (`magician index` writes it beside the users index). `None` when
+    /// there is no such file for the build: then who names a lost attachment is unknown, and M062 keeps it an error
+    /// that says so.
+    fn attachment_users(&self) -> Option<&attach::AttachmentUsers> {
         None
     }
 }
@@ -1263,6 +1271,10 @@ fn model_findings(input: &Input, f: &ModFile, by_path: &HashMap<&str, &ModFile>,
                     by_path.contains_key(q)
                 };
                 let breaches = carry::judge(deep::contract_breaches(&a, &b), &f.data, valve, &game_read, &ships, input.game.and_then(|g| g.bone_users()));
+                // a lost attachment is judged by who the game runs for this model and who names the attachment
+                let owners = input.game.map(|g| g.users(p)).unwrap_or_default();
+                let played = if breaches.iter().any(|m| m.starts_with("attachment '") && m.ends_with("' missing")) { carry::played(&f.data, &game_read) } else { Default::default() };
+                let breaches = attach::judge(breaches, &f.data, valve, &owners, &played, input.game.and_then(|g| g.attachment_users()));
                 // the camera attachments the game names, held to Valve's numbers far tighter than the printed
                 // signature; one the contract already called changed or missing is not said twice
                 let cams = gamedata::camera_attachments(valve, &b, input.game.and_then(|g| g.code_names()));

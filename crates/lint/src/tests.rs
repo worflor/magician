@@ -1804,3 +1804,117 @@ fn m151_a_replaced_material_on_another_shader() {
     assert!(m.message.contains("environment_texture_set.vfx") && m.message.contains("Material Editor") && m.message.contains("pbr.vfx"), "{}", m.message);
     assert!(!codes(&run_game(vec![file(MAT, shader("pbr.vfx"))], &g, &fake)).contains("M151"), "Valve's own shader");
 }
+
+/// An attachment users index naming each `(name, kind, key, where, owners)`.
+fn attachment_users(uses: &[(&str, &str, &str, &str, &str)]) -> crate::attach::AttachmentUsers {
+    let mut text = format!("# magician attachment users build=6880 rev={} code=yes names=0\n", crate::attach::ATTACHMENT_USERS_REV);
+    for (n, k, key, at, o) in uses {
+        text.push_str(&format!("{n}\t{k}\t{key}\t{at}\t{o}\n"));
+    }
+    crate::attach::AttachmentUsers::parse(&text).unwrap()
+}
+
+#[test]
+fn m062_a_lost_attachment_is_judged_by_who_names_it() {
+    use crate::attach::judge;
+    let model = hero(GAMEDATA, &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0);
+    let me = vec!["hero_haze".to_string()];
+    let played: std::collections::BTreeSet<String> = ["models/heroes/haze/run.vnmclip_c".to_string()].into();
+    let users = attachment_users(&[
+        ("ability_apply", "vdata", "m_strAttachmentName", "scripts/abilities.vdata_c:ability_haze_dagger", "hero_haze"),
+        ("head_fx", "vdata", "m_sHealthBarAttachment", "scripts/abilities.vdata_c:upgrade_magic_shield", "upgrade_magic_shield"),
+        ("standing_pivot", "code", "heroes=42/42", "client.dll", "*"),
+        ("attach_hitloc", "code", "heroes=8/42", "client.dll", "*"),
+        ("shoulder_fx", "preview", "m_attachmentName", "particles/haze/dagger.vpcf_c", "hero_haze"),
+        ("rattyguard_shield_a", "vdata", "m_strKnockoffAttachment", "scripts/abilities.vdata_c:ability_rat", "hero_other"),
+        ("muzzle_fx", "particle", "C_OP_SetControlPointsToModelParticles/m_AttachmentName", "particles/haze/gun.vpcf_c", "hero_haze"),
+        ("foot_fx", "clip", "m_attachmentName", "models/heroes/haze/run.vnmclip_c", "hero_haze"),
+        ("dead_fx", "vdata", "m_strAttachmentName", "scripts/abilities.vdata_c:ability_cut", "-"),
+        ("spawn_fx", "clip", "m_attachmentPoint0", "models/heroes/haze/summon/spawn.vnmclip_c", "hero_haze"),
+        ("bull_eye_fx", "vdata", "m_strBeamStartAttachmentPoint", "scripts/abilities.vdata_c:citadel_ability_boss_beam", "citadel_ability_boss_beam"),
+        ("palm_r", "vdata", "m_strCustomAttachmentSource", "scripts/abilities.vdata_c:upgrade_capacitor", "upgrade_capacitor"),
+    ]);
+    let one = |name: &str, users: Option<&crate::attach::AttachmentUsers>| {
+        let m = judge(vec![format!("attachment '{name}' missing")], &model, &model, &me, &played, users).pop().unwrap();
+        (deep::contract_severity(&m), m)
+    };
+    // something the game runs for this hero names it: an error that says who and what happens
+    for (name, who) in [
+        ("healthbar", "this model's own game data (m_strUnitStatusAttachmentName)"),
+        ("near_00", "this model's own game data (attachment_name)"),
+        ("ability_apply", "this unit's own vdata and effects (scripts/abilities.vdata_c:ability_haze_dagger m_strAttachmentName)"),
+        ("head_fx", "what any hero can carry"),
+        ("palm_r", "scripts/abilities.vdata_c:upgrade_capacitor"),
+        ("standing_pivot", "the game's client code"),
+        ("foot_fx", "models/heroes/haze/run.vnmclip_c m_attachmentName"),
+    ] {
+        let (s, m) = one(name, Some(&users));
+        assert!(s == Severity::Error && m.contains(who) && m.contains("model's origin") && m.contains("UNVERIFIED"), "{name}: {m}");
+    }
+    // only the particle editor's preview, another hero's own data, a particle's own render model, data no one runs,
+    // or nothing at all: a warning that says so
+    for (name, said) in [
+        ("shoulder_fx", "the particle editor's preview of 1 effect(s) names it"),
+        ("rattyguard_shield_a", "only other units' own data names it"),
+        ("bull_eye_fx", "only other units' own data names it"),
+        ("spawn_fx", "animation this model's graphs do not play names it"),
+        ("muzzle_fx", "on the model the particle draws"),
+        ("dead_fx", "nothing in the game names it"),
+        ("attach_hitloc", "only some of Valve's heroes carry it (8/42)"),
+        ("never_named", "nothing in the game names it"),
+    ] {
+        let (s, m) = one(name, Some(&users));
+        assert!(s == Severity::Warn && m.contains(said) && m.ends_with(crate::carry::NOTHING_CHANGES), "{name}: {m}");
+    }
+    // the same name in a preview and in this hero's vdata: the vdata decides
+    let both = attachment_users(&[("shoulder_fx", "preview", "m_attachmentName", "particles/a.vpcf_c", "hero_haze"), ("shoulder_fx", "vdata", "m_strEffectsAttachName", "scripts/heroes.vdata_c:hero_haze", "hero_haze")]);
+    assert_eq!(one("shoulder_fx", Some(&both)).0, Severity::Error);
+    // no index, or one written without the client library: unknown, never clean
+    let (s, m) = one("never_named", None);
+    assert!(s == Severity::Error && m.contains("could not be checked") && m.contains("magician index"), "{m}");
+    let blind = crate::attach::AttachmentUsers::default();
+    let (s, m) = one("never_named", Some(&blind));
+    assert!(s == Severity::Error && m.contains("without the client library"), "{m}");
+    // another breach of the same name is not this judgement's, and Valve's model against itself has none
+    let other = "attachment 'healthbar' missing: Valve's model has another of that name, on head at 0.00,0.00,10.00 rot 0.00,0.00,0.00,1.00".to_string();
+    assert_eq!(judge(vec![other.clone()], &model, &model, &me, &played, Some(&users)), vec![other]);
+    assert!(hero_findings(model.clone(), Some(&["standing_pivot"])).is_empty());
+    // an older build's game data that places the health bar by no attachment: the game does not look the name up on
+    // this model, whatever the code holds; the game-data finding says where the bar goes
+    let older = hero(&GAMEDATA.replace(r#" m_strUnitStatusAttachmentName = "healthbar""#, ""), &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0);
+    let code = attachment_users(&[("healthbar", "code", "heroes=42/42", "client.dll", "*")]);
+    let m = judge(vec!["attachment 'healthbar' missing".into()], &older, &model, &me, &played, Some(&code)).pop().unwrap();
+    assert!(deep::contract_severity(&m) == Severity::Warn && m.contains("Valve's model's game data names it (m_strUnitStatusAttachmentName)") && m.contains("client code holds the name too"), "{m}");
+    // the same data still naming it: the model's own game data looks it up, an error
+    let m = judge(vec!["attachment 'healthbar' missing".into()], &model, &model, &me, &played, Some(&code)).pop().unwrap();
+    assert!(deep::contract_severity(&m) == Severity::Error && m.contains("this model's own game data"), "{m}");
+}
+
+#[test]
+fn attachment_users_read_back_only_in_their_own_format() {
+    let u = attachment_users(&[("palm_r", "vdata", "m_strEffectsAttachName", "scripts/heroes.vdata_c:hero_haze", "hero_haze"), ("aim", "code", "heroes=42/42", "client.dll", "*"), ("x", "preview", "k", "p.vpcf_c", "-")]);
+    assert!(u.code_read && u.of("PALM_R")[0].owners == ["hero_haze"] && u.of("aim")[0].kind == "code" && u.of("x")[0].owners.is_empty());
+    assert!(crate::attach::AttachmentUsers::parse("# magician attachment users build=6880 rev=0 code=yes names=0\n").is_none(), "another format");
+    assert!(crate::attach::AttachmentUsers::parse("palm_r\tvdata\n").is_none(), "not the file");
+}
+
+#[test]
+fn attachment_names_are_what_a_key_that_says_attach_holds() {
+    let v = resource::kv3::parse_text(
+        r#"{ m_controlPointConfigurations = [ { m_name = "preview" m_drivers = [ { m_iAttachType = "PATTACH_POINT_FOLLOW" m_attachmentName = "ability_apply" } ] } ]
+            m_Operators = [ { _class = "C_OP_SetControlPointsToModelParticles" m_AttachmentName = "muzzle_fx" } ]
+            m_eAttachmentSourceType = "EAttachmentSource_Custom" m_strCustomAttachmentSource = "palm_R" m_BombAttachedParticle = "particles/x.vpcf"
+            m_strRatAttachSound = "Rat.Attach" m_strShootAttachment = "" m_flAttachOffset = 70.0 }"#,
+    )
+    .unwrap();
+    let got: Vec<(String, String, bool)> = crate::attach::attachment_names(&v).into_iter().collect();
+    assert_eq!(
+        got,
+        vec![
+            ("ability_apply".to_string(), "m_attachmentName".to_string(), true),
+            ("muzzle_fx".to_string(), "C_OP_SetControlPointsToModelParticles/m_AttachmentName".to_string(), false),
+            ("palm_R".to_string(), "m_strCustomAttachmentSource".to_string(), false),
+        ]
+    );
+}
+

@@ -1478,8 +1478,9 @@ fn cmd_index(args: &[String]) -> R {
     let t = std::time::Instant::now();
     let s = gamefiles::build_index(&game, &out, &build, &grade_sources(args)?)?;
     let bones = gamefiles::build_bone_users(&game, &gamefiles::bone_users_path(&out), &build)?;
+    let attachments = gamefiles::build_attachment_users(&game, &gamefiles::attachment_users_path(&out), &build, &s)?;
     say!(
-        "build {build}: {} compiled files, {} references, {} owners, {} files with users -> {}; {} particles nothing names -> {}; {} bone names that anim graphs, clips, particles, vdata or the client code name -> {} ({:.0}s)",
+        "build {build}: {} compiled files, {} references, {} owners, {} files with users -> {}; {} particles nothing names -> {}; {} bone names that anim graphs, clips, particles, vdata or the client code name -> {}; {} attachment names that vdata, particles, graphs, clips or the client code name -> {} ({:.0}s)",
         s.files,
         s.edges,
         s.owners,
@@ -1489,6 +1490,8 @@ fn cmd_index(args: &[String]) -> R {
         gamefiles::unreached_path(&out).display(),
         bones,
         gamefiles::bone_users_path(&out).display(),
+        attachments,
+        gamefiles::attachment_users_path(&out).display(),
         t.elapsed().as_secs_f64()
     );
     Ok(ExitCode::SUCCESS)

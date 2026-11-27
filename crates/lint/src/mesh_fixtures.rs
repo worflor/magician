@@ -1493,7 +1493,7 @@ fn m062_a_moved_attachment_in_the_hero_s_frame_and_a_missing_one_stay_errors() {
     got.sort();
     assert_eq!(got.len(), 2, "{f:#?}");
     assert!(got[0].0 == Severity::Warn && got[0].1.starts_with("attachment 'idol' moved 2.0 units"), "{got:?}");
-    assert_eq!(got[1], (Severity::Error, "attachment 'palm_r' missing"));
+    assert!(got[1].0 == Severity::Error && got[1].1.starts_with("attachment 'palm_r' missing"), "{got:?}");
 }
 
 #[test]

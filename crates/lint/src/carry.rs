@@ -454,6 +454,34 @@ pub fn motion(model: &[u8], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Mo
     Ok(m)
 }
 
+/// The anim graphs and clips the game can play on a model: its AnimGraph 2 graphs (`m_animGraph2Refs`) and every graph
+/// and clip they reach through their references, as compiled paths. Only graphs are read; at most `MOTION_FILES` of
+/// them. Empty when the model names no graph.
+pub fn played(model: &[u8], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> BTreeSet<String> {
+    let compiled = |p: &str| {
+        let p = p.to_ascii_lowercase().replace('\\', "/");
+        if p.ends_with("_c") { p } else { format!("{p}_c") }
+    };
+    let Some(Ok(d)) = resource::kv3_block(model, b"DATA") else { return BTreeSet::new() };
+    let mut queue: Vec<String> = d.get("m_animGraph2Refs").map(Value::as_array).unwrap_or(&[]).iter().filter_map(|g| g.get("m_hGraph").and_then(Value::as_str)).map(compiled).collect();
+    let mut seen: BTreeSet<String> = queue.iter().cloned().collect();
+    let mut walked = 0usize;
+    while let Some(path) = queue.pop() {
+        if walked >= MOTION_FILES || path.ends_with(".vnmclip_c") {
+            continue;
+        }
+        walked += 1;
+        let Some(r) = read(&path).and_then(|b| resource::parse(&b).ok()) else { continue };
+        for e in &r.ext_refs {
+            let p = e.compiled_path();
+            if (p.ends_with(".vnmgraph_c") || p.ends_with(".vnmclip_c")) && seen.insert(p.clone()) {
+                queue.push(p);
+            }
+        }
+    }
+    seen
+}
+
 fn add(a: V, b: V) -> V {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 }
