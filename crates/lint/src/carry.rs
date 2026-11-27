@@ -520,7 +520,8 @@ fn clip(bytes: &[u8], skeleton: &str, reference: &[Pose]) -> Result<Option<Vec<M
             other => other.numbers().iter().map(|&x| x as u8).collect(),
         }
     };
-    let words: Vec<u16> = d.get("m_compressedPoseData").map(bytes_of).unwrap_or_default().chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+    let raw = d.get("m_compressedPoseData").map(bytes_of).unwrap_or_default();
+    let words: Vec<u16> = raw.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
     let offsets: Vec<usize> = d.get("m_compressedPoseOffsets").map(Value::numbers).unwrap_or_default().iter().map(|&x| x.max(0.0) as usize).collect();
     let unorm = |u: u16, (start, len): (f64, f64)| start + len * (u as f64 / 65535.0);
     let mut out = vec![Moved::default(); tracks.len()];
