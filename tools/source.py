@@ -14,7 +14,7 @@ on any static host (GitHub Pages is the worked case):
     mods/<id>/releases.json release history, newest first (kept across runs: earlier releases are read back)
     media/<id>/*.jpg        the bundle's previews, as JPEG under the protocol's 2 MiB per image
     files/<zip>             the release zip, when downloads live on the same host (see downloads_url)
-    index.html              the front page: a card per mod, what is coming, and the Add source button
+    index.html              the front page: the Add to Deadlock Mod Manager button, a card per mod, what is coming
     <id>/index.html         a page per mod: its pictures, Install with DMM, the description DMM shows, every release
     feed.xml                an Atom feed of every release, for a reader that is not a mod manager
     sitemap.xml             the pages, each with the date of its newest release, for search engines
@@ -41,7 +41,9 @@ authors {name: url}: an author's own site, for an author as bundle.json names th
 page {title, intro, css, head, header, footer}: the pages' own look. css is a stylesheet appended to the built-in one
 (which is written on variables: --bg, --ink, --muted, --line, --accent, --font, --width ...), head, header and footer
 are HTML files put in <head>, above the content and in the footer of every page; {root} in them is the way back to
-the top of the tree, so the same chrome works on the front page and a mod's page.
+the top of the tree, so the same chrome works on the front page and a mod's page. add_source (default on): the
+front page's header carries the button that adds the source to DMM, with a line saying what it does; {label, note}
+change its words, false leaves only the address to add by hand at the bottom.
 upcoming [{title, hero, when, note, image}]: cards under "Coming" on the front page. With in_manager (and id, author,
 hero_id, nsfw) one is also a listing DMM shows and cannot install (availability "unavailable": DMM has no "coming
 soon" state, so the description says it). Release the mod later under the same id and that listing turns installable.
@@ -851,8 +853,15 @@ def main():
     tree.put(".nojekyll", b"")
     page = src.get("page") or {}
     if not isinstance(page, dict):
-        die("page must be an object: title, intro, css, head, header, footer")
-    theme = {k: fragment(base, page, k) for k in ("css", "head", "header", "footer")}
+        die("page must be an object: title, intro, css, head, header, footer, add_source")
+    add = page.get("add_source", True)
+    if add is not True and add is not False and not (
+            isinstance(add, dict) and set(add) <= {"label", "note"}
+            and all(isinstance(v, str) and v.strip() and "<" not in v for v in add.values())
+            and len(add.get("label", "")) <= 48 and len(add.get("note", "")) <= 200):
+        die("page.add_source must be true, false or {label, note}: plain words, a label up to 48 characters, "
+            "a note up to 200")
+    theme ={k: fragment(base, page, k) for k in ("css", "head", "header", "footer")}
     tree.put("index.html", landing(src, base_url, desc_url, entries, icon_rel, theme, upcoming))
     for en in entries:
         tree.put(f"{en[1]['id']}/index.html", mod_page(src, base_url, desc_url, en, icon_rel, theme))
@@ -973,6 +982,15 @@ a.card-title:hover { text-decoration: underline; }
 .btn:hover { border-color: var(--muted); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn .dim { font-weight: 400; opacity: 0.7; }
+.add-source { margin: 1.75rem 0 0; }
+.add-btn { min-height: 3.25rem; padding: 0.7rem 1.4rem 0.7rem 1.1rem; gap: 0.6em; font-size: 1.05rem; font-weight: 700;
+  letter-spacing: -0.005em; }
+.add-glyph { flex: none; width: 1.25em; height: 1.25em; }
+.add-note { color: var(--muted); font-size: 0.92rem; max-width: var(--prose); margin: 0.7rem 0 0; }
+.add-get { font-size: 0.88rem; margin: 0.35rem 0 0; }
+.add-get a { color: var(--muted); }
+.add-get a:hover { color: var(--ink); }
+@media (max-width: 30rem) { .add-btn { display: flex; width: 100%; justify-content: center; } }
 .more { font-size: 0.95rem; padding: 0.55rem 0.25rem; }
 .small { font-size: 0.88rem; color: var(--muted); margin: 0.5rem 0; max-width: var(--prose); }
 .url { display: block; padding: 0.6rem 0.75rem; border-radius: var(--radius); background: var(--soft); border: 1px solid var(--line);
@@ -1222,22 +1240,35 @@ def landing(src, base_url, desc_url, entries, icon_rel, theme, upcoming):
 </article>""")
     soon_sec = ('<section class="sec" aria-labelledby="coming"><div class="sec-head"><h2 class="sec-title" id="coming">Coming</h2></div>'
                 + "".join(soon) + "</section>") if soon else ""
+    add = page.get("add_source", True)
+    add_cta = ""
+    if add is not False:
+        words = add if isinstance(add, dict) else {}
+        label = words.get("label") or "Add to Deadlock Mod Manager"
+        note = words.get("note") or "One click adds every mod here to the mod manager's store. It flags each update."
+        # A plain link to DMM's own URL scheme: one click, no script. The plus is drawn here, not DMM's artwork.
+        add_cta = f"""
+  <div class="add-source">
+    <a class="btn primary add-btn" href="{e(dmm_link('add', url=desc_url))}"><svg class="add-glyph" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 4v12M4 10h12" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"/></svg><span>{e(label)}</span></a>
+    <p class="add-note">{md_inline(note)}</p>
+    <p class="add-get"><a href="{e(dmm)}">Get the mod manager</a></p>
+  </div>"""
+    get = f'<a href="{e(dmm)}">get the mod manager</a>'
+    paste = "paste this address into <strong>Settings &gt; Mods &gt; Mod sources</strong>."
+    by_hand = (f"If the button does nothing, {get} or update it to 2.4.0 or newer, then {paste}" if add is not False
+               else f"In Deadlock Mod Manager 2.4.0 or newer ({get}), {paste} Everything here then shows up in its "
+                    f"store.")
     body = f"""<header class="top">
   <h1 class="page-title">{e(title)}</h1>
-  <p class="lede">{md_inline(intro)}</p>
+  <p class="lede">{md_inline(intro)}</p>{add_cta}
 </header>
 <section class="sec" aria-labelledby="released">
   <div class="sec-head"><h2 class="sec-title" id="released">Released</h2></div>{''.join(cards)}
 </section>
 {soon_sec}
 <section class="sec" aria-labelledby="install" id="source">
-  <div class="sec-head"><h2 class="sec-title" id="install">In the mod manager</h2></div>
-  <p class="lede">Add this page to Deadlock Mod Manager as a mod source once. Everything here then shows up in its Mods
-  Store, and it tells you when a new version is out.</p>
-  <p class="actions"><a class="btn primary" href="{e(dmm_link('add', url=desc_url))}">Add source to Deadlock Mod Manager</a>
-    <a class="btn" href="{e(dmm)}">Get the mod manager</a></p>
-  <p class="small">Needs a version with <strong>Settings &gt; Mods &gt; Mod sources</strong>. If a button does nothing,
-  the mod manager is not installed or is older than that: add the source by hand with this address, or download a zip.</p>
+  <div class="sec-head"><h2 class="sec-title" id="install">Add it by hand</h2></div>
+  <p class="small">{by_hand} Or download a zip: its README has the steps.</p>
   <code class="url">{e(desc_url)}</code>
 </section>"""
     og = base_url + entries[0][3][0] if entries and entries[0][3] else None

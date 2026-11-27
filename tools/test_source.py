@@ -391,6 +391,42 @@ class Source(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("page.css", r.stderr)
 
+    def test_the_add_source_button_leads_the_front_page_and_the_bottom_keeps_the_address(self):
+        z = self.bundle()
+        self.ok(self.source(z))
+        front = self.text("index.html")
+        add = 'href="deadlock-mod-manager://sources/add?url=https%3A%2F%2Fexample.github.io%2Fskins%2Fdmm-source.json"'
+        header = front[front.index('<header class="top">'):front.index("</header>")]
+        self.assertIn(add, header, "the button sits in the header, under the title and the lede")
+        self.assertLess(header.index('class="lede"'), header.index(add))
+        self.assertIn("<span>Add to Deadlock Mod Manager</span>", header)
+        self.assertIn('<svg class="add-glyph"', header)
+        self.assertIn('aria-hidden="true"', header)
+        self.assertIn("One click adds every mod here", header)
+        self.assertIn("Get the mod manager", header)
+        self.assertEqual(front.count(add), 1, "one button; the bottom is the manual fallback")
+        bottom = front[front.index('id="source"'):]
+        self.assertIn("https://example.github.io/skins/dmm-source.json</code>", bottom)
+        self.assertIn("If the button does nothing", bottom)
+        self.assertNotIn("deadlock-mod-manager://sources/add", bottom)
+        self.assertNotIn('class="add-source"', self.text("test-skin", "index.html"), "a mod's page keeps its own install button")
+
+        self.ok(self.source(z, page={"add_source": {"label": "Add my skins", "note": "Every **skin** here, one click."}}))
+        front = self.text("index.html")
+        self.assertIn("<span>Add my skins</span>", front)
+        self.assertIn("Every <strong>skin</strong> here, one click.", front)
+
+        self.ok(self.source(z, page={"add_source": False}))
+        front = self.text("index.html")
+        self.assertNotIn("deadlock-mod-manager://sources/add", front)
+        self.assertNotIn("If the button does nothing", front)
+        self.assertIn("https://example.github.io/skins/dmm-source.json</code>", front)
+
+        for bad in ("yes", {"label": "<b>x</b>"}, {"label": "x" * 49}, {"colour": "red"}, {"note": ""}):
+            r = self.run_source(self.source(z, page={"add_source": bad}))
+            self.assertNotEqual(r.returncode, 0, bad)
+            self.assertIn("page.add_source", r.stderr + r.stdout)
+
     def test_what_is_coming_is_a_card_and_if_asked_a_listing_with_nothing_to_install(self):
         z = self.bundle()
         self.ok(self.source(z, upcoming=[{"title": "Next Skin", "hero": "Abrams", "note": "Soon."}]))

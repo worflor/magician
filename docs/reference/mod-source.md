@@ -82,7 +82,9 @@ description says so and links the zip, which carries `install-scene.cmd` and `in
 
 ## The pages
 
-The tree is also a small website. `index.html` has a card per mod and the Add source button; each mod has its own
+The tree is also a small website. `index.html` leads with the Add to Deadlock Mod Manager button, under the title and
+the intro, with a line saying what one click does; then a card per mod, and at the bottom the source's address for
+adding it by hand when the button does nothing. Each mod has its own
 page at `<id>/` (the listing's `homepageUrl`, which DMM shows as "View post on <source name>") with its pictures, the
 Install with DMM button, the same description DMM shows, every release with its notes and zip, and the checksum.
 `feed.xml` is an Atom feed of releases. Every page carries Open Graph tags, so a pasted link shows the cover.
@@ -93,6 +95,13 @@ page, with `{root}` standing for the way back to the top of the tree). That is e
 site they are served from. Per mod, `tagline`, `blurb` and `links` (a trailer) feed its card and page, and
 `badge` (a short label such as `early`) is a pill beside the version on both. DMM has no badge, so a listing that must
 say it is early says so in its description too.
+
+The button is a plain link to `deadlock-mod-manager://sources/add?url=<descriptor>`: one click, no script, keyboard
+reachable, full width on a phone, with a plus drawn inline (none of DMM's artwork). It is on unless the page block says
+`"add_source": false`; `"add_source": {"label": "...", "note": "..."}` changes its words (plain text; the note takes
+inline Markdown), so a store of skins can say "every skin here". The default note: "One click adds every mod here to
+the mod manager's store. It flags each update." DMM never installs an update by itself, so the note does not promise
+that.
 
 `upcoming` lists what is coming: `title`, `hero`, `when`, `note`, `image`. Each is a card on the front page. With
 `in_manager` (plus `id`, `author`, `hero_id`, `nsfw`) it is also written as a listing with `availability:
