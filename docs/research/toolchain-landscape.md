@@ -211,30 +211,30 @@ From Divine's [errors when making mods](https://wiki.divineskins.gg/en/docs/dead
 | `.vnmskel_c`, `.vnmgraph_c` or `scripts/*.vdata_c` shipped | yes: M070 (error) | |
 | Unchanged compiled files shipped | yes: the release gate blocks files byte-identical to Valve's | |
 | Compiler's default textures shipped | yes: M071 | |
-| Template sample images changing other heroes' icons | partly: M090 when the file is shared; nothing says "this hero mod replaces another hero's files" | flag replacements outside the mod's hero footprint (`footprint` already knows it) |
-| A-pose: AG2 references missing, skeleton path wrong | partly: M061 warns on a dropped anim graph reference | an error when the model's skeleton or AG2 references differ from Valve's model at that path |
-| Camera centred: camera attachment wrong | mostly: M062 compares every attachment with Valve's | M062's tolerance (0.01 per written number) would pass a pivot of -89.972 against -90; the eleven camera attachments could be held exactly |
-| Health bar at the feet: `CitadelUnitStatusSettings_t` an array | no | compare the model's game-data blocks with Valve's (shape and values) |
-| Missing hero sounds: `CitadelTaggedSoundSettings_t` or feet nodes lost | no (M061 sees dropped sound references, not a dropped settings block) | the same game-data comparison |
-| Camera settings or hitboxes changed | hitboxes yes (M062, M129); `CitadelCameraSettings_t` no | the same comparison, as a fair-play finding |
+| Template sample images changing other heroes' icons | yes: M090 when the file is shared, M092 when only another hero uses it (landed after this note) | |
+| A-pose: AG2 references missing, skeleton path wrong | yes: M062 errors on a missing or other skeleton or AG2 reference (landed after this note) | |
+| Camera centred: camera attachment wrong | yes: M062 compares every attachment with Valve's, and holds the camera attachments the game names to 1e-4 (landed after this note) | |
+| Health bar at the feet: `CitadelUnitStatusSettings_t` an array | yes: M062 (landed after this note) | |
+| Missing hero sounds: `TaggedSoundSettings_t` (the community pages say `CitadelTaggedSoundSettings_t`) or feet nodes lost | yes: M062, as fair play, since footsteps are a cue (landed after this note) | |
+| Camera settings or hitboxes changed | yes: M062 and M129 for hitboxes, M062 for `CitadelCameraSettings_t` (fair play, landed after this note) | |
 | Solid red mesh, blank slot from a `.001` material | not as such | name draw calls whose material is empty or the error material |
 | New material on the wrong shader (Material Editor default) | partly: M131 and M132 fire on the missing flags | say the shader is the cause |
 | NPR lighting or status proxy off | yes: M132, M131 | |
 | Translucent, self-illum, outline off (Divine's Avoid list) | partly: albedo M136 and M137, alpha M138 and M139, silhouette M124 | a material-flag fair-play rule against Valve's hero materials, as Divine's table does by hand |
 | Odd texture sizes | yes: M073, M135, M147 | |
 | Bad weights, more than four influences, weapon not parented | yes: M116, M117, M119, M111 | |
-| Cloth or ragdoll lost after a decompile | partly: M142 for distance fields; cloth and ragdoll parts are counted in `carry.rs`, but no rule says the whole cloth or ragdoll is gone | compare the FeModel and ragdoll with Valve's model |
-| Particle recolour on an unused file | no | say when a replaced particle is reached by nothing the hero's data plays (the users index knows) |
+| Cloth or ragdoll lost after a decompile | yes: M142 for distance fields, M160 for cloth and ragdoll parts (landed after this note) | |
+| Particle recolour on an unused file | yes: M084 (landed after this note) | |
 | Particle function in the wrong list (crash) | yes: M083 | |
 | Particle file won't open after decompile (header) | no | Magician builds particles from text; it could name the S2V decompile header if the compiler rejects it |
 | Sound quieter or louder than Valve's | yes: M063, M064 | |
-| Sound sped up, distorted, pitch raised by the event | no | compare a replacement `.vsnd_c`'s sample rate, channels and duration with Valve's, and print the event's pitch |
-| Outdated HUD layout (`Unable to find child` crash) | partly: M040 warns that Valve changed the original | make it an error for Panorama layouts when an element id Valve's current files use is missing from the mod's copy |
+| Sound sped up, distorted, pitch raised by the event | a warning: M065 says another rate or channel count than Valve's, with the event's pitch (landed after this note) | the cause, in game |
+| Outdated HUD layout (`Unable to find child` crash) | yes: M042, an error for an id the client code names (landed after this note); M040 warns that Valve changed the original | |
 | Old vdata (`Error parsing KV3 data`, locked heroes) | yes: M070 | |
 | `gameinfo.gi` reset after an update | yes: the baseline and `doctor` check the mount | |
-| Broken `gameinfo.gi` edit, missing `Mod` or `Write` lines, restricted sections changed | no | `doctor` could read the SearchPaths block against the build's stock file and name restricted sections a config changed |
+| Broken `gameinfo.gi` edit, missing `Mod` or `Write` lines, restricted sections changed | yes: `doctor` reads it against the stock backup (landed after this note) | |
 | CSDK setup: OneDrive, `.binOFF`, Steam not running, uppercase addon | mostly: `magician csdk` (`crates/magician/src/csdk.rs`) names OneDrive, `.binOFF`, the tagged-sound gap, `SH2_lum`, particle preview, and the CSDK's game build against the installed one; `doctor` raises the first three when they apply | add addon names and Steam running |
-| Two mods ship the same file | partly: M090 is about Valve's sharing, not other mods; `install --status` sees pak slots | report path collisions with every other installed pak, as Grimoire does |
+| Two mods ship the same file | yes: `install --status` lists shared paths and which pak wins (landed after this note) | |
 | Mod over 2 GB, chunked sets shipped incomplete | yes: M051 | |
 
 ## 6. Improvements, ranked
@@ -254,5 +254,18 @@ Ranked by how much pain each answers (section 2) against its effort. Effort: sma
 11. A per-hero changelog of each build. Pain: creators read Valve's changelog, which never mentions mods, and GameTracking's raw diffs. Deadlock-specific: `baseline` and `drift` already hold every path, CRC, bone and graph parameter per build. Print, per hero, what the new build changed in its footprint, as text a creator or a mod page can read, whether or not a Magician mod exists. Small to medium.
 12. Hand-off to Deadlock Mod Manager's creator bridge. Pain: the copy-rename-restart loop. Deadlock-specific only in that DMM is the manager Deadlock players use. Let `release` drop its VPK where the [creator-workspace-bridge](https://github.com/deadlock-mod-manager/deadlock-mod-manager/tree/main/plugins/creator-workspace-bridge) stages builds, so a creator testing through DMM gets Magician's linted bytes. Small.
 13. AG2 references without CS2's tools. Pain: the two-SDK relay, and Linux creators who can't run CS2's tools. Deadlock-specific: the right skeleton and graph paths come from Valve's model on the build (Kelvin, Viscous and Ivy use shared or renamed ones). Magician writes binary KV3 already; writing the references into a compiled model, as DeadlockTools does, then judging it with the contract above, removes the CS2 step. Medium to large, and it edits compiled output, which needs the same care as `scene`.
+
+### What landed
+
+Items 1, 2, 3, 5, 6, 8, 9 and 10 landed after this note, measured on 6877 against Valve's files, the 75 community mods and two finished skins; the record is [rule-calibration-6871.md](rule-calibration-6871.md), "The hero model contract and its neighbours (6877)". Items 4 and 7 are another piece of work.
+
+- 1: M062 compares the animation skeleton and AnimGraph 2 references, the unit-status block, the tagged-sound sets, the camera settings and every other game-data block with Valve's model at the same path (`crates/lint/src/gamedata.rs`). Tagged sounds turned out to be fair play: `heroes.vdata` names none, so a model without them has silent footsteps. The collision fields were left alone, because `heroes.vdata` sets its own.
+- 2: the camera attachments are held to 1e-4 of Valve's numbers. Which ones comes from the model's `AttachmentCameraData` and from the hero-frame attachments the client library names, not from a list of names.
+- 3: M042, an error for a missing id the client code names, a warning for the rest.
+- 5: M065, a warning.
+- 6: M160.
+- 8: M084, from the list of particles nothing names that `magician index` now writes.
+- 9: `install --status` lists the paths installed paks share and which one the game reads; `doctor` reads `gameinfo.gi` against the stock backup.
+- 10: M092.
 
 What not to take on: Hammer lightmaps (`SH2_lum`), a particle editor preview, or an AnimGraph editor. Hero skins are lit by the game, and the hero-page scene uses dynamic lights ([engine.md](../reference/engine.md#the-hero-page)); the editors are GUI work outside Magician's non-goals ([PDD](../PDD.md#non-goals)). Magician's answer to "the editor doesn't look like the game" is the in-game pass, which every community guide already ends with by hand.

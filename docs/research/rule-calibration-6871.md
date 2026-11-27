@@ -195,3 +195,91 @@ What stays an error, and why:
 Two skins were broken by one bone alone: each lost `attachWorld`, on which Valve's model hangs the portrait camera's attachment, and each still names that bone in the attachment. They stay broken.
 
 Valve's own heroes against themselves are silent, as before: an unchanged skeleton has no lost or reparented bone. Tests: `m062_a_lost_bone_says_what_it_carried`, `m062_a_reparented_bone_breaks_only_where_it_moves_differently` (both sides of the pixel line, at bind and in motion), `m062_a_helper_bone_lost_in_a_whole_lint_is_a_warning`, and in `carry.rs` the clip reader. Lint judgement revision 5.
+## The hero model contract and its neighbours (6877)
+
+The toolchain survey ([toolchain-landscape.md](toolchain-landscape.md), section 6) ranked the problems modders hit because no tool knows Deadlock. This round took items 1, 2, 3, 5, 6, 8, 9 and 10. The game moved from 6875 to 6877 while it was measured; every number below is 6877's.
+
+How it was measured, for every rule here:
+
+- **Valve against itself.** All 231 models under `models/heroes_staging` and `models/heroes_wip`, every layout under `panorama/layout/`, Haze's voice and weapon sounds and his ability particles: 2,763 of Valve's files packed unchanged into one pak and linted. Nothing in this round fires on them except M084, which is right to (below).
+- **The community corpus:** the 75 mods (121 paks), light lint with no allowances, read as data only.
+- **woflo's skins:** Maid Lash (`pak10`) and Lööps Viscous (`pak20`) from the install, read in place.
+- Before, for every rule here, is nothing: the findings are new. Where a rule can make a mod broken, the table says how many mods it newly breaks.
+
+### M062 reads the model's game data
+
+A compiled model carries more than its skeleton. Its DATA block names its animation skeleton (`m_vecNmSkeletonRefs`) and its AnimGraph 2 graphs (`m_animGraph2Refs`), and `m_modelInfo.m_keyValueText` holds ModelDoc's GameDataList as KV3 text: the unit status (where the health bar sits), the tagged sounds, the camera settings, the camera poses and more. `heroes.vdata` names no tagged sounds and no camera settings, so the model is the only place the game finds them; it does set its own collision radius and step height, so those fields were left alone.
+
+| What differs from Valve's model at the same path | Severity | Sites | Mods |
+|---|---|---|---|
+| no animation skeleton reference | error | 4 | 4 |
+| an AnimGraph 2 graph Valve's names, missing | error | 16 | 5 |
+| unit status missing | error | 3 | 2 |
+| unit status written as a list (a CSDK 12 compile) | error | 1 | 1 |
+| tagged sounds missing (silent footsteps) | fair play | 19 | 16 |
+| camera settings changed or missing | fair play | 3 | 3 |
+| health bar placed otherwise (no attachment, other offsets) | warning | 28 | 23 |
+| another block missing | warning | 66 | 36 |
+
+The A-pose errors are on troopers whose match graph is gone (`npc_troopers.vnmgraph` and its medic and melee variations) and on summons and a hero with no skeleton reference at all. The graph identifiers are matched without case: Ivy's own model writes `UI` where Haze's writes `ui`, and a mod's `ui` for Valve's `UI` is no finding. The one list-shaped unit status is on an ability's model, the health-bar-at-the-feet case the community pages describe.
+
+Tagged sounds were planned as an error and are fair play instead. `TaggedSoundSettings_t` names `scripts/tagged_sounds/<hero>_anim_sounds.vdata`, which maps the animation's tags to the footstep, landing, mantle and melee-swing events. Without it those make no sound, and footsteps are a cue enemies listen for, so it is judged with the hidden cues: never allowable. Nobody has heard one of these 16 mods in game: UNVERIFIED.
+
+The health bar warnings are an older build's game data: no attachment name and a fixed offset (`[0, 0, 95]`), where 6877 places the bar on the `healthbar` attachment with an offset of `[10, 0, 0]`. The bar then sits over the model's origin and does not follow the hero down when he crouches (UNVERIFIED). One of these was a false alarm in the first draft: Lööps Viscous's inflated model names `healthbar` and has no attachment of that name, and neither has Valve's model. That is Valve's own design, and a lost attachment of Valve's name is the contract's own finding anyway, so the rule now speaks only when a mod renames the attachment to one its model lacks. Test: `m062_reads_the_hero_s_game_data_against_valve_s`.
+
+The other missing blocks are the hero page's scene settings and the camera poses' list (13 each), the cloth's ground plane (10), a breakable's piece lists (11), the effects a model plays on itself (8), the effect scale (6), and a few others. Each says what the game falls back to its defaults for.
+
+A model's own skeleton and graph references are no longer M061's: the contract judges them whenever the game is there.
+
+No mod is newly broken by these errors: every one is on a mod already broken by another rule. woflo's two skins have none of them.
+
+### M062 holds the camera attachments the game names
+
+The camera in the middle of the screen comes from a camera attachment off by a decompile's rounding: an older Source 2 Viewer wrote a pivot of -90 degrees as -89.972. The printed contract compares to two decimals, 0.01 a number, and a turn of 0.028 degrees changes a rotation's components by 1.7e-4, so it passed.
+
+Which attachments are cameras comes from the game, not a list. Each hero model's game data lists its camera poses in `AttachmentCameraData` (1 to 12 a model, 521 on 66 models: the portrait cameras, `near_`, `far_` and `gunaim_`), and the client library names the pivots it reads (`standing_pivot`, `crouching_pivot`) and a few more hero-frame attachments as plain strings. Those in the hero's own frame that the client names are held as tightly.
+
+The line, from Valve's own files and the mods that copy them:
+
+| | Largest difference from Valve's numbers |
+|---|---|
+| Valve's own copies (every mesh repeats its attachments) | 0, bit-identical on all 66 models |
+| community camera attachments kept through a Source 2 Viewer round trip | 6.1e-5 (62 sites) |
+| community camera attachments that moved | 1 unit or more (48 sites) |
+| a pivot of -89.972 for -90 | 1.7e-4 |
+
+Nothing in the corpus falls between 1e-4 and 1, so the line is 1e-4 (`mesh::rules::CAMERA_ATTACH_STEP`): it passes every round trip and catches the rounding. The corpus has no site in that gap, so the line changes no verdict on it: every moved camera was already an error. Test: `m062_holds_the_camera_attachments_the_game_names_to_valve_s_numbers` (-89.972 fires, 90.007 does not, a pivot only fires when the client names it, and a larger turn is said once).
+
+### M042 layout-id-missing
+
+A HUD mod ships a whole copy of each layout it changes. A compiled layout keeps its tree in a `LaCo` block; the ids are its PANEL nodes' `id` attributes. On the corpus, 6 mods replace a layout that lacks ids Valve's layout has on 6877: 80 missing ids across 11 layouts, from one missing (a popup's binder) to 27 (a whole-HUD mod's `hud.xml`).
+
+Not every missing id is the launch crash. The client library holds as strings the ids its code looks up, and 32 of the 80 are among them (`GameTime`, `UnitHealthbar`, `CitadelHudCombatLog`); the other 48 are not (`ScoreCounter`, `MatchStart`, decoration). A code-named id is an error, the rest a warning: 20 errors on 2 mods (one HUD mod in four variants, one health-bar mod in two), 24 warnings on 6. Those 2 mods are newly broken; in light lint 55 of the 75 mods are now broken, where 53 were. Valve's own layouts are silent. Whether a given missing id crashes the HUD or leaves it blank was not tried: the corpus is not run, and building a layout with an id removed was left for a later in-game pass (UNVERIFIED). Test: `m042_a_replaced_layout_lacks_an_id_valve_s_current_one_has`.
+
+### M065 sound-format-parity
+
+The CTRL block of a `.vsnd_c` gives its rate, channels, sample count and length. On the 11,855 sounds the corpus replaces, the length always matches the samples and rate (2 exceptions), so nothing in the header shows a sound that plays sped up. What differs is the encoding: 5,700 replacements are stereo where Valve's are mono (13 mods), 1,655 are 48,000 Hz where Valve's are 44,100 (4 mods), and a few run at 22,050, 32,000 or odd rates such as 13,111. M065 says so, with both lengths and the pitch and volume of the event that plays the file: 6,005 warnings on 19 mods, none on woflo's skins. Whether stereo or another rate is the quiet or sped-up sound modders report is not settled, so it is a warning to listen, and `witness` is where it should be calibrated (UNVERIFIED). Test: `m065_a_replaced_sound_encoded_unlike_valve_s`.
+
+### M160 physics-dropped
+
+The PHYS block holds the cloth (the FeModel) and the ragdoll or a prop's body (one part per bone). On the corpus, 13 replaced models have no cloth where Valve's has 9 to 264 nodes, and 29 models lack physics parts Valve's has: 35 findings, often one part (`root_motion`, a weapon or purse offset), sometimes whole limbs (9 of an archer's 19 parts). 48 warnings on 34 mods; none on woflo's skins. A skin's own cloth of another size is not judged here (M141 judges how it moves). What a lost part does on death was not seen (UNVERIFIED). Test: `m160_valve_s_cloth_or_ragdoll_dropped`.
+
+### M084 particle-unreached
+
+`magician index` now writes, beside the users index, every particle nothing names: no compiled file references it (on 6877, 13,612 references from other particles, 331 from clips, 185 from models), no vdata (8,289), layout (21) or map entity lump (654) names it, and the client code does not. That is 3,758 of the 18,043 particles; many look like effects of older versions of abilities (Haze's `haze_stalk`, `haze_leap_cast`). A first count left out the abilities of heroes the users index skips, which named 191 more; every vdata is now read whoever owns it, and the list matches a full scan of every decoded string in the game.
+
+Valve's own unreached particles, packed unchanged, fire M084 (21 of Haze's): that is the point, since replacing one does nothing, and it says nothing against Valve's file. On the corpus, 1,961 warnings on 26 mods. Maid Lash has two: `lash_ground_strike_v2_cone_line_pulse` and `lash_ultimate_locked_aura`, which the skin replaces and which nothing in the game plays. A particle whose name the code builds at run time cannot be seen this way (UNVERIFIED). Test: `m084_a_replaced_particle_nothing_plays`.
+
+### M092 other-hero-file
+
+A mod about one hero is a mod that replaces that hero's model; the users index says which hero each replaced file belongs to. A file only another hero uses is said: 117 warnings on 5 mods. They are real: another hero's voice lines in a voice pack (86), another hero's particles and textures in an effect rework, a shared noise texture only one other hero still uses. None on woflo's skins. Test: `m092_a_hero_mod_replaces_another_hero_s_file`.
+
+### Installed paks and `gameinfo.gi`
+
+`install --status` now lists the paths two installed paks share and names the one the game reads them from, the lowest number (`install::collisions`; test: `installed_paks_that_share_paths_and_which_wins`). On this machine none of the installed paks share a path.
+
+`doctor` reads `gameinfo.gi` against the stock file `install` backs up before its first edit of a build (`gameinfo.rs`): the SearchPaths lines the stock file has and this one lacks, the lines another tool added beside Magician's mount, and the sections a config must not touch (Engine2, MaterialSystem2, NetworkSystem, Particles, RenderSystem, SceneSystem, WorldRenderer; the matchmaking refusal they cause is one community page's report, UNVERIFIED). On this machine the newest backup is 6864's and the file matches it plus the mount. Tests: `the_stock_file_against_itself_and_with_magician_s_mount`, `a_block_pasted_from_an_older_build_and_a_performance_config`, and the `gameinfo` fuzz target.
+
+### What stays UNVERIFIED
+
+Nothing in this round was seen in game: silent footsteps without tagged sounds, the health bar's place with an older unit status, which missing layout ids crash the HUD, whether a stereo or 48 kHz replacement plays wrong, what a lost ragdoll part does on death, and the matchmaking refusal for a restricted section. Lint judgement revision 6.
