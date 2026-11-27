@@ -189,6 +189,16 @@ class InstallAndRestore(unittest.TestCase):
         S.restore_installs(self.st, "drill")
         self.assertEqual(sorted(S.status_rows(S.install_status())), sorted(rows), "the same bytes in the same slots (ledger order aside)")
 
+    def test_a_test_pak_put_over_another_mods_slot_comes_out_and_that_mod_goes_back(self):
+        # a scratch mod's session (owner verify_drill) puts a test build over the skin's slot, as `up --pak --as
+        # pak12_dir.vpk --restore --force` does; the hand-back once refused to put the skin's copy back over it
+        rows = S.status_rows(self.st["installed_before"])
+        st = dict(self.st, owner="verify_drill", owners=["verify_drill"])
+        S.install_for(st, self.paks["new"], "pak12_dir.vpk", "drill", restore=True, force=True)
+        self.assertIn(("pak12_dir.vpk", S.crc_of(self.paks["new"]), "verify_drill"), {r[:3] for r in S.status_rows(S.install_status())})
+        S.restore_installs(st, "drill")
+        self.assertEqual(sorted(S.status_rows(S.install_status())), sorted(rows), "the skin's own pak is back in its slot")
+
     def test_a_vanilla_pass_uninstalls_every_pak_of_the_mod_and_restores_them(self):
         rows = S.status_rows(self.st["installed_before"])
         S.uninstall_mod(self.st, "drill", restore=True)

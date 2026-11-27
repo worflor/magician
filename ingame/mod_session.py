@@ -220,6 +220,10 @@ def restore_installs(st, holder):
         rc, out = magician("uninstall", slot, "--holder", holder)
         say("restore: " + (out.strip().splitlines()[-1] if out.strip() else f"uninstall rc {rc}"))
     for r in st.get("restore", []):
+        # a --pak put over a slot another mod held is this session's own install: take it out before the kept copy goes back
+        if any(x[0] == r["name"] and (x[1], x[2]) != (r["crc"], r["owner"]) for x in status_rows(install_status())):
+            rc, out = magician("uninstall", r["name"], "--holder", holder)
+            say("restore: " + (out.strip().splitlines()[-1] if out.strip() else f"uninstall rc {rc}"))
         rc, out = magician("install", r["copy"], "--as", r["name"], "--mod", r["owner"], "--holder", holder)
         say("restore: " + (out.strip().splitlines()[-1] if out.strip() else f"rc {rc}"))
     want = {(n, c, o) for n, c, o, _ in status_rows(st["installed_before"])}

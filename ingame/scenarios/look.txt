@@ -1,11 +1,14 @@
 # A material look: the hero the session selected, standing still on one spot of the Hero Sandbox's street under the
 # map's fixed sun, seen from four sides by the inspect camera (citadel_camera_inspect_mode orbits the hero; each step
-# is the same mouse move, so the angles repeat run to run, though their degrees are not exact), in four lights, each a
-# contact sheet of its own:
+# is the same mouse move, so the angles repeat run to run), in three lights, each a contact sheet of its own:
 #   look_game    the game as a player sees it (map, sky, post-processing)
 #   look_void    world and sky off, the same lighting: the material against black (the map's props stay)
 #   look_nopost  the void without post-processing (the tonemap, bloom and vignette): what post adds to the material
-#   look_flat    the void at full bright: albedo only, no light, no shadow (are the texture's colours the ones meant)
+# A step is 1800 mouse units: on 6880, at this machine's mouse sensitivity, 3600 units turned the orbit about 180
+# degrees, so four steps make a full turn and every light starts from the same side. The turn per unit is the
+# player's own sensitivity setting: check the first frame of each sheet shows the same side.
+# There is no unlit view on retail: mat_fullbright is a cheat cvar that changes nothing in the picture (6880, a lit and
+# a full-bright frame at one angle differ no more than two lit frames do), so the look has no albedo-only sheet.
 # Any hero. About a minute in game after the hero loads.
 sv_cheats 1
 citadel_hud_visible 0
@@ -14,56 +17,43 @@ r_drawpanorama 0
 citadel_camera_inspect_mode 1
 @wait 1.5
 @shot look_game/look_game_000
-@mouse 900 0 0.6
+@mouse 1800 0 1.2
 @wait 0.6
 @shot look_game/look_game_090
-@mouse 900 0 0.6
+@mouse 1800 0 1.2
 @wait 0.6
 @shot look_game/look_game_180
-@mouse 900 0 0.6
+@mouse 1800 0 1.2
 @wait 0.6
 @shot look_game/look_game_270
-@mouse 900 0 0.6
+@mouse 1800 0 1.2
 r_drawworld 0;r_drawskybox 0
 @wait 1
 @shot look_void/look_void_000
-@mouse 900 0 0.6
+@mouse 1800 0 1.2
 @wait 0.6
 @shot look_void/look_void_090
-@mouse 900 0 0.6
+@mouse 1800 0 1.2
 @wait 0.6
 @shot look_void/look_void_180
-@mouse 900 0 0.6
+@mouse 1800 0 1.2
 @wait 0.6
 @shot look_void/look_void_270
-@mouse 900 0 0.6
+@mouse 1800 0 1.2
 r_postprocess_enable 0
 @wait 1
 @shot look_nopost/look_nopost_000
-@mouse 900 0 0.6
+@mouse 1800 0 1.2
 @wait 0.6
 @shot look_nopost/look_nopost_090
-@mouse 900 0 0.6
+@mouse 1800 0 1.2
 @wait 0.6
 @shot look_nopost/look_nopost_180
-@mouse 900 0 0.6
+@mouse 1800 0 1.2
 @wait 0.6
 @shot look_nopost/look_nopost_270
-@mouse 900 0 0.6
-r_postprocess_enable 1;mat_fullbright 1
-@wait 1
-@shot look_flat/look_flat_000
-@mouse 900 0 0.6
-@wait 0.6
-@shot look_flat/look_flat_090
-@mouse 900 0 0.6
-@wait 0.6
-@shot look_flat/look_flat_180
-@mouse 900 0 0.6
-@wait 0.6
-@shot look_flat/look_flat_270
 # back as a player left it: inspect off (an archived cvar, ingame/README.md), world, post and Panorama on
-mat_fullbright 0;r_drawworld 1;r_drawskybox 1;r_postprocess_enable 1;citadel_camera_inspect_mode 0
+r_drawworld 1;r_drawskybox 1;r_postprocess_enable 1;citadel_camera_inspect_mode 0
 r_drawpanorama 1
 citadel_hud_visible 1
 @wait 1

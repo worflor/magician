@@ -1141,7 +1141,7 @@ fn m042_a_replaced_layout_lacks_an_id_valve_s_current_one_has() {
     let m042: Vec<&Finding> = f.iter().filter(|x| x.code == "M042").collect();
     assert_eq!(m042.len(), 2, "{f:?}");
     let err = m042.iter().find(|x| x.severity == Severity::Error).expect("the id the code names");
-    assert!(err.message.contains("(GameTime)") && err.message.contains("Unable to find child") && !err.message.contains("ScoreCounter"), "{}", err.message);
+    assert!(err.message.contains("(GameTime)") && err.message.contains("FATAL ERROR: Unable to find child") && !err.message.contains("ScoreCounter"), "{}", err.message);
     let warn = m042.iter().find(|x| x.severity == Severity::Warn).expect("the id it does not");
     assert!(warn.message.contains("(ScoreCounter)") && warn.message.contains("does not name them"), "{}", warn.message);
     // every id of Valve's kept, ids of the mod's own added: nothing
@@ -1155,6 +1155,39 @@ fn m042_a_replaced_layout_lacks_an_id_valve_s_current_one_has() {
     // an older compile keeps the XML text in DATA: its ids are read too
     let old = resource::synth_with(&[], &[(*b"DATA", br#"<root><Panel id="TopBar"><Label id="GameTime" /></Panel></root>"#.to_vec())]);
     assert_eq!(layout::ids(&old), Some(BTreeSet::from(["TopBar".to_string(), "GameTime".to_string()])));
+}
+
+/// A compiled layout whose root holds one panel of each type, ids `p0`, `p1`, ...
+fn typed_layout(types: &[&str]) -> Vec<u8> {
+    let panels: Vec<String> = types
+        .iter()
+        .enumerate()
+        .map(|(i, ty)| format!(r#"{{ eType = "PANEL" name = "{ty}" child = {{ eType = "PANEL_ATTRIBUTE" name = "id" child = {{ eType = "PANEL_ATTRIBUTE_VALUE" name = "p{i}" }} }} }}"#))
+        .collect();
+    let tree = kv(&format!(r#"{{ m_AST = {{ m_pRoot = {{ eType = "ROOT" vecChildren = [ {} ] }} }} }}"#, panels.join(", ")));
+    resource::synth_with(&[], &[(*b"LaCo", resource::kv3::encode(&tree))])
+}
+
+#[test]
+fn m042_a_replaced_layout_uses_a_panel_type_the_game_no_longer_has() {
+    // Seen on 6880: a HUD mod's hud.xml from an older build uses CitadelHudChat and seven more types the client no
+    // longer registers; the game logs 'Unrecognized panel type' and stops at launch on the required layout
+    const HUD: &str = "panorama/layout/hud.vxml_c";
+    let mut g = game();
+    with(&mut g, &[HUD]);
+    let mut fake = Fake::default();
+    fake.files.insert(HUD.into(), typed_layout(&["Panel", "CitadelHudChatV2"]));
+    fake.code = Some(["Panel".to_string(), "Label".to_string(), "CitadelHudChatV2".to_string()].into());
+    let f = run_game(vec![file(HUD, typed_layout(&["Panel", "CitadelHudChat", "Label"]))], &g, &fake);
+    let e: Vec<&Finding> = f.iter().filter(|x| x.code == "M042" && x.message.contains("panel type")).collect();
+    assert!(e.len() == 1 && e[0].severity == Severity::Error, "{f:?}");
+    assert!(e[0].message.starts_with("uses 1 panel type(s) the game no longer registers (CitadelHudChat)") && e[0].message.contains("FATAL ERROR"), "{}", e[0].message);
+    // a type Valve's layout uses, or one the client names, is no finding of this kind; Valve's layout against itself is silent
+    assert!(run_game(vec![file(HUD, typed_layout(&["Panel", "CitadelHudChatV2", "Label"]))], &g, &fake).iter().all(|x| !x.message.contains("panel type")));
+    assert!(run_game(vec![file(HUD, typed_layout(&["Panel", "CitadelHudChatV2"]))], &g, &fake).iter().all(|x| x.code != "M042"));
+    // with no client library to read, the types are not judged
+    fake.code = None;
+    assert!(run_game(vec![file(HUD, typed_layout(&["Panel", "CitadelHudChat"]))], &g, &fake).iter().all(|x| !x.message.contains("panel type")));
 }
 
 /// A compiled sound with the CTRL block the sound compiler writes: rate, channels, length.
@@ -1175,7 +1208,7 @@ fn m065_a_replaced_sound_encoded_unlike_valve_s() {
     fake.files.insert(EV.into(), res_kv(&[], &[(b"DATA", kv(r#"{ Haze.Select = { pitch = 1.1 volume = 0.8 vsnd_files = [ "sounds/vo/haze/haze_select_01.vsnd" ] } }"#))]));
     let f = run_game(vec![file(SND, vsnd(48000, 2, 2.5))], &g, &fake);
     let m: Vec<&Finding> = f.iter().filter(|x| x.code == "M065").collect();
-    assert!(m.len() == 1 && m[0].severity == Severity::Warn, "{f:?}");
+    assert!(m.len() == 1 && m[0].severity == Severity::Info && m[0].message.contains("changes nothing a player hears"), "{f:?}");
     assert!(m[0].message.starts_with("48000 Hz, Valve's 44100 Hz, stereo, Valve's mono; 2.50 s long, Valve's 2.50 s; the game plays it from Haze.Select at pitch 1.1, volume 0.8"), "{}", m[0].message);
     // Valve's format, another take: nothing (its length is M063's and M064's)
     assert!(run_game(vec![file(SND, vsnd(44100, 1, 2.5))], &g, &fake).iter().all(|x| x.code != "M065"));
@@ -1201,6 +1234,8 @@ fn m160_valve_s_cloth_or_ragdoll_dropped() {
     assert_eq!(m.len(), 2, "{f:?}");
     assert!(m.iter().any(|x| x.message.contains("simulates cloth (3 nodes) and ours has none")), "{m:?}");
     assert!(m.iter().any(|x| x.message.contains("physics of 3 parts (its ragdoll, or a prop's body) and ours lacks 1 of them (spine_1)")), "{m:?}");
+    // what the lost part does was seen on 6880: it keeps its last pose (a gun left hanging in the air)
+    assert!(m.iter().any(|x| x.message.contains("keeps its last pose (seen on 6880") && !x.message.contains("UNVERIFIED")), "{m:?}");
     // Valve's own physics, and a skin's own cloth of another size: nothing
     assert!(run_game(vec![file(MODEL, physics(&["pelvis", "spine_1", "head"], 3))], &g, &fake).iter().all(|x| x.code != "M160"));
     assert!(run_game(vec![file(MODEL, physics(&["pelvis", "spine_1", "head", "tail"], 40))], &g, &fake).iter().all(|x| x.code != "M160"));

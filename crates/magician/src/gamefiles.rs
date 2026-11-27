@@ -38,6 +38,8 @@ pub struct GameFiles {
     /// The game folder, and the names its client library holds, read the first time a rule asks (`code_names`).
     pub game: std::path::PathBuf,
     pub code: std::sync::OnceLock<Option<HashSet<String>>>,
+    /// The Panorama UI library's strings, read on first use.
+    pub ui: std::sync::OnceLock<Option<HashSet<String>>>,
     /// The particles nothing in the game names, from beside the users index (M084).
     pub unreached: Option<HashSet<String>>,
     /// Who outside a model names each bone, from beside the users index (M062's lost bones).
@@ -45,6 +47,11 @@ pub struct GameFiles {
 }
 
 /// The client library of the game, where Deadlock's own code is: the Windows build's, else the Linux build's.
+/// The engine's Panorama UI library, which registers the generic panel types (`TabButton`, `DropDown`).
+pub fn ui_library(game: &Path) -> Option<std::path::PathBuf> {
+    [game.join("bin").join("win64").join("panoramauiclient.dll"), game.join("bin").join("linuxsteamrt64").join("libpanoramauiclient.so")].into_iter().find(|p| p.is_file())
+}
+
 pub fn client_library(game: &Path) -> Option<std::path::PathBuf> {
     [game.join("citadel").join("bin").join("win64").join("client.dll"), game.join("citadel").join("bin").join("linuxsteamrt64").join("libclient.so")].into_iter().find(|p| p.is_file())
 }
@@ -118,6 +125,7 @@ impl GameFiles {
             addon_sources: None,
             game: game.to_path_buf(),
             code: std::sync::OnceLock::new(),
+            ui: std::sync::OnceLock::new(),
             unreached: index.and_then(read_unreached),
             bone_users,
         }
@@ -159,6 +167,9 @@ impl lint::Game for GameFiles {
     }
     fn code_names(&self) -> Option<&HashSet<String>> {
         self.code.get_or_init(|| client_library(&self.game).and_then(|p| std::fs::read(p).ok()).map(|b| code_strings(&b))).as_ref()
+    }
+    fn ui_names(&self) -> Option<&HashSet<String>> {
+        self.ui.get_or_init(|| ui_library(&self.game).and_then(|p| std::fs::read(p).ok()).map(|b| code_strings(&b))).as_ref()
     }
 }
 

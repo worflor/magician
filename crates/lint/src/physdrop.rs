@@ -41,7 +41,7 @@ pub fn judge(ours: &[u8], valve: &[u8]) -> Vec<String> {
         let ours_has = if oparts.is_empty() { "ours has none".to_string() } else { format!("ours lacks {} of them ({})", lost.len(), names(&lost)) };
         let parts = if vparts.len() == 1 { "1 part".to_string() } else { format!("{} parts", vparts.len()) };
         out.push(format!(
-            "Valve's model has physics of {parts} (its ragdoll, or a prop's body) and {ours_has}: when it dies, falls or breaks, what those parts hold is not simulated and keeps its last pose or follows its parent (UNVERIFIED in game); keep Valve's physics (a decompile loses its joints), or accept this with a reason in magician.allow"
+            "Valve's model has physics of {parts} (its ragdoll, or a prop's body) and {ours_has}: when it dies, falls or breaks, what those parts hold is not simulated and keeps its last pose (seen on 6880: a skin without Valve's weapon part left the hero's gun hanging in the air where his hand was while the body was gone, until he came back); keep Valve's physics (a decompile loses its joints), or accept this with a reason in magician.allow"
         ));
     }
     out

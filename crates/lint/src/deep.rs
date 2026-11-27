@@ -498,8 +498,9 @@ pub fn vsnd_format(ctrl: &Value) -> Option<(f64, f64, f64)> {
 
 /// M065: a replaced sound file whose sample rate or channel count differs from Valve's at the same path, with both
 /// lengths and how `events` (the game's events that play it: name, pitch, volume) play it. The community reports
-/// replaced sounds that come out sped up, quiet or distorted, and names no settled cause; Valve's own file is the
-/// format the event was tuned with, so the difference is said and a pass in game decides (`witness`).
+/// replaced sounds that come out sped up, quiet or distorted. Heard on 6880 (a loopback recording of test tones and of
+/// a 48,000 Hz community replacement), the format is not the cause: the game honours the file's rate and channels and
+/// a 3D event places a stereo file as a mono one, so this is a note.
 pub fn vsnd_format_parity(ours: &Value, valve: &Value, events: &[(String, Option<f64>, Option<f64>)]) -> Option<String> {
     let ((or, oc, od), (vr, vc, vd)) = (vsnd_format(ours)?, vsnd_format(valve)?);
     let mut diff = Vec::new();
@@ -522,7 +523,7 @@ pub fn vsnd_format_parity(ours: &Value, valve: &Value, events: &[(String, Option
         }
     };
     Some(format!(
-        "{}; {od:.2} s long, Valve's {vd:.2} s; {played}: a sound encoded unlike Valve's can play sped up, quiet or distorted in game (reported by modders, cause not settled: UNVERIFIED); encode it as Valve's is, or hear it in game",
+        "{}; {od:.2} s long, Valve's {vd:.2} s; {played}; heard on 6880, another rate or a second channel plays at its own speed, pitch and loudness, and a 3D event places a stereo file as it places a mono one, so this changes nothing a player hears",
         diff.join(", ")
     ))
 }

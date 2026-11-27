@@ -228,7 +228,7 @@ From Divine's [errors when making mods](https://wiki.divineskins.gg/en/docs/dead
 | Particle function in the wrong list (crash) | yes: M083 | |
 | Particle file won't open after decompile (header) | no | Magician builds particles from text; it could name the S2V decompile header if the compiler rejects it |
 | Sound quieter or louder than Valve's | yes: M063, M064 | |
-| Sound sped up, distorted, pitch raised by the event | a warning: M065 says another rate or channel count than Valve's, with the event's pitch (landed after this note) | the cause, in game |
+| Sound sped up, distorted, pitch raised by the event | a note: M065 says another rate or channel count than Valve's, with the event's pitch (landed after this note); heard on 6880, the format is not the cause | the cause, which is the content or the event |
 | Outdated HUD layout (`Unable to find child` crash) | yes: M042, an error for an id the client code names (landed after this note); M040 warns that Valve changed the original | |
 | Old vdata (`Error parsing KV3 data`, locked heroes) | yes: M070 | |
 | `gameinfo.gi` reset after an update | yes: the baseline and `doctor` check the mount | |
@@ -262,7 +262,7 @@ Items 1, 2, 3, 5, 6, 8, 9 and 10 landed after this note, measured on 6877 agains
 - 1: M062 compares the animation skeleton and AnimGraph 2 references, the unit-status block, the tagged-sound sets, the camera settings and every other game-data block with Valve's model at the same path (`crates/lint/src/gamedata.rs`). Tagged sounds turned out to be fair play: `heroes.vdata` names none, so a model without them has silent footsteps. The collision fields were left alone, because `heroes.vdata` sets its own.
 - 2: the camera attachments are held to 1e-4 of Valve's numbers. Which ones comes from the model's `AttachmentCameraData` and from the hero-frame attachments the client library names, not from a list of names.
 - 3: M042, an error for a missing id the client code names, a warning for the rest.
-- 5: M065, a warning.
+- 5: M065, a warning, then a note once heard in game (6880).
 - 6: M160.
 - 8: M084, from the list of particles nothing names that `magician index` now writes.
 - 9: `install --status` lists the paths installed paks share and which one the game reads; `doctor` reads `gameinfo.gi` against the stock backup.

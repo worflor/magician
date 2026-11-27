@@ -62,8 +62,9 @@ pub struct Rule {
 /// 5: M062 judges a lost or reparented bone by what hangs on it and how the hero's animation moves it (6875).
 /// 6: M062 reads the model's animation references and game data, and holds the game's camera attachments to Valve's
 /// numbers (6877). 7: M062 judges a lost bone by who outside the model names it; M001, M030 (AnimGraph 1), M070,
-/// M137 and M139 say a warning where the game still loads and plays (6880).
-pub const JUDGEMENT: u32 = 7;
+/// M137 and M139 say a warning where the game still loads and plays (6880). 8: what the 6877 round left unverified,
+/// seen in game (6880): M042 also says a layout's panel types the game no longer registers, and M065 is a note.
+pub const JUDGEMENT: u32 = 8;
 
 /// The rule catalogue: one home for codes, names and in-game consequences.
 pub const RULES: &[Rule] = &[
@@ -100,7 +101,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M041", name: "drift-original-removed", severity: Severity::Error,
         in_game: "The file you replace no longer exists in this build (moved or renamed), so your replacement does nothing." },
     Rule { code: "M042", name: "layout-id-missing", severity: Severity::Error,
-        in_game: "A replaced Panorama layout lacks an element id that Valve's layout at the same path has on this build: the mod's copy is of an older layout, and it masks Valve's new one. The game's code finds panels by id, so an id its client code names (read from the installed client library) is an error: the HUD stops at launch ('Unable to find child'), or that part of it stays blank (which, per id, is UNVERIFIED). An id the code does not name is a warning: Valve's scripts may still look it up. Rebuild the layout from Valve's current file and apply the mod's change to it again." },
+        in_game: "A replaced Panorama layout lacks an element id that Valve's layout at the same path has on this build: the mod's copy is of an older layout, and it masks Valve's new one. The game's code finds panels by id, so an id its client code names (read from the installed client library) is an error: the game stops at launch ('FATAL ERROR: Unable to find child', seen on 6880). An id the code does not name is a warning: Valve's scripts may still look it up. A layout that uses a panel type the game no longer registers (in neither Valve's layout nor the client or Panorama UI library) is an error too: the game cannot parse it, and a required layout such as hud.xml stops the game at launch ('FATAL ERROR: Unable to load layout file') and has Steam mark the install corrupt and verify it, which resets gameinfo.gi. Rebuild the layout from Valve's current file and apply the mod's change to it again." },
     Rule { code: "M050", name: "vpk-name", severity: Severity::Warn,
         in_game: "Addon VPKs are mounted as pakNN_dir.vpk (NN = 01..99, lowest wins). Other names are skipped by the addons search path and by mod managers' load-order logic." },
     Rule { code: "M051", name: "vpk-chunked", severity: Severity::Warn,
@@ -115,8 +116,8 @@ pub const RULES: &[Rule] = &[
         in_game: "A replaced sound event or file plays quieter, shorter, over less distance, to fewer players, or not at all compared with Valve's. Enemies rely on those cues: hiding them is a fair-play break. A changed base is read through the game's own base events: one Valve's base inherits from differs only by what lies between, and only a level or a reach there is a finding (louder is M064). A voice line (sounds/vo/), its file or its event, is not judged by its length: Valve's own voices fail that test against each other on 46% of shared lines (`magician corpus`)." },
     Rule { code: "M064", name: "sound-louder", severity: Severity::Warn,
         in_game: "A replaced sound plays louder, longer or carries further than Valve's. Not an advantage, but it pushes the hero over the game's mix and masks other players' cues." },
-    Rule { code: "M065", name: "sound-format-parity", severity: Severity::Warn,
-        in_game: "A replaced sound file has another sample rate or channel count than Valve's file at the same path (most of Valve's are mono, 44,100 Hz), said with both lengths and the pitch and volume the game's event plays it at. Modders report replaced sounds that come out sped up, much quieter or distorted, and some hero events raise the pitch; the cause is not settled (UNVERIFIED), so this is a warning to listen in game, not a fault. Encode it as Valve's is." },
+    Rule { code: "M065", name: "sound-format-parity", severity: Severity::Info,
+        in_game: "A replaced sound file has another sample rate or channel count than Valve's file at the same path (most of Valve's are mono, 44,100 Hz), said with both lengths and the pitch and volume the game's event plays it at. Heard in game on 6880, it plays right: a 48,000 Hz file and a stereo file play at their own speed and pitch, a stereo file through a hero's 3D event is placed and as loud as a mono one, and played flat (`play`) it keeps its channels apart. So it is a note, not a fault: a replacement that sounds sped up or quiet comes from its own content or its event (M063, M064), not its format. CSDK 13 resamples a 48,000 Hz WAV to 44,100 Hz when it compiles one." },
     Rule { code: "M072", name: "light-cookie-texture", severity: Severity::Error,
         in_game: "A light cookie (gobo) the engine can't add to its light texture set, so the light renders without its pattern. The set takes BGRA8888 only ('Unable to AddTextureToSet(...): wrong format DXT1 - expected BGRA8888!') and copies a 512x512 mip ('... has no mip levels of size 512x512'). Valve's 15 cookies are all 512x512 BGRA8888: set m_outputFormat \"BGRA8888\" and author at 512." },
     Rule { code: "M073", name: "texture-not-pow2", severity: Severity::Warn,
@@ -128,7 +129,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M083", name: "particle-class-list", severity: Severity::Error,
         in_game: "A particle function sits in a list whose registry doesn't have its class: the game logs 'Function \"...\" not found while loading particle system'. A constraint (C_OP_WorldTraceConstraint) in m_Operators crashed the game outright: an access violation executing a null pointer in particles.dll the first time the effect played. Valve's 133 uses of that class all sit in m_Constraints." },
     Rule { code: "M084", name: "particle-unreached", severity: Severity::Warn,
-        in_game: "A replaced particle that nothing in the game names: no hero, ability or item data, no model, clip, map, layout or other particle references it, the client code does not name it, and nothing in the mod does. The game never plays it, so the change does not show (a recolour of an unused file, found today with `dumpparticlelist` in a match). Valve ships thousands of such particles, many of them effects of older versions of abilities: 3,758 of 18,043 on 6877. The list is built by `magician index` with the users index; a particle the code builds a name for at run time cannot be seen here (UNVERIFIED)." },
+        in_game: "A replaced particle that nothing in the game names: no hero, ability or item data, no model, clip, map, layout or other particle references it, the client code does not name it, and nothing in the mod does. The game never plays it, so the change does not show (a recolour of an unused file, found today with `dumpparticlelist` in a match). Valve ships thousands of such particles, many of them effects of older versions of abilities: 3,758 of 18,043 on 6877. The list is built by `magician index` with the users index; a particle the code built a name for at run time would not be seen here, but none was found: on 6880 every particle `dumpparticlelist` showed live across seven heroes' abilities, melee and deaths (335 systems) is one the game names." },
     Rule { code: "M090", name: "shared-file", severity: Severity::Warn,
         in_game: "The game file this replaces is used by more than one hero, ability or item (Lash's Ground Strike icon is also Majestic Leap's). Replacing it changes all of them for everyone who installs the mod." },
     Rule { code: "M092", name: "other-hero-file", severity: Severity::Warn,
@@ -224,7 +225,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M142", name: "distance-field-dropped", severity: Severity::Warn,
         in_game: "Valve's model carries distance fields (one voxel grid per bone, the ambient occlusion the body casts on itself and the world) and ours has none or fewer: the model loses that occlusion and its contact shadowing, silently (a model built from a Source 2 Viewer decompile always drops them). Fair-play neutral: accept it with a reason in magician.allow." },
     Rule { code: "M160", name: "physics-dropped", severity: Severity::Warn,
-        in_game: "Valve's model simulates cloth and ours has none, or Valve's carries physics parts (a hero's ragdoll, a prop's body) that ours lacks: the pieces Valve's cloth swings hang stiff, and when the model dies, falls or breaks the lost parts are not simulated (UNVERIFIED in game). A model built from a Source 2 Viewer decompile has no cloth, and its ragdoll joints are lost the same way; the compile says nothing. A skin's own cloth with other node counts is its design (M141 judges how it moves); only cloth gone altogether is said. Fair-play neutral: accept it with a reason in magician.allow." },
+        in_game: "Valve's model simulates cloth and ours has none, or Valve's carries physics parts (a hero's ragdoll, a prop's body) that ours lacks: the pieces Valve's cloth swings hang stiff, and when the model dies, falls or breaks the lost parts are not simulated: they keep their last pose (seen on 6880, a hero's gun left hanging in the air after his death). A model built from a Source 2 Viewer decompile has no cloth, and its ragdoll joints are lost the same way; the compile says nothing. A skin's own cloth with other node counts is its design (M141 judges how it moves); only cloth gone altogether is said. Fair-play neutral: accept it with a reason in magician.allow." },
     Rule { code: "M143", name: "pbr-combo-invalid", severity: Severity::Error,
         in_game: "A pbr material whose static combo breaks the shader's own rules (F_SHEEN with F_DETAIL, F_GLASS, F_CLOAK, F_TRANSLUCENT, F_UNLIT; F_DETAIL with F_UNLIT; the status proxy without NPR, unlit or self-illum or with F_CLOAK; front-face normals without alpha test and backfaces): the compiler exits 0 and keeps the flags but silently drops the inputs of one feature (F_SHEEN + F_DETAIL loses g_tDetail), and the game has no such shader variant, so the material renders without it." },
     Rule { code: "M144", name: "fair-play-unchecked", severity: Severity::Warn,
@@ -326,6 +327,11 @@ pub trait Game: Sync {
     /// library): which attachments, panel ids and particles the game asks for by name. `None` when it can't be read:
     /// then only the game's data says which those are.
     fn code_names(&self) -> Option<&HashSet<String>> {
+        None
+    }
+    /// The strings of the engine's Panorama UI library (`panoramauiclient`): the generic panel types it registers
+    /// (`TabButton`, `DropDown`), which a layout may use beside the client's own. Empty when it can't be read.
+    fn ui_names(&self) -> Option<&HashSet<String>> {
         None
     }
     /// The particles nothing in the game names: no compiled file references them, no vdata, layout or map names them,
@@ -1084,13 +1090,21 @@ fn deep_rules(input: &Input, referenced: &HashSet<String>, out: &mut Vec<Finding
             }
             "vxml_c" if replaces(p) => {
                 let code = input.game.and_then(|g| g.code_names());
-                let Some((named, rest)) = game_read(p).and_then(|v| layout::missing(&f.data, &v, code)) else { continue };
+                let Some(valve) = game_read(p) else { continue };
                 let list = |v: &[String]| {
                     let shown: Vec<&str> = v.iter().take(12).map(String::as_str).collect();
                     if v.len() > 12 { format!("{} and {} more", shown.join(", "), v.len() - 12) } else { shown.join(", ") }
                 };
+                if let Some(code) = code {
+                    let ui = input.game.and_then(|g| g.ui_names());
+                    let unknown: Vec<String> = layout::unknown_types(&f.data, &valve, code).into_iter().filter(|t| !ui.is_some_and(|u| u.contains(t))).collect();
+                    if !unknown.is_empty() {
+                        out.push(finding("M042", Some(p), format!("uses {} panel type(s) the game no longer registers ({}): the game cannot parse the layout ('Unrecognized panel type'), and when it is one the game requires, such as hud.xml, the game stops at launch ('FATAL ERROR: Unable to load layout file', seen on 6880) and Steam marks the install corrupt and verifies it; rebuild the layout from Valve's current file and apply the mod's change to it again", unknown.len(), list(&unknown))));
+                    }
+                }
+                let Some((named, rest)) = layout::missing(&f.data, &valve, code) else { continue };
                 if !named.is_empty() {
-                    out.push(finding("M042", Some(p), format!("lacks {} element id(s) that Valve's layout on this build has and the game's client code asks for by name ({}): the game looks for them and cannot find them, so the HUD stops at launch ('Unable to find child') or that part of it stays blank (which, per id, is UNVERIFIED); rebuild the layout from Valve's current file and apply the mod's change to it again", named.len(), list(&named))));
+                    out.push(finding("M042", Some(p), format!("lacks {} element id(s) that Valve's layout on this build has and the game's client code asks for by name ({}): the game looks for them at launch and stops ('FATAL ERROR: Unable to find child', seen on 6880 for a health-bar layout without UnitHealthbar: the game never leaves its loading screen); rebuild the layout from Valve's current file and apply the mod's change to it again", named.len(), list(&named))));
                 }
                 if !rest.is_empty() {
                     out.push(Finding {
