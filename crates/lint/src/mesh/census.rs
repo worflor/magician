@@ -42,6 +42,8 @@ pub struct MatInfo {
     pub textured: bool,
     pub color: Option<String>,
     pub textures: Vec<String>,
+    /// Every static feature (`F_*`) the material switches on.
+    pub flags: Vec<String>,
 }
 
 /// Read the flags a material's compiled DATA carries.
@@ -60,6 +62,11 @@ pub fn mat_info(vmat: &[u8]) -> Option<MatInfo> {
             "F_USE_NPR_LIGHTING" => m.npr |= on,
             "F_SELF_ILLUM" => m.self_illum |= on,
             _ => {}
+        }
+        if let Some(n) = p.get("m_name").and_then(Value::as_str).filter(|n| on && n.starts_with("F_")) {
+            if !m.flags.iter().any(|f| f == n) {
+                m.flags.push(n.to_string());
+            }
         }
     }
     m.shader = d.get("m_shaderName").and_then(Value::as_str).unwrap_or("").to_string();

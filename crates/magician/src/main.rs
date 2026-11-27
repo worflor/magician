@@ -1477,9 +1477,19 @@ fn cmd_index(args: &[String]) -> R {
     let out = flag(args, "--out").map(PathBuf::from).unwrap_or_else(|| users_index_path(&build));
     let t = std::time::Instant::now();
     let s = gamefiles::build_index(&game, &out, &build, &grade_sources(args)?)?;
+    let bones = gamefiles::build_bone_users(&game, &gamefiles::bone_users_path(&out), &build)?;
     say!(
-        "build {build}: {} compiled files, {} references, {} owners, {} files with users -> {}; {} particles nothing names -> {} ({:.0}s)",
-        s.files, s.edges, s.owners, s.targets, out.display(), s.unreached, gamefiles::unreached_path(&out).display(), t.elapsed().as_secs_f64()
+        "build {build}: {} compiled files, {} references, {} owners, {} files with users -> {}; {} particles nothing names -> {}; {} bone names that anim graphs, clips, particles, vdata or the client code name -> {} ({:.0}s)",
+        s.files,
+        s.edges,
+        s.owners,
+        s.targets,
+        out.display(),
+        s.unreached,
+        gamefiles::unreached_path(&out).display(),
+        bones,
+        gamefiles::bone_users_path(&out).display(),
+        t.elapsed().as_secs_f64()
     );
     Ok(ExitCode::SUCCESS)
 }
@@ -2746,7 +2756,7 @@ fn drift_vpk(vp: &Path, eras: &Eras, gf: Option<&gamefiles::GameFiles>) -> Resul
                 // warnings, not breaks
                 let read = |q: &str| lint::Game::read(gf, q);
                 let ships = |q: &str| files.iter().any(|x| x.path == q);
-                let breaches = lint::carry::judge(lint::deep::contract_breaches(&a, &b), &f.data, &valve, &read, &ships);
+                let breaches = lint::carry::judge(lint::deep::contract_breaches(&a, &b), &f.data, &valve, &read, &ships, lint::Game::bone_users(gf));
                 for m in lint::deep::judge_breaches(breaches, &f.data, &valve) {
                     if lint::deep::contract_severity(&m) == lint::Severity::Error {
                         d.contract.push(format!("{}: {m}", f.path));

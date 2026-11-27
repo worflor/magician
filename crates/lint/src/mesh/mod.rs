@@ -60,8 +60,9 @@ pub fn check_model(ours: &[u8], valve: Option<&[u8]>, read_ours: &(dyn Fn(&str) 
     }
     if let Some(v) = &v {
         let list = |c: &Census| c.materials.iter().map(|(k, m)| (k.clone(), m.clone())).collect::<Vec<_>>();
-        out.extend(rules::audit_materials(&list(&o), &list(v)));
+        out.extend(rules::audit_materials(&list(&o), &list(v), !v.model.hitboxes.is_empty()));
     }
+    out.extend(rules::error_draws(&o, v.as_ref()));
     out
 }
 

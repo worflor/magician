@@ -71,19 +71,19 @@ mod tests {
 
     #[test]
     fn a_release_whose_only_errors_are_deep_mesh_errors_is_broken() {
-        // Real case: Maid Lash's release lint (--deep) reported M106, M129 and M137 errors while its grade, which
-        // linted again without --deep, said nothing of them.
+        // Real case: Maid Lash's release lint (--deep) reported deep mesh errors (M106, M129 and M137 then) while its
+        // grade, which linted again without --deep, said nothing of them.
         assert!(!lint_facts(vec![], &[], Depth::Deep).broken());
         // The release's own run, written and read back the way `magician release` hands it to the grade.
-        let run: Vec<Finding> = ["M139", "M137"].iter().map(|c| finding(c, "on the release model")).collect();
+        let run: Vec<Finding> = ["M116", "M126"].iter().map(|c| finding(c, "on the release model")).collect();
         let file = report::write(&run, Depth::Deep, "6864", "pak10_dir.vpk");
         let (depth, back) = report::read(&file).unwrap();
         // Even accepted with a written reason, an error still counts.
-        let allow = lint::allow::parse("M137\t*\t*\tdesigner's call: the pale apron reads as cloth in game\n").unwrap();
+        let allow = lint::allow::parse("M126\t*\t*\tdesigner's call: the piece reads as one colour on purpose\n").unwrap();
         let l = lint_facts(back, &allow, depth);
         assert_eq!(l.depth, Depth::Deep);
         assert_eq!(l.errors, 2, "allowed errors keep counting");
-        assert_eq!(l.allowed_by_code.get("M137"), Some(&1));
+        assert_eq!(l.allowed_by_code.get("M126"), Some(&1));
         assert!(l.broken());
     }
 

@@ -61,13 +61,14 @@ pub struct Rule {
 /// reach keys, M109 to M112, M135. 4: M062 judges a moved attachment by where it now sits against the body (6875).
 /// 5: M062 judges a lost or reparented bone by what hangs on it and how the hero's animation moves it (6875).
 /// 6: M062 reads the model's animation references and game data, and holds the game's camera attachments to Valve's
-/// numbers (6877).
-pub const JUDGEMENT: u32 = 6;
+/// numbers (6877). 7: M062 judges a lost bone by who outside the model names it; M001, M030 (AnimGraph 1), M070,
+/// M137 and M139 say a warning where the game still loads and plays (6880).
+pub const JUDGEMENT: u32 = 7;
 
 /// The rule catalogue: one home for codes, names and in-game consequences.
 pub const RULES: &[Rule] = &[
     Rule { code: "M001", name: "path-case", severity: Severity::Error,
-        in_game: "Source 2 looks paths up in lowercase. A path with capitals is never found, so the original asset shows instead. Not said of a file the game never reads (M012): its case costs nothing." },
+        in_game: "Source 2 looks paths up in lowercase. A path with capitals that the game would look for (it replaces a game file, or the mod names it) is never found, so the original asset shows instead: an error. One nothing looks for (a leftover '- Copy', an exported folder) or one with a lowercase twin in the mod is never read whatever its case: a warning to remove it. Not said of a file the game never reads by kind (M012)." },
     Rule { code: "M002", name: "path-shape", severity: Severity::Error,
         in_game: "Backslashes, leading slashes or '..' in a VPK path never match an engine lookup; the file is dead weight." },
     Rule { code: "M010", name: "uncompiled-source", severity: Severity::Error,
@@ -81,9 +82,9 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M021", name: "not-a-resource", severity: Severity::Error,
         in_game: "A *_c file that isn't a valid compiled resource fails to load: error model, pink checkerboard, or silence." },
     Rule { code: "M030", name: "dangling-ref", severity: Severity::Error,
-        in_game: "This resource depends on a file that exists in neither the mod nor the game build: missing material (pink checkerboard), error model, or missing effect." },
+        in_game: "This resource depends on a file that exists in neither the mod nor the game build: missing material (pink checkerboard), error model, or missing effect. A model's reference to an AnimGraph 1 graph (.vanmgrph) is a warning: Deadlock ships none and none of Valve's files names one (6880), and the hero animates from its AnimGraph 2 references, which M062 judges." },
     Rule { code: "M070", name: "ships-protected-file", severity: Severity::Error,
-        in_game: "Skeletons (.vnmskel), anim graphs (.vnmgraph) and game data (.vdata) replace the hero's real files. It works until the next patch, then the hero breaks. A model replacement keeps Valve's skeleton and graph." },
+        in_game: "Skeletons (.vnmskel), anim graphs (.vnmgraph) and game data (.vdata) replace the hero's real files. A copy that still holds what Valve's file on this build has (the same bones in the same order, every control parameter the game sets, every entry) plays today and breaks at the next patch that changes Valve's file, which patch day and drift report: a warning that says so. A copy that already lacks some of it is out of date now (the hero animates wrongly, ignores what the game sets, or heroes and items go missing: UNVERIFIED in game): an error that names what. One at a path Valve does not ship replaces nothing: a warning. A model replacement keeps Valve's skeleton and graph." },
     Rule { code: "M071", name: "replaces-engine-default", severity: Severity::Error,
         in_game: "resourcecompiler emits its own copies of the engine's default textures (materials/default/*) next to your materials, and they differ from Valve's. Shipped with other pixels than Valve's, they replace the fallback texture for every material in the game that uses one (an error). A copy that decodes to Valve's own pixels, or sits at a path Valve does not ship, changes nothing in the game and is a warning (seen on three published mods, 6868)." },
     Rule { code: "M061", name: "dropped-dependency", severity: Severity::Warn,
@@ -109,7 +110,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M013", name: "build-artifact", severity: Severity::Warn,
         in_game: "A build input or toolchain byproduct (a panorama image list, a nested VPK, a raw .kv3, a compiler cache) that the game never loads from an addon. It adds size, and a vdata among them is noted in the grade. magician build leaves these out." },
     Rule { code: "M062", name: "model-contract", severity: Severity::Error,
-        in_game: "A replaced model lost or reparented a bone of Valve's, lost an attachment, moved one too far, or changed or added a hitbox. A lost bone takes with it what Valve's model hangs on it and on the bones lost below it (vertices, a hitbox, an attachment, cloth, a ragdoll part): an error that says what. One Valve's model hangs nothing on (an end bone, an IK target, a helper) is a warning that says so. The hero's animation poses a bone by name, so a reparented bone its animation skeleton has moves as Valve's whatever its parent, and one it lacks follows its new parent: a reparent is an error only where what the mod hangs on the bone lands or moves a fair-play pixel or more from where Valve's would. What the game spawns at a lost attachment goes to the origin, and a changed hitbox changes what bullets hit: a fair-play break. A moved attachment on a body bone that still sits near the body is a warning that says how far it moved: a skin with another body shape moves where its effects attach, and that is cosmetic. Near is within 9.4% of the model's size (the square root of its surface), just past the furthest any attachment sits off the body on Valve's 43 heroes (6873 and 6875). Further off, its effect visibly spawns away from the hero: an error. So is a moved attachment held in the hero's own frame (on the root bone, as Valve's camera poses, aim and zipline points are), and one whose place could not be measured. The camera attachments the game names (the model's AttachmentCameraData, and the pivots the client code names in the hero's frame) are held to 1e-4 of Valve's numbers: Valve's copies are bit-identical, a Source 2 Viewer round trip leaves 6.1e-5 at most, and an older viewer's -89.972 for -90 centres the camera. The contract also covers what Deadlock reads from the model beyond its skeleton: a missing or other animation skeleton or AnimGraph 2 reference (the A-pose), a unit-status block that is missing or a list (a CSDK 12 compile: the health bar at the feet): errors. A tagged-sound set Valve's model plays from and ours lacks silences the footsteps enemies listen for, and camera settings other than Valve's change what a player sees around the hero: both fair play, never allowable. A health bar placed elsewhere than Valve's, or another game-data block Valve's model has and ours lacks, is a warning that says what falls back to the game's defaults." },
+        in_game: "A replaced model lost or reparented a bone of Valve's, lost an attachment, moved one too far, or changed or added a hitbox. A lost bone is judged by who still names it, since a full skin brings its own mesh, cloth and ragdoll: an error when the model itself still names it (an attachment riding it, a hitbox, a physics part, a cloth node, a mesh's bone list) or the game's client code holds its name and the model has no attachment of that name, the message naming which; otherwise a warning that says what Valve's model hung on it. The hero's anim graphs name bones too (IK and follow targets, root motion), but they pose the animation skeleton, not the model, and Valve's own models lack bones their graphs name (6880). Who names each bone is the bone users index `magician index` writes; without it a lost bone stays an error that says so. The hero's animation poses a bone by name, so a reparented bone its animation skeleton has moves as Valve's whatever its parent, and one it lacks follows its new parent: a reparent is an error only where what the mod hangs on the bone lands or moves a fair-play pixel or more from where Valve's would. What the game spawns at a lost attachment goes to the origin, and a changed hitbox changes what bullets hit: a fair-play break. A moved attachment on a body bone that still sits near the body is a warning that says how far it moved: a skin with another body shape moves where its effects attach, and that is cosmetic. Near is within 9.4% of the model's size (the square root of its surface), just past the furthest any attachment sits off the body on Valve's 43 heroes (6873 and 6875). Further off, its effect visibly spawns away from the hero: an error. So is a moved attachment held in the hero's own frame (on the root bone, as Valve's camera poses, aim and zipline points are), and one whose place could not be measured. The camera attachments the game names (the model's AttachmentCameraData, and the pivots the client code names in the hero's frame) are held to 1e-4 of Valve's numbers: Valve's copies are bit-identical, a Source 2 Viewer round trip leaves 6.1e-5 at most, and an older viewer's -89.972 for -90 centres the camera. The contract also covers what Deadlock reads from the model beyond its skeleton: a missing or other animation skeleton or AnimGraph 2 reference (the A-pose), a unit-status block that is missing or a list (a CSDK 12 compile: the health bar at the feet): errors. A tagged-sound set Valve's model plays from and ours lacks silences the footsteps enemies listen for, and camera settings other than Valve's change what a player sees around the hero: both fair play, never allowable. A health bar placed elsewhere than Valve's, or another game-data block Valve's model has and ours lacks, is a warning that says what falls back to the game's defaults." },
     Rule { code: "M063", name: "sound-cue-reduced", severity: Severity::Error,
         in_game: "A replaced sound event or file plays quieter, shorter, over less distance, to fewer players, or not at all compared with Valve's. Enemies rely on those cues: hiding them is a fair-play break. A changed base is read through the game's own base events: one Valve's base inherits from differs only by what lies between, and only a level or a reach there is a finding (louder is M064). A voice line (sounds/vo/), its file or its event, is not judged by its length: Valve's own voices fail that test against each other on 46% of shared lines (`magician corpus`)." },
     Rule { code: "M064", name: "sound-louder", severity: Severity::Warn,
@@ -210,12 +211,12 @@ pub const RULES: &[Rule] = &[
         in_game: "A replaced texture shows worse where Valve draws it: smaller than Valve's (stretched up to Valve's size, it blurs), in a format that loses more than Valve's (block artefacts), or with fewer mips than Valve's where its size could hold them (drawn small, it shimmers). A larger image, or another format that keeps as much, shows nothing. A model's morph atlas (`_vmorf`) shipped with its own model is not judged: the compiler sizes it to that model's morphs, and only that model reads it." },
     Rule { code: "M136", name: "albedo-range", severity: Severity::Warn,
         in_game: "Over 10% of the new materials' area sits outside Valve's own albedo range for this model: the piece reads brighter or darker than everything Valve drew, flattening or blooming in the game's lighting." },
-    Rule { code: "M137", name: "albedo-absolute", severity: Severity::Error,
-        in_game: "Over 5% of the area is absolute black (under 0.003 linear) or white (over 0.80): blacks lose every fold and read as holes, whites flatten and bloom (Valve's art guide: no absolute white or black)." },
+    Rule { code: "M137", name: "albedo-absolute", severity: Severity::Warn,
+        in_game: "Over 5% of the new materials' area is absolute black (under 0.003 linear) or white (over 0.80): blacks lose every fold and read as holes, whites flatten and bloom (Valve's art guide: no absolute white or black). A look, not a fault: the game loads and draws the colours it is given, so it is a warning (6880)." },
     Rule { code: "M138", name: "alpha-coverage-drift", severity: Severity::Warn,
         in_game: "An alpha-tested material whose cut-out coverage changes by more than 30% on over 10% of its tiles at the mip the game samples at 8 m: lace turns solid or vanishes as it recedes, and sparkles in motion." },
-    Rule { code: "M139", name: "alpha-coverage-gameplay", severity: Severity::Error,
-        in_game: "The same coverage drift already at the gameplay distance (4 m): the lace visibly changes density on screen in normal play." },
+    Rule { code: "M139", name: "alpha-coverage-gameplay", severity: Severity::Warn,
+        in_game: "The same coverage drift already at the gameplay distance (4 m): the lace, hair or lashes visibly change density on screen in normal play. A look, not a fault: the game draws every mip it is given, so it is a warning (6880). Author the alpha with coverage kept across mips, or a mip chain that holds it." },
     Rule { code: "M140", name: "hitbox-envelope-taste", severity: Severity::Warn,
         in_game: "Visible surface lies more than 10 units beyond every hitbox, beyond what Valve's own model has there and short of M129's line: enemies aim at cloth that can't be hit. Tasteful overflow is allowed: accept it with a written reason in magician.allow if the silhouette piece earns it." },
     Rule { code: "M141", name: "cloth-flutter", severity: Severity::Warn,
@@ -242,6 +243,12 @@ pub const RULES: &[Rule] = &[
         in_game: "A material sets a feature or parameter that none of Valve's materials of the same shader sets on this build. The compiler keeps any name it is given, a typo or another shader's parameter included, and exits 0, so the setting is in the compiled file and does nothing in game. A rim-light strength is the scene's (the game's light rig), not the material's. Valve's materials are the evidence of what the shader reads: a name only one Valve material sets still counts as read." },
     Rule { code: "M151", name: "material-shader-changed", severity: Severity::Warn,
         in_game: "A replaced material draws with another shader than Valve's material at the same path. A hero's look (its NPR lighting, outline and status-effect overlay) is features of pbr.vfx, so a hero material on any other shader loses them, and the inputs it was given mean something else or nothing. The CSDK's Material Editor starts a new material on environment_texture_set (the DefaultShader in its gameinfo), which is how a skin ends up there." },
+    Rule { code: "M152", name: "material-flag-fair-play", severity: Severity::Error,
+        in_game: "A new material on a target (a model Valve gives hitboxes) switches on a feature Divine Skins' material reference marks Avoid for hero skins, and none of Valve's materials on that model has it: F_TRANSLUCENT, F_ADDITIVE_BLEND or F_ADVANCED_TRANSLUCENCY (see-through), F_SELF_ILLUM (glows), F_UNLIT (ignores light and shadow), F_OVERRIDE_BLOOM_AMOUNT (other bloom), F_OVERRIDE_NPR_OUTLINE (another outline) or F_DISABLE_NPR_OUTLINE (no outline). The hero reads differently in a fight. Fair play, never allowable: the skin loads and plays and is labelled freeform, never broken. Valve's own heroes use every one of these somewhere (on 6880, 101 of its 772 hero materials are translucent and 346 glow), so only a feature Valve's model at the same path never uses is said." },
+    Rule { code: "M153", name: "draw-error-material", severity: Severity::Error,
+        in_game: "A draw call at LOD0 has no material, the engine's error material, or a bare name with no folder that is no material in the mod or the game (a modelling tool's slot exported without one, a .001 duplicate): the game draws its error material there, the solid red or checkered piece the community pages report (UNVERIFIED here). None of Valve's hero models has one (6880); Valve's error and dev materials sit on effect models particles draw with their own material, and a draw Valve's model at the same path makes is not said." },
+    Rule { code: "M170", name: "compiled-by", severity: Severity::Info,
+        in_game: "Which compiler built the mod's files: a compiled file's edit info names each compiler with a version it raises when what it writes changes, and the game's own files of each kind carry one version on a build (6880: models 3, clips 21, graphs 27, animation skeletons 14, particles 2, layouts 16, styles 11, sound events 11). Files of another version were built by an older compiler or kit, named where its effect is known (CSDK 12 compiles AnimGraph 2 files in an outdated form, the community pages say). A note, not a fault: whether the game reads an older version as it was made is UNVERIFIED." },
     Rule { code: "M060", name: "model-document-replaced", severity: Severity::Info,
         in_game: "Replacing a .vmdl_c replaces the WHOLE model document: hitboxes, attachments, cloth, LODs and anim events come from your file. Run the contract check against the original." },
 ];
@@ -262,7 +269,7 @@ pub fn seen(code: &str) -> &'static str {
         33 | 61..=65 | 72 | 81..=84 | 134 => "effects, sound",
         90..=92 => "other heroes",
         120 | 122 | 123 | 127 | 128 | 146 => "frame cost",
-        1 | 2 | 10 | 20 | 21 | 30 | 32 | 40..=42 | 50..=52 | 70 | 71 => "loading",
+        1 | 2 | 10 | 20 | 21 | 30 | 32 | 40..=42 | 50..=52 | 70 | 71 | 170 => "loading",
         11..=13 | 31 | 60 | 100 | 144 => "the pak",
         _ => "on the hero",
     }
@@ -325,6 +332,11 @@ pub trait Game: Sync {
     /// and the client code does not (`magician index` writes them beside the users index). `None` when there is no such
     /// list for the build: then M084 can't run.
     fn unreached_particles(&self) -> Option<&HashSet<String>> {
+        None
+    }
+    /// Who outside a model names each bone (`magician index` writes it beside the users index). `None` when there is no
+    /// such file for the build: then who names a lost bone is unknown, and M062 keeps it an error that says so.
+    fn bone_users(&self) -> Option<&carry::BoneUsers> {
         None
     }
 }
@@ -417,6 +429,112 @@ fn is_raw_text_the_engine_reads(path: &str) -> bool {
     (path.starts_with("resource/") && path.ends_with(".txt")) || path.starts_with("cfg/")
 }
 
+/// M070: a shipped skeleton, anim graph or vdata, judged against Valve's file at the same path on this build. A copy that
+/// still holds what Valve's current file has (the same bones in the same order; every control parameter the game's
+/// code sets; every entry) plays today, and breaks at the next patch that changes Valve's file, which patch day and
+/// drift catch (M040): a warning that says so. One that lacks some of it is already out of date: an error that says
+/// what. A file at a path Valve does not ship replaces nothing. With no game to compare, it stays an error.
+fn protected_file(ext: &str, ours: &[u8], at_game_path: Option<bool>, valve: Option<&[u8]>) -> (Severity, String) {
+    use resource::kv3::Value;
+    let what = match ext {
+        "vnmskel_c" => "animation skeleton",
+        "vnmgraph_c" => "anim graph",
+        _ => "game data file",
+    };
+    if at_game_path == Some(false) {
+        return (Severity::Warn, format!("a {what} at a path Valve does not ship: it replaces none of the game's files, and the game reads it only if one of the mod's own files names it, so the player sees nothing of it otherwise; leave it out unless the mod uses it"));
+    }
+    let data = |d: &[u8]| resource::kv3_block(d, b"DATA").and_then(Result::ok);
+    let (Some(o), Some(v)) = (data(ours), valve.and_then(data)) else {
+        return (Severity::Error, format!("replaces the hero's {what}, and it could not be compared with Valve's on this build: remove it and ship the model only, so the game keeps Valve's"));
+    };
+    let strs = |x: &Value, k: &str| -> Vec<String> { x.get(k).map(Value::as_array).unwrap_or(&[]).iter().filter_map(Value::as_str).map(str::to_string).collect() };
+    let shown = |v: &[String]| {
+        let s: Vec<&str> = v.iter().take(6).map(String::as_str).collect();
+        if v.len() > 6 { format!("{} and {} more", s.join(", "), v.len() - 6) } else { s.join(", ") }
+    };
+    let lacking: Vec<String> = match ext {
+        "vnmskel_c" => {
+            let (a, b) = (strs(&o, "m_boneIDs"), strs(&v, "m_boneIDs"));
+            if a != b {
+                let missing: Vec<String> = b.iter().filter(|x| !a.contains(x)).cloned().collect();
+                let detail = if missing.is_empty() { "the same bones in another order or with others added".to_string() } else { format!("{} of Valve's bones missing ({})", missing.len(), shown(&missing)) };
+                return (Severity::Error, format!("replaces the hero's animation skeleton with one unlike Valve's on this build ({detail}): Valve's clips and graphs are built against Valve's bones, so the hero animates wrongly or not at all (UNVERIFIED); remove it and keep Valve's skeleton"));
+            }
+            Vec::new()
+        }
+        "vnmgraph_c" => {
+            let mine = strs(&o, "m_controlParameterIDs");
+            strs(&v, "m_controlParameterIDs").into_iter().filter(|x| !mine.iter().any(|m| m.eq_ignore_ascii_case(x))).collect()
+        }
+        _ => {
+            // a key that starts with '_' (`_include`) is the file's own bookkeeping, not an entry the game reads
+            let mine: HashSet<&str> = o.members().iter().map(|(k, _)| k.as_str()).collect();
+            v.members().iter().map(|(k, _)| k.clone()).filter(|k| !k.starts_with('_') && !mine.contains(k.as_str())).collect()
+        }
+    };
+    if !lacking.is_empty() {
+        let (kind, effect) = if ext == "vnmgraph_c" {
+            ("control parameters the game sets", "the hero no longer reacts to them (UNVERIFIED)")
+        } else {
+            ("entries", "while the mod is installed the game finds none of them: heroes, abilities, items or settings Valve has added go missing, the locked heroes and 'Error parsing KV3 data' the community pages report for an old heroes.vdata (UNVERIFIED)")
+        };
+        return (Severity::Error, format!("replaces the hero's {what} with a copy of an older build: it lacks {} {kind} that Valve's file on this build has ({}), so {effect}; remove it, or rebuild it from Valve's current file", lacking.len(), shown(&lacking)));
+    }
+    (Severity::Warn, format!("replaces the hero's {what} with a copy that holds everything Valve's file on this build has, so it plays today; the next patch that changes Valve's file leaves this copy behind and breaks the hero, which patchday and drift report (M040) when it happens; remove it and ship the model only to be safe from that"))
+}
+
+/// What a kit is known to do to files of one kind when an older compiler made them, as the community's pages say it.
+fn kit_cause(ext: &str) -> &'static str {
+    match ext {
+        "vnmclip_c" | "vnmgraph_c" | "vnmskel_c" => " (a known kit cause: CSDK 12, on CS2's tools, compiles AnimGraph 2 files in an outdated form, the community pages say)",
+        "vanmgrph_c" => " (an AnimGraph 1 graph, which CSDK 12's bin compiles; Deadlock reads AnimGraph 2)",
+        _ => "",
+    }
+}
+
+/// M170: which compiler built each kind of file, from the compiler versions in its edit info (`resource::compilers`),
+/// against those of Valve's own file of that kind on this build (Valve's file at the same path when the mod replaces
+/// one, else the first of that kind in the build). One note per kind and version that differs, with how many files
+/// and one of them; a known kit cause is named.
+fn compiled_by(input: &Input, out: &mut Vec<Finding>) {
+    let (Some(base), Some(game)) = (input.base, input.game) else { return };
+    let mut sample: HashMap<String, Option<String>> = HashMap::new();
+    let mut valve_of = |p: &str, ext: &str| -> Vec<(String, i64)> {
+        let path = if base.contains(p) {
+            Some(p.to_string())
+        } else {
+            sample.entry(ext.to_string()).or_insert_with(|| base.files.keys().filter(|k| k.ends_with(&format!(".{ext}"))).min().cloned()).clone()
+        };
+        path.and_then(|q| game.read(&q)).map(|d| resource::compilers(&d)).unwrap_or_default()
+    };
+    // (kind, compiler, ours, Valve's) -> (files, first file)
+    let mut seen: std::collections::BTreeMap<(String, String, i64, i64), (usize, String)> = std::collections::BTreeMap::new();
+    for f in &input.files {
+        let ext = ext_of(&f.path).to_ascii_lowercase();
+        if !ext.ends_with("_c") {
+            continue;
+        }
+        let ours = resource::compilers(&f.data);
+        if ours.is_empty() {
+            continue;
+        }
+        let valve = valve_of(&f.path, &ext);
+        for (name, v) in &ours {
+            let Some(theirs) = valve.iter().find(|(n, _)| n == name).map(|x| x.1) else { continue };
+            if *v != theirs {
+                let e = seen.entry((ext.clone(), name.clone(), *v, theirs)).or_insert((0, f.path.clone()));
+                e.0 += 1;
+            }
+        }
+    }
+    for ((ext, name, v, theirs), (n, first)) in seen {
+        let age = if v < theirs { "an older" } else { "another" };
+        let files = if n == 1 { format!("1 .{ext} ({first})") } else { format!("{n} .{ext} files (one is {first})") };
+        out.push(finding("M170", None, format!("{files} carry {name} {v} where the game's own .{ext} files on this build carry {theirs}: {age} compiler or kit built them{}; whether the game reads them as they were made is UNVERIFIED; recompile them with a kit whose compiler matches this build (CSDK 13 with Deadlock's own compiler dlls, the bin Magician calls win64_nm, wrote this build's model, clip and particle versions on 6880)", kit_cause(&ext))));
+    }
+}
+
 pub fn lint(input: &Input) -> Vec<Finding> {
     let mut out = Vec::new();
 
@@ -442,6 +560,8 @@ pub fn lint(input: &Input) -> Vec<Finding> {
     let mut referenced: HashSet<String> = HashSet::new();
     // For M033: the first mod file that names each debug-marked target.
     let mut debug_referrer: HashMap<String, String> = HashMap::new();
+    // M001: paths with capitals, judged after the loop
+    let mut case_paths: Vec<&str> = Vec::new();
 
     for f in &input.files {
         let p = f.path.as_str();
@@ -451,7 +571,8 @@ pub fn lint(input: &Input) -> Vec<Finding> {
         // a file the game never reads (M012) is not looked up either, so its case costs nothing
         let noise = NOISE_NAMES.contains(&file.as_str()) || NOISE_EXTS.contains(&ext.as_str()) || (ext == "txt" && !is_raw_text_the_engine_reads(p));
         if p.chars().any(|c| c.is_ascii_uppercase()) && !noise {
-            out.push(finding("M001", Some(p), format!("rename to '{}'", p.to_ascii_lowercase())));
+            // judged once every reference is known: a path nothing looks up costs nothing for its case
+            case_paths.push(p);
         }
         if p.contains('\\') || p.starts_with('/') || p.split('/').any(|s| s == ".." || s == ".") {
             out.push(finding("M002", Some(p), "path is not a clean forward-slash relative path".into()));
@@ -487,7 +608,9 @@ pub fn lint(input: &Input) -> Vec<Finding> {
                     }
                 }
             }
-            out.push(finding("M070", Some(p), "remove it: ship the model, never the skeleton, graph or data".into()));
+            let at_game_path = input.base.map(|b| b.contains(p));
+            let (severity, message) = protected_file(&ext, &f.data, at_game_path, input.game.and_then(|g| g.read(p)).as_deref());
+            out.push(Finding { severity, ..finding("M070", Some(p), message) });
             continue;
         }
         if SOURCE_EXTS.contains(&ext.as_str()) {
@@ -533,7 +656,16 @@ pub fn lint(input: &Input) -> Vec<Finding> {
                         let in_game = input.base.is_none_or(|b| b.contains(target));
                         let inherited = original.is_some_and(|o| o.contains(target)) || inherited_strings.contains(target);
                         if !in_mod && !in_game && !inherited {
-                            out.push(finding("M030", Some(p), format!("needs '{target}'")));
+                            if target.ends_with(".vanmgrph_c") {
+                                // AnimGraph 1: no build ships one and none of Valve's files names one (6880); the hero
+                                // animates from the model's AnimGraph 2 references, which M062 judges
+                                out.push(Finding {
+                                    severity: Severity::Warn,
+                                    ..finding("M030", Some(p), format!("needs '{target}', an AnimGraph 1 graph: Deadlock ships none and none of Valve's files names one, so the hero animates from the model's AnimGraph 2 references (M062 judges those) and the player sees nothing of this; the game may log the missing file (UNVERIFIED); to be rid of it, take the AnimGraph 1 graph out of the model document and recompile"))
+                                });
+                            } else {
+                                out.push(finding("M030", Some(p), format!("needs '{target}'")));
+                            }
                         }
                         referenced.insert(target.clone());
                         if debug_marker(target).is_some() {
@@ -560,6 +692,25 @@ pub fn lint(input: &Input) -> Vec<Finding> {
         }
     }
 
+    // M001: the game looks a path up in lowercase. A file with capitals the game would look for (it replaces a game
+    // file, or the mod names it) is never found: an error. One nothing looks for (a leftover copy, a folder the export
+    // left behind) is never read whatever its case, and a lowercase twin in the mod is what a lookup finds: a warning.
+    for p in case_paths {
+        let l = p.to_ascii_lowercase();
+        let twin = mod_paths.contains(l.as_str());
+        // Panorama finds its fonts by their folder, not by a reference (Valve's are loose lowercase files beside the
+        // paks): a font is taken as looked for
+        let wanted = input.base.is_none_or(|b| b.contains(&l)) || referenced.contains(&l) || l.starts_with("panorama/fonts/");
+        if twin {
+            out.push(Finding { severity: Severity::Warn, ..finding("M001", Some(p), format!("a copy of '{l}', which the mod also ships: the game looks paths up in lowercase and finds that one, so this copy is never read and the player sees nothing of it; remove it")) });
+        } else if !wanted {
+            out.push(Finding { severity: Severity::Warn, ..finding("M001", Some(p), format!("nothing in the game or the mod names '{l}', so the game never looks this file up and its case changes nothing the player sees; a leftover (a '- Copy', an exported folder): remove it, or rename it to '{l}' if something should use it")) });
+        } else {
+            out.push(finding("M001", Some(p), format!("rename to '{l}': the game looks it up in lowercase, never finds this file, and shows the original asset or nothing instead")));
+        }
+    }
+
+    compiled_by(input, &mut out);
     deep_rules(input, &referenced, &mut out);
     stale_leftovers(input, &mut out);
     dev_leftovers(input, &debug_referrer, &mut out);
@@ -1088,7 +1239,7 @@ fn model_findings(input: &Input, f: &ModFile, by_path: &HashMap<&str, &ModFile>,
                     }
                     by_path.contains_key(q)
                 };
-                let breaches = carry::judge(deep::contract_breaches(&a, &b), &f.data, valve, &game_read, &ships);
+                let breaches = carry::judge(deep::contract_breaches(&a, &b), &f.data, valve, &game_read, &ships, input.game.and_then(|g| g.bone_users()));
                 // the camera attachments the game names, held to Valve's numbers far tighter than the printed
                 // signature; one the contract already called changed or missing is not said twice
                 let cams = gamedata::camera_attachments(valve, &b, input.game.and_then(|g| g.code_names()));

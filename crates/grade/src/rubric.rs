@@ -150,10 +150,10 @@ pub const VALVE_MESH_SHARE: f64 = 0.98;
 /// The fair-play rules: what they find sets compliance, never the description. M062 counts only for hitboxes, the
 /// model's camera settings (what a player can see around the hero) and its tagged sounds (footsteps enemies listen
 /// for); a lost bone or attachment is the mod not working: a lint error, so `broken`.
-pub const FAIR_PLAY_RULES: &[&str] = &["M062", "M063", "M081", "M082", "M124", "M129", "M130", "M131", "M140"];
+pub const FAIR_PLAY_RULES: &[&str] = &["M062", "M063", "M081", "M082", "M124", "M129", "M130", "M131", "M140", "M152"];
 /// Never allowable: anything that makes an enemy harder to read, or removes or weakens a gameplay cue. A finding of
 /// one of these fails fair play whatever an allowance says.
-pub const NEVER_ALLOWABLE: &[&str] = &["M062", "M063", "M082", "M124", "M129", "M131"];
+pub const NEVER_ALLOWABLE: &[&str] = &["M062", "M063", "M082", "M124", "M129", "M131", "M152"];
 /// Advisory: reported in the record, never a violation (a brighter cue is not a hidden one; the wide envelope is the
 /// notice below the taste tier).
 pub const ADVISORY: &[&str] = &["M081", "M130"];
@@ -807,6 +807,8 @@ mod tests {
         assert!(is_fair_play("M062", "tagged sounds: TaggedSoundSettings_t missing"), "silent footsteps are a hidden cue");
         assert!(!is_fair_play("M062", "game data: CitadelUnitStatusSettings_t is a list"), "a health bar at the feet is the mod not working");
         assert!(!is_fair_play("M061", "x") && is_compliance("M144", "x"));
+        // a material flag on Divine Skins' Avoid list labels a skin freeform, never broken, whatever an allowance says
+        assert!(is_fair_play("M152", "x") && NEVER_ALLOWABLE.contains(&"M152") && !is_fair_play("M153", "x"));
     }
 
     #[test]

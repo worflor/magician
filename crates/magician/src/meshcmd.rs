@@ -138,8 +138,9 @@ pub fn cmd_mesh(args: &[String], game_dir: &Path, reference: &Path, policy: &gra
     let mut findings = rules::judge(&ours, valve.as_ref(), fp);
     if let Some(v) = &valve {
         let list = |c: &Census| c.materials.iter().map(|(k, m)| (k.clone(), m.clone())).collect::<Vec<_>>();
-        findings.extend(rules::audit_materials(&list(&ours), &list(v)));
+        findings.extend(rules::audit_materials(&list(&ours), &list(v), !v.model.hitboxes.is_empty()));
     }
+    findings.extend(rules::error_draws(&ours, valve.as_ref()));
     // verdict (scene3d verdict.ts): fail on an error, attention on a warning, else pass; actions by
     // severity, then by how many findings share the code
     let mut by: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();

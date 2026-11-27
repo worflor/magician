@@ -88,7 +88,7 @@ impl Applicable {
     fn rules(self) -> Vec<(&'static str, bool)> {
         let mut out = Vec::new();
         if self.models {
-            out.extend([("M062", false), ("M124", true), ("M129", true), ("M130", true), ("M131", false), ("M140", true)]);
+            out.extend([("M062", false), ("M124", true), ("M129", true), ("M130", true), ("M131", false), ("M140", true), ("M152", false)]);
         }
         if self.particles {
             out.extend([("M081", false), ("M082", false)]);
@@ -280,7 +280,7 @@ mod tests {
     fn nothing_found_on_a_deep_run_is_a_pass_naming_the_checks_that_ran() {
         let r = judge(&[], &[], Depth::Deep, Applicable { models: true, particles: true, sounds: true }, &Policy::default());
         assert_eq!(r.state, State::Pass);
-        assert_eq!(r.checks_run, vec!["M062", "M063", "M081", "M082", "M124", "M129", "M130", "M131", "M140"]);
+        assert_eq!(r.checks_run, vec!["M062", "M063", "M081", "M082", "M124", "M129", "M130", "M131", "M140", "M152"]);
         assert_eq!(r.state.mark(), None);
     }
 
@@ -359,7 +359,7 @@ mod tests {
         let r = judge(&[], &[], Depth::Light, MODELS, &Policy::default());
         assert_eq!(r.state, State::Unknown);
         assert_eq!(r.unknown[0].rules, vec!["M124", "M129", "M130", "M140"]);
-        assert_eq!(r.checks_run, vec!["M062", "M131"]);
+        assert_eq!(r.checks_run, vec!["M062", "M131", "M152"]);
         // a light lint of a mod with no model is complete: nothing deep was called for
         assert_eq!(judge(&[], &[], Depth::Light, Applicable { sounds: true, ..Default::default() }, &Policy::default()).state, State::Pass);
         // a violation outranks an unknown

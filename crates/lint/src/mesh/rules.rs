@@ -674,7 +674,7 @@ pub fn judge(ours: &Census, valve: Option<&Census>, fp: &FairPlay) -> Out {
                 let black: f64 = all.iter().filter(|x| x.0 < ALBEDO_BLACK).map(|x| x.1).sum::<f64>() / total;
                 let white: f64 = all.iter().filter(|x| x.0 > ALBEDO_WHITE).map(|x| x.1).sum::<f64>() / total;
                 if black > ALBEDO_ABSOLUTE || white > ALBEDO_ABSOLUTE {
-                    out.push(("M137", format!("{:.1}% of the area is absolute black (under {ALBEDO_BLACK} linear) and {:.1}% absolute white (over {ALBEDO_WHITE}): blacks lose every fold and read as holes, whites flatten and bloom", 100.0 * black, 100.0 * white)));
+                    out.push(("M137", format!("{:.1}% of the area is absolute black (under {ALBEDO_BLACK} linear) and {:.1}% absolute white (over {ALBEDO_WHITE}): blacks lose every fold and read as holes, whites flatten and bloom; lift the blacks and pull the whites into that range in the colour maps", 100.0 * black, 100.0 * white)));
                 }
             }
         }
@@ -686,7 +686,7 @@ pub fn judge(ours: &Census, valve: Option<&Census>, fp: &FairPlay) -> Out {
         }
         let at = |d: f64| c.at.iter().find(|x| x.0 == d).copied().unwrap_or((d, 0, 0.0));
         let (g4, g8) = (at(4.0), at(8.0));
-        let msg = |x: (f64, u32, f64)| format!("{}: at {} m the game samples mip {} ({:.0} texels per metre on the model), where {:.0}% of the {} partly cut-out tiles of {} change coverage by more than 30%: the lace turns solid or vanishes as it recedes", c.material, x.0, x.1, c.texels_per_metre, 100.0 * x.2, c.tiles, c.texture);
+        let msg = |x: (f64, u32, f64)| format!("{}: at {} m the game samples mip {} ({:.0} texels per metre on the model), where {:.0}% of the {} partly cut-out tiles of {} change coverage by more than 30%: the lace turns solid or vanishes as it recedes; keep the alpha's coverage across the mip chain (a mip filter that preserves it, or a cut-out threshold per mip)", c.material, x.0, x.1, c.texels_per_metre, 100.0 * x.2, c.tiles, c.texture);
         if g4.2 > COVERAGE_SHARE {
             out.push(("M139", msg(g4)));
         } else if g8.2 > COVERAGE_SHARE {
@@ -916,12 +916,40 @@ pub fn judge_light(o: &Census, valve: Option<&Census>) -> Out {
     out
 }
 
-/// Material audit of a hero model's materials against Valve's on the same model (SKIN-FLAWS V01-V03).
-pub fn audit_materials(ours: &[(String, MatInfo)], valve: &[(String, MatInfo)]) -> Out {
+/// The material features Divine Skins' material reference marks Avoid for hero skins ("changes how easy a hero is to
+/// see"), each with what it does to the hero on screen. M152 says one a new material on a target switches on where no
+/// material of Valve's model at that path does.
+pub const AVOID_FLAGS: &[(&str, &str)] = &[
+    ("F_TRANSLUCENT", "the surface is see-through"),
+    ("F_ADDITIVE_BLEND", "the surface adds its colour to what is behind it, so it reads see-through"),
+    ("F_ADVANCED_TRANSLUCENCY", "the surface is see-through"),
+    ("F_SELF_ILLUM", "the surface glows"),
+    ("F_UNLIT", "the surface ignores the scene's light and shadow"),
+    ("F_OVERRIDE_BLOOM_AMOUNT", "its bright parts bloom by another amount than the game's"),
+    ("F_OVERRIDE_NPR_OUTLINE", "its outline has another thickness than the game's"),
+    ("F_DISABLE_NPR_OUTLINE", "it loses the outline the game draws round a hero"),
+];
+
+/// Material audit of a hero model's materials against Valve's on the same model (SKIN-FLAWS V01-V03). `target`: Valve's
+/// model carries hitboxes, so it is something bullets hit and fair play asks it stay as easy to see (M152).
+pub fn audit_materials(ours: &[(String, MatInfo)], valve: &[(String, MatInfo)], target: bool) -> Out {
     let mut out = Vec::new();
     let valve: Vec<(String, MatInfo)> = valve.iter().filter(|(_, m)| m.found).cloned().collect();
     if valve.is_empty() {
         return out;
+    }
+    // M152: a feature on the Avoid list that a new material switches on and no material of Valve's model does
+    if target {
+        for (p, m) in ours.iter().filter(|(_, m)| m.found) {
+            if valve.iter().any(|(vp, _)| vp == p) {
+                continue;
+            }
+            for (flag, what) in AVOID_FLAGS {
+                if m.flags.iter().any(|f| f == flag) && !valve.iter().any(|(_, v)| v.flags.iter().any(|f| f == flag)) {
+                    out.push(("M152", format!("{p}: {flag} on, where none of Valve's {} materials on this model has it: {what}, so the hero reads differently in a fight than Valve's does; turn it off to keep the skin ranked-safe (fair play: the skin still loads and plays, and is labelled freeform)", valve.len())));
+                }
+            }
+        }
     }
     let every_proxy = valve.iter().all(|(_, m)| m.status_proxy);
     let vopaque: Vec<&MatInfo> = valve.iter().map(|(_, m)| m).filter(|m| !(m.translucent || m.additive)).collect();
@@ -940,6 +968,35 @@ pub fn audit_materials(ours: &[(String, MatInfo)], valve: &[(String, MatInfo)]) 
         if m.alpha_test && m.outline {
             out.push(("M133", format!("{p}: alpha-tested with a non-zero NPR outline mask (ref {:.2}): the outline traces every cut-out and turns lace into a mesh of dark lines", m.alpha_ref)));
         }
+    }
+    out
+}
+
+/// M153: LOD0 draws whose material the game cannot draw with: no material at all, the engine's error material, or a
+/// bare name with no folder that resolves to no material in the mod or the game (a modelling tool's slot exported
+/// without a material, a `.001` duplicate). The game draws its error material there. A draw Valve's model at the same
+/// path makes with the same material is Valve's design (6880: none of Valve's hero models has one; Valve's error and
+/// dev materials sit on effect models that particles draw with their own material).
+pub fn error_draws(o: &Census, valve: Option<&Census>) -> Out {
+    let mut out = Vec::new();
+    let Some(lod0) = o.lods.first() else { return out };
+    for (m, tris) in &lod0.material_tris {
+        if valve.is_some_and(|v| v.materials.contains_key(m)) {
+            continue;
+        }
+        let l = m.to_ascii_lowercase();
+        let bare = !l.contains('/') && !o.materials.get(m).is_some_and(|x| x.found);
+        let why = if l.trim().is_empty() {
+            "no material at all"
+        } else if l == "materials/error.vmat" || l == "materials/error.vmat_c" {
+            "the engine's error material"
+        } else if bare {
+            "a bare name with no folder that is no material in the mod or the game (a modelling tool's slot exported without a material)"
+        } else {
+            continue;
+        };
+        let name = if l.trim().is_empty() { String::new() } else { format!("'{m}' ") };
+        out.push(("M153", format!("{tris} triangles at LOD0 draw with {name}{why}: the game draws its error material there, a solid red or checkered piece on the model (the community pages' report, UNVERIFIED here); assign the piece a real material in the model document and recompile")));
     }
     out
 }

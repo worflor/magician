@@ -40,6 +40,8 @@ pub struct GameFiles {
     pub code: std::sync::OnceLock<Option<HashSet<String>>>,
     /// The particles nothing in the game names, from beside the users index (M084).
     pub unreached: Option<HashSet<String>>,
+    /// Who outside a model names each bone, from beside the users index (M062's lost bones).
+    pub bone_users: Option<lint::carry::BoneUsers>,
 }
 
 /// The client library of the game, where Deadlock's own code is: the Windows build's, else the Linux build's.
@@ -99,7 +101,26 @@ impl GameFiles {
             })
             .collect::<Vec<_>>()
             .join(",");
-        GameFiles { paks, users, index_missing, particle_classes: None, material_params: None, identity, addon_sources: None, game: game.to_path_buf(), code: std::sync::OnceLock::new(), unreached: index.and_then(read_unreached) }
+        // the bone users judge cached model findings too, so their file's header is part of what keys them
+        let bone_text = index.and_then(|p| std::fs::read_to_string(bone_users_path(p)).ok());
+        let bone_users = bone_text.as_deref().and_then(lint::carry::BoneUsers::parse);
+        let identity = match (&bone_users, bone_text.as_deref().and_then(|t| t.lines().next())) {
+            (Some(_), Some(head)) => format!("{identity},{head}"),
+            _ => format!("{identity},no bone users"),
+        };
+        GameFiles {
+            paks,
+            users,
+            index_missing,
+            particle_classes: None,
+            material_params: None,
+            identity,
+            addon_sources: None,
+            game: game.to_path_buf(),
+            code: std::sync::OnceLock::new(),
+            unreached: index.and_then(read_unreached),
+            bone_users,
+        }
     }
 }
 
@@ -132,6 +153,9 @@ impl lint::Game for GameFiles {
     }
     fn unreached_particles(&self) -> Option<&HashSet<String>> {
         self.unreached.as_ref()
+    }
+    fn bone_users(&self) -> Option<&lint::carry::BoneUsers> {
+        self.bone_users.as_ref()
     }
     fn code_names(&self) -> Option<&HashSet<String>> {
         self.code.get_or_init(|| client_library(&self.game).and_then(|p| std::fs::read(p).ok()).map(|b| code_strings(&b))).as_ref()
@@ -543,6 +567,90 @@ pub fn build_index(game: &Path, out: &Path, build: &str, src: &grade::footprint:
     Ok(IndexStats { files: todo.len(), edges, owners: owner_set.len(), targets: lines.len(), unreached: unreached.len() })
 }
 
+/// The kinds of file outside a model that can name one of its bones, and what each is called in a finding.
+const BONE_USER_KINDS: &[(&str, &str)] = &[(".vnmgraph_c", "graph"), (".vnmclip_c", "clip"), (".vpcf_c", "particle"), (".vdata_c", "vdata")];
+
+/// Every bone name a file outside a model names: the string values of its KV3 under a key that says bone
+/// (`m_boneID`, `m_effectorBoneID`, `m_followTargetBone`, a list under `m_boneNames`), as `(name, key)`. A bone mask's
+/// id (`m_boneMaskID`, `UpperBody`) names a mask, not a bone.
+pub fn bone_names(v: &Value) -> BTreeSet<(String, String)> {
+    fn go(key: &str, v: &Value, out: &mut BTreeSet<(String, String)>) {
+        let k = key.to_ascii_lowercase();
+        match v {
+            Value::Str(s) if k.contains("bone") && !k.contains("mask") && !s.is_empty() && !s.contains(['/', ' ', '.']) => {
+                out.insert((s.clone(), key.to_string()));
+            }
+            Value::Array(a) => a.iter().for_each(|x| go(key, x, out)),
+            Value::Object(m) => m.iter().for_each(|(k, x)| go(k, x, out)),
+            _ => {}
+        }
+    }
+    let mut out = BTreeSet::new();
+    go("", v, &mut out);
+    out
+}
+
+/// Where the bone users are kept: beside the users index they were built with.
+pub fn bone_users_path(index: &Path) -> std::path::PathBuf {
+    index.with_file_name("bone_users.tsv")
+}
+
+/// The client-code lines of the bone users: every bone name of Valve's hero models (their own skeletons and their
+/// animation skeletons) that the client library holds as a string, as `(lowercase name, the string)`.
+pub fn code_bone_names(bones: &BTreeSet<String>, code: &HashSet<String>) -> BTreeSet<(String, String)> {
+    let mut lower: HashMap<String, &str> = HashMap::new();
+    for s in code {
+        lower.entry(s.to_ascii_lowercase()).or_insert(s.as_str());
+    }
+    bones.iter().filter_map(|b| code.get(b.as_str()).map(String::as_str).or_else(|| lower.get(&b.to_ascii_lowercase()).copied()).map(|s| (b.to_ascii_lowercase(), s.to_string()))).collect()
+}
+
+/// Write the bone users of the build: every file outside a model (anim graph, clip, particle, vdata) that names a bone,
+/// and every bone name of Valve's hero models the client code holds, one line per use, `name<TAB>kind<TAB>key<TAB>path`
+/// (`code<TAB>-<TAB><library>` for the code), the name in lowercase (the engine finds a bone by name, case aside).
+/// Returns how many bone names are named.
+pub fn build_bone_users(game: &Path, out: &Path, build: &str) -> Result<usize, String> {
+    let pak = vpk::Vpk::open(game.join("citadel").join("pak01_dir.vpk")).map_err(|e| e.to_string())?;
+    let mut todo: Vec<(&vpk::Entry, &str)> = pak.entries.iter().filter_map(|e| BONE_USER_KINDS.iter().find(|(x, _)| e.path.ends_with(x)).map(|(_, k)| (e, *k))).collect();
+    todo.sort_by_key(|(e, _)| (e.archive_index, e.offset));
+    let mut lines: BTreeSet<String> = BTreeSet::new();
+    let mut named: BTreeSet<String> = BTreeSet::new();
+    for (e, kind) in todo {
+        let Some(v) = pak.read(e).ok().and_then(|d| data_of(&d)) else { continue };
+        for (name, key) in bone_names(&v) {
+            let n = name.to_ascii_lowercase();
+            lines.insert(format!("{n}\t{kind}\t{key}\t{}", e.path));
+            named.insert(n);
+        }
+    }
+    // the bone names of Valve's hero models and their animation skeletons, for the client code's strings
+    let mut bones: BTreeSet<String> = BTreeSet::new();
+    let mut models: Vec<&vpk::Entry> = pak.entries.iter().filter(|e| e.path.starts_with("models/heroes") && (e.path.ends_with(".vmdl_c") || e.path.ends_with(".vnmskel_c"))).collect();
+    models.sort_by_key(|e| (e.archive_index, e.offset));
+    for e in models {
+        let Some(v) = pak.read(e).ok().and_then(|d| data_of(&d)) else { continue };
+        let list = if e.path.ends_with(".vnmskel_c") { v.get("m_boneIDs") } else { v.get("m_modelSkeleton").and_then(|s| s.get("m_boneName")) };
+        bones.extend(list.map(Value::as_array).unwrap_or(&[]).iter().filter_map(Value::as_str).map(str::to_string));
+    }
+    let mut code_read = false;
+    if let Some(lib) = client_library(game) {
+        let code = std::fs::read(&lib).map(|b| code_strings(&b)).map_err(|e| format!("{}: {e}", lib.display()))?;
+        let file = lib.file_name().map_or_else(|| "client".to_string(), |f| f.to_string_lossy().into_owned());
+        for (n, _) in code_bone_names(&bones, &code) {
+            lines.insert(format!("{n}\tcode\t-\t{file}"));
+            named.insert(n);
+        }
+        code_read = true;
+    }
+    let mut text = format!("# magician bone users build={build} rev={} code={} names={}\n", lint::carry::BONE_USERS_REV, if code_read { "yes" } else { "no" }, named.len());
+    for l in &lines {
+        text.push_str(l);
+        text.push('\n');
+    }
+    std::fs::write(out, text).map_err(|e| format!("{}: {e}", out.display()))?;
+    Ok(named.len())
+}
+
 /// Where the particles nothing names are kept: beside the users index they were built with.
 pub fn unreached_path(index: &Path) -> std::path::PathBuf {
     index.with_file_name("particles_unreached.tsv")
@@ -573,6 +681,20 @@ mod tests {
         let s = code_strings(lib);
         assert!(s.contains("standing_pivot") && s.contains("GameTime") && s.contains("muzzle"), "{s:?}");
         assert!(!s.contains("a") && !s.contains("x"), "one byte is no name: {s:?}");
+    }
+
+    #[test]
+    fn the_bone_users_are_the_names_graphs_and_the_code_hold() {
+        use resource::kv3::parse_text;
+        // a graph's IK and follow targets are bones; a bone mask's id and a path are not
+        let g = parse_text(r#"{ m_nodes = [ { m_boneID = "leg_L_IKTARGET" m_effectorBoneID = "ankle_L" m_boneMaskID = "UpperBody" } { m_followTargetBone = "Pelvis" m_boneName = "models/x.vmdl" } ] }"#).unwrap();
+        let names: Vec<String> = bone_names(&g).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(names, vec!["Pelvis", "ankle_L", "leg_L_IKTARGET"]);
+        // the code's strings that are bone names, case aside; a string no bone has is not one
+        let bones: BTreeSet<String> = ["head", "Pelvis", "weaponHand_L"].iter().map(|s| s.to_string()).collect();
+        let code: HashSet<String> = ["head", "pelvis", "GameTime"].iter().map(|s| s.to_string()).collect();
+        let got: Vec<String> = code_bone_names(&bones, &code).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(got, vec!["head", "pelvis"]);
     }
 
     #[test]

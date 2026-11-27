@@ -962,6 +962,42 @@ fn m131_m132_m133_material_audit() {
 }
 
 #[test]
+fn m152_a_material_flag_on_the_avoid_list() {
+    let piece = with(vec![boxd([10.0, -3.0, 20.0], [12.0, 3.0, 30.0], CLOTH, 1)]);
+    // a new material that glows on a hero whose Valve materials never do: fair play, and the message says the fix
+    let f = mesh_run(&piece, vec![], vmat(&["F_USE_STATUS_EFFECTS_PROXY", "F_USE_NPR_LIGHTING", "F_SELF_ILLUM"], true, None));
+    assert!(f.iter().any(|x| x.code == "M152" && x.message.contains("F_SELF_ILLUM on") && x.message.contains("the surface glows") && x.message.contains("turn it off")), "{f:#?}");
+    // the same material without it, and Valve's own model against itself: silent
+    assert!(!has(&run_ours(&piece), "M152", ""));
+    assert!(!has(&run_ours(&valve()), "M152", ""));
+    // a flag one of Valve's materials on the model has is Valve's design; a model with no hitboxes is no target
+    let info = |flags: &[&str]| crate::mesh::MatInfo { found: true, flags: flags.iter().map(|s| s.to_string()).collect(), ..Default::default() };
+    let ours = vec![("materials/new.vmat".to_string(), info(&["F_TRANSLUCENT", "F_DISABLE_NPR_OUTLINE"]))];
+    let valve_mats = vec![("materials/valve.vmat".to_string(), info(&["F_TRANSLUCENT"]))];
+    let got: Vec<String> = rules::audit_materials(&ours, &valve_mats, true).into_iter().filter(|x| x.0 == "M152").map(|x| x.1).collect();
+    assert!(got.len() == 1 && got[0].contains("F_DISABLE_NPR_OUTLINE") && got[0].contains("loses the outline"), "{got:?}");
+    assert!(rules::audit_materials(&ours, &valve_mats, false).iter().all(|x| x.0 != "M152"), "not a target");
+    // Valve's own material kept at the model is never judged
+    let kept = vec![("materials/valve.vmat".to_string(), info(&["F_SELF_ILLUM"]))];
+    assert!(rules::audit_materials(&kept, &valve_mats, true).iter().all(|x| x.0 != "M152"));
+}
+
+#[test]
+fn m153_a_draw_with_no_material() {
+    let at = |m: &str| with(vec![boxd([10.0, -3.0, 20.0], [12.0, 3.0, 30.0], m, 1)]);
+    for (m, why) in [("nada.vmat", "a bare name with no folder"), ("materials/error.vmat", "the engine's error material"), ("", "no material at all")] {
+        let f = run_ours(&at(m));
+        assert!(f.iter().any(|x| x.code == "M153" && x.severity == Severity::Error && x.message.contains(why) && x.message.contains("assign the piece a real material")), "{m}: {f:#?}");
+    }
+    // a material with a folder that is missing is M030's, not this rule's; a real material is silent
+    assert!(!has(&run_ours(&at("materials/test/gone.vmat")), "M153", ""));
+    assert!(!has(&run_ours(&at(CLOTH)), "M153", ""));
+    // a draw Valve's model at the same path makes with the same material is Valve's design
+    let f = mesh_run_against(&at("materials/error.vmat"), &at("materials/error.vmat"), vec![], hero_vmat(), &policy::DEFAULT);
+    assert!(!has(&f, "M153", ""), "{f:#?}");
+}
+
+#[test]
 fn m134_particle_prop_unlit() {
     let shard = "materials/test/shard.vmat";
     let pcf = kv(&format!(r#"{{ _class = "CParticleSystemDefinition" m_Renderers = [ {{ _class = "C_OP_RenderModels" m_hOverrideMaterial = "{shard}" }} ] }}"#));
@@ -1032,6 +1068,8 @@ fn m136_m137_albedo() {
     // within Valve's band: silent
     let f = mesh_run(&piece, vec![file(&format!("{CLOTH_COLOR}_c"), flat(16, [100, 100, 100, 255]))], hero_vmat());
     assert!(!has(&f, "M136", "") && !has(&f, "M137", ""), "{f:#?}");
+    // a look, not a fault: 12 of Valve's 78 hero models with hitboxes are past this line on their own art (6880)
+    assert_eq!(rule("M137").severity, Severity::Warn);
 }
 
 fn checker(w: usize) -> Vec<u8> {
@@ -1050,6 +1088,8 @@ fn m138_m139_alpha_coverage() {
     // solid alpha keeps its coverage at every mip
     let f = mesh_run(&piece, vec![file(&format!("{CLOTH_COLOR}_c"), flat(256, [200, 200, 200, 255]))], lace);
     assert!(!has(&f, "M138", "") && !has(&f, "M139", ""), "{f:#?}");
+    // a look the game draws as it is given: a warning, as M138 is
+    assert_eq!(rule("M139").severity, Severity::Warn);
 }
 
 
@@ -1591,13 +1631,28 @@ fn rig_anim(moves: &[(&str, f32, P3)]) -> HashMap<String, Vec<u8>> {
     ])
 }
 
-/// M062's bone findings of `ours` against `valve`, with the hero's animation moving as `moves` says.
+/// M062's bone findings of `ours` against `valve`, with the hero's animation moving as `moves` says, and a bone users
+/// index in which nothing outside the model names a bone.
 fn bone_findings(ours: &SynthModel, valve: &SynthModel, moves: &[(&str, f32, P3)]) -> Vec<(Severity, String)> {
+    bone_findings_with(ours, valve, moves, Some(&crate::carry::BoneUsers { code_read: true, ..Default::default() }))
+}
+
+/// `bone_findings` with the bone users given (`None`: no index for the build).
+fn bone_findings_with(ours: &SynthModel, valve: &SynthModel, moves: &[(&str, f32, P3)], users: Option<&crate::carry::BoneUsers>) -> Vec<(Severity, String)> {
     let (o, v) = (::mesh::synth::model(ours), ::mesh::synth::model(valve));
     let files = rig_anim(moves);
     let read = |p: &str| files.get(p).cloned();
     let breaches = deep::contract_breaches(&deep::contract(&o).unwrap(), &deep::contract(&v).unwrap());
-    crate::carry::judge(breaches, &o, &v, &read, &|_: &str| false).into_iter().filter(|m| m.starts_with("bone '")).map(|m| (deep::contract_severity(&m), m)).collect()
+    crate::carry::judge(breaches, &o, &v, &read, &|_: &str| false, users).into_iter().filter(|m| m.starts_with("bone '")).map(|m| (deep::contract_severity(&m), m)).collect()
+}
+
+/// A bone users index naming each `(bone, kind, key, path)`.
+fn bone_users(uses: &[(&str, &str, &str, &str)]) -> crate::carry::BoneUsers {
+    let mut u = crate::carry::BoneUsers { code_read: true, ..Default::default() };
+    for (b, k, key, p) in uses {
+        u.by_name.entry(b.to_ascii_lowercase()).or_default().push((k.to_string(), key.to_string(), p.to_string()));
+    }
+    u
 }
 
 /// The one bone finding about `bone`.
@@ -1608,32 +1663,68 @@ fn bone_finding(f: &[(Severity, String)], bone: &str) -> (Severity, String) {
 }
 
 #[test]
-fn m062_a_lost_bone_says_what_it_carried() {
+fn m062_a_lost_bone_is_judged_by_who_still_names_it() {
     let valve = rig_valve();
     assert!(bone_findings(&valve, &valve, &[]).is_empty(), "Valve's own model against itself");
-    let lost = |names: &[&str], moves: &[(&str, f32, P3)]| bone_findings(&rigged(&lose(&rig_bones(), names), &[("ponytail", [-6.0, 0.0, 60.0])]), &valve, moves);
-    // an end bone nothing hangs on, which the animation does not have: a helper, a warning that says so
+    let ours = |names: &[&str]| rigged(&lose(&rig_bones(), names), &[("ponytail", [-6.0, 0.0, 60.0])]);
+    let lost = |names: &[&str], moves: &[(&str, f32, P3)]| bone_findings(&ours(names), &valve, moves);
+    // an end bone nothing hangs on, which the animation does not have: a warning that says so
     let (s, m) = bone_finding(&lost(&["head_end"], &[]), "head_end");
     assert_eq!(s, Severity::Warn, "{m}");
-    assert!(m.starts_with("bone 'head_end' missing: Valve's model hangs nothing on it") && m.contains("its animation skeleton has no such bone") && m.ends_with(crate::carry::NOTHING_CHANGES), "{m}");
-    // an IK target the clips move 20 units, with nothing on it: still nothing a player sees
+    assert!(m.starts_with("bone 'head_end' missing: nothing outside the model looks it up") && m.contains("Valve's model hangs nothing on it") && m.contains("its animation skeleton has no such bone") && m.ends_with(crate::carry::NOTHING_CHANGES), "{m}");
+    // an IK target the clips move 20 units: the animation skeleton still has it, the model hangs nothing on it
     let (s, m) = bone_finding(&lost(&["ik_target"], &[("ik_target", 0.0, [0.0, 0.0, 20.0])]), "ik_target");
     assert_eq!(s, Severity::Warn, "{m}");
     assert!(m.contains("in its 1 animation clip it shifts 20.0 units"), "{m}");
-    // a bone Valve's mesh is weighted to, a hitbox's, an attachment's and a ragdoll part's stay errors, saying what
-    for (bone, what) in [("ponytail", "Valve's model hangs 24 vertices on it"), ("hip", "hitbox 'default/hip'"), ("idol_bone", "attachment 'idol'"), ("rag", "a ragdoll part")] {
+    // what Valve's model hung on the bone is the mod's own now: vertices, a hitbox (compared on its own), an
+    // attachment (judged on its own) are said, and nothing a player sees changes for the bone
+    for (bone, what) in [("ponytail", "Valve's model hangs 24 vertices on it"), ("hip", "hitbox 'default/hip'"), ("idol_bone", "attachment 'idol'")] {
         let (s, m) = bone_finding(&lost(&[bone], &[]), bone);
-        assert_eq!(s, Severity::Error, "{m}");
-        assert!(m.contains(what), "{bone}: {m}");
+        assert_eq!(s, Severity::Warn, "{m}");
+        assert!(m.contains(what) && m.ends_with(crate::carry::NOTHING_CHANGES), "{bone}: {m}");
     }
-    // a lost bone is said with what was lost with it below; the end bone lost with it is still only a helper
-    let f = lost(&["head", "ponytail", "head_end"], &[]);
-    let (s, m) = bone_finding(&f, "head");
-    assert!(s == Severity::Error && m.contains("below it, lost with it, 'ponytail' (24 vertices)"), "{m}");
-    assert_eq!(bone_finding(&f, "head_end").0, Severity::Warn);
+    // the model's own physics still names the lost ragdoll bone: a part with no bone, an error
+    let (s, m) = bone_finding(&lost(&["rag"], &[]), "rag");
+    assert!(s == Severity::Error && m.contains("this model itself (a physics part) still names it") && m.contains("Valve's model hangs a ragdoll part on it"), "{m}");
     // the hitbox itself keeps its own finding and its full strength
-    let f = run_against_anim(&rigged(&lose(&rig_bones(), &["hip"]), &[("ponytail", [-6.0, 0.0, 60.0])]), &valve, &[]);
+    let f = run_against_anim(&ours(&["hip"]), &valve, &[]);
     assert!(m062(&f).iter().any(|x| x.severity == Severity::Error && x.message.starts_with("hitbox 'default/hip' missing")), "{f:#?}");
+    // the model's own attachment still riding the lost bone: a reference to nothing, an error that names it
+    let mut riding = ours(&["idol_bone"]);
+    riding.attachments.push(("idol".into(), "idol_bone".into(), [0.0; 3]));
+    let (s, m) = bone_finding(&bone_findings(&riding, &valve, &[]), "idol_bone");
+    assert_eq!(s, Severity::Error, "{m}");
+    assert!(m.contains("this model itself (attachment 'idol') still names it") && m.contains("put the bone back"), "{m}");
+    // the client code holds the bone's name: an error, unless the model has an attachment of that name to find
+    let code = bone_users(&[("ponytail", "code", "-", "client.dll")]);
+    let (s, m) = bone_finding(&bone_findings_with(&ours(&["ponytail"]), &valve, &[], Some(&code)), "ponytail");
+    assert!(s == Severity::Error && m.contains("the game's client code") && m.contains("UNVERIFIED"), "{m}");
+    let mut named = ours(&["ponytail"]);
+    named.attachments.push(("ponytail".into(), "spine".into(), [0.0; 3]));
+    assert_eq!(bone_finding(&bone_findings_with(&named, &valve, &[], Some(&code)), "ponytail").0, Severity::Warn, "the code's lookup finds the attachment");
+    // the hero's graphs naming it pose the animation skeleton, not the model: said, not an error
+    let graph = bone_users(&[("ik_target", "graph", "m_boneID", &format!("{GRAPH}_c").to_ascii_lowercase())]);
+    let (s, m) = bone_finding(&bone_findings_with(&ours(&["ik_target"]), &valve, &[], Some(&graph)), "ik_target");
+    assert!(s == Severity::Warn && m.contains("the hero's anim graphs name it (m_boneID)"), "{m}");
+    // a graph the hero does not play is not said
+    let other = bone_users(&[("ik_target", "graph", "m_boneID", "animgraphs/someone_else.vnmgraph_c")]);
+    assert!(!bone_finding(&bone_findings_with(&ours(&["ik_target"]), &valve, &[], Some(&other)), "ik_target").1.contains("anim graphs"));
+    // no bone users index, or one written without the client library: who names it is unknown, never clean
+    let (s, m) = bone_finding(&bone_findings_with(&ours(&["head_end"]), &valve, &[], None), "head_end");
+    assert!(s == Severity::Error && m.contains("could not be checked") && m.contains("magician index"), "{m}");
+    let blind = crate::carry::BoneUsers::default();
+    let (s, m) = bone_finding(&bone_findings_with(&ours(&["head_end"]), &valve, &[], Some(&blind)), "head_end");
+    assert!(s == Severity::Error && m.contains("without the client library"), "{m}");
+}
+
+#[test]
+fn bone_users_read_back_only_in_their_own_format() {
+    let text = format!("# magician bone users build=6880 rev={} code=yes names=2\nhead\tcode\t-\tclient.dll\nweaponhand_l\tgraph\tm_boneID\tanimgraphs/a.vnmgraph_c\n", crate::carry::BONE_USERS_REV);
+    let u = crate::carry::BoneUsers::parse(&text).unwrap();
+    assert!(u.code_read && u.by_name["head"][0].0 == "code" && u.by_name["weaponhand_l"][0].1 == "m_boneID");
+    assert!(crate::carry::BoneUsers::parse("# magician bone users build=6880 rev=0 code=yes names=0\n").is_none(), "another format");
+    assert!(!crate::carry::BoneUsers::parse(&text.replace("code=yes", "code=no")).unwrap().code_read);
+    assert!(crate::carry::BoneUsers::parse("head\tcode\n").is_none(), "not the file");
 }
 
 #[test]
@@ -1673,21 +1764,21 @@ fn m062_a_reparented_bone_breaks_only_where_it_moves_differently() {
     let (o, v) = (::mesh::synth::model(&ours(hang(&rig_bones(), "ponytail", "spine", [-6.0, 0.0, 30.0]))), ::mesh::synth::model(&valve));
     let files = rig_anim(&[]);
     let breaches = deep::contract_breaches(&deep::contract(&o).unwrap(), &deep::contract(&v).unwrap());
-    let got = crate::carry::judge(breaches, &o, &v, &|p: &str| files.get(p).cloned(), &|p: &str| p == format!("{NM}_c"));
+    let got = crate::carry::judge(breaches, &o, &v, &|p: &str| files.get(p).cloned(), &|p: &str| p == format!("{NM}_c"), None);
     assert!(got.iter().any(|m| m.starts_with("bone 'ponytail'") && m.contains("ships its own animation skeleton") && deep::contract_severity(m) == Severity::Error), "{got:?}");
     // with no clip of the skeleton to read, how the strap moves is not known: never a quiet "moves as one"
     let o = ::mesh::synth::model(&strap);
     let mut files = rig_anim(&[]);
     files.remove(&format!("{CLIP}_c"));
     let breaches = deep::contract_breaches(&deep::contract(&o).unwrap(), &deep::contract(&v).unwrap());
-    let got = crate::carry::judge(breaches, &o, &v, &|p: &str| files.get(p).cloned(), &|_: &str| false);
+    let got = crate::carry::judge(breaches, &o, &v, &|p: &str| files.get(p).cloned(), &|_: &str| false, None);
     let m = got.iter().find(|m| m.starts_with("bone 'strap'")).unwrap();
     assert!(m.contains("could not be measured: no clip of its animation skeleton was found") && deep::contract_severity(m) == Severity::Error, "{m}");
 }
 /// `run_against` with the hero's animation in the game.
 fn run_against_anim(ours: &SynthModel, valve: &SynthModel, moves: &[(&str, f32, P3)]) -> Vec<Finding> {
     let mut g = game();
-    let mut fake = Fake::default();
+    let mut fake = Fake { bones: Some(crate::carry::BoneUsers { code_read: true, ..Default::default() }), ..Default::default() };
     fake.files.insert(MODEL.into(), ::mesh::synth::model(valve));
     fake.files.insert(format!("{BODY}_c"), vmat_with(&["F_USE_STATUS_EFFECTS_PROXY", "F_USE_NPR_LIGHTING"], BODY_COLOR, None));
     fake.files.insert(format!("{BODY_COLOR}_c"), flat(16, GREY));
@@ -1706,6 +1797,10 @@ fn m062_a_helper_bone_lost_in_a_whole_lint_is_a_warning() {
     let f = run_against_anim(&rigged(&lose(&rig_bones(), &["head_end"]), &[("ponytail", [-6.0, 0.0, 60.0]), ("strap", [0.0, 10.0, 30.0])]), &valve, &[]);
     let m = m062(&f);
     assert!(m.len() == 1 && m[0].severity == Severity::Warn && m[0].message.starts_with("bone 'head_end' missing:"), "{f:#?}");
+    // a full skin's own mesh replaces what Valve's hung on the ponytail: a warning
     let f = run_against_anim(&rigged(&lose(&rig_bones(), &["ponytail"]), &[("strap", [0.0, 10.0, 30.0])]), &valve, &[]);
-    assert!(m062(&f).iter().any(|x| x.severity == Severity::Error && x.message.starts_with("bone 'ponytail' missing:")), "{f:#?}");
+    assert!(m062(&f).iter().any(|x| x.severity == Severity::Warn && x.message.starts_with("bone 'ponytail' missing:")), "{f:#?}");
+    // the model's own physics still naming the lost ragdoll bone: an error
+    let f = run_against_anim(&rigged(&lose(&rig_bones(), &["rag"]), &[("ponytail", [-6.0, 0.0, 60.0]), ("strap", [0.0, 10.0, 30.0])]), &valve, &[]);
+    assert!(m062(&f).iter().any(|x| x.severity == Severity::Error && x.message.starts_with("bone 'rag' missing, and this model itself")), "{f:#?}");
 }

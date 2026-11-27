@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn round_trip_keeps_depth_and_severity() {
         let all = vec![
-            f("M137", Some("models/heroes_wip/lash/lash.vmdl_c"), "absolute white\twith a tab"),
+            f("M131", Some("models/heroes_wip/lash/lash.vmdl_c"), "absolute white\twith a tab"),
             f("M050", None, "'x.vpk' should be pakNN_dir.vpk"),
         ];
         let (d, back) = read(&write(&all, Depth::Deep, "6864", "pak10_dir.vpk")).unwrap();

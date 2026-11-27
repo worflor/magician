@@ -49,7 +49,7 @@ const PROVEN: &[&str] = &[
     "M100", "M101", "M102", "M103", "M104", "M105", "M106", "M107", "M108", "M109", "M110", "M111", "M112", "M113",
     "M114", "M115", "M116", "M117", "M118", "M119", "M120", "M121", "M122", "M123", "M124", "M125", "M126", "M127",
     "M128", "M129", "M130", "M131", "M132", "M133", "M134", "M135", "M136", "M137", "M138", "M139", "M140",
-    "M141", "M142", "M143", "M144", "M145", "M146", "M147", "M148", "M149", "M150", "M151", "M160",
+    "M141", "M142", "M143", "M144", "M145", "M146", "M147", "M148", "M149", "M150", "M151", "M152", "M153", "M160", "M170",
 ];
 
 #[path = "mesh_fixtures.rs"]
@@ -71,8 +71,50 @@ fn clean_mod_is_silent() {
 #[test]
 fn m001_uppercase_path() {
     let g = game();
+    let m001 = |f: &[Finding]| f.iter().find(|x| x.code == "M001").cloned().unwrap();
+    // a file the game would look for (it replaces one), never found with its capitals: an error
     let f = run(vec![file("models/heroes_wip/lash/materials/Lash_Body.vmat_c", res(&[]))], Some(&g), None);
-    assert!(codes(&f).contains("M001"));
+    assert_eq!(m001(&f).severity, Severity::Error, "{f:?}");
+    // a new file the mod names: an error too
+    let f = run(vec![file(MODEL, res(&["models/heroes_wip/lash/materials/lash_new.vmat"])), file("models/heroes_wip/lash/materials/Lash_New.vmat_c", res(&[]))], Some(&g), None);
+    assert_eq!(m001(&f).severity, Severity::Error, "{f:?}");
+    // a leftover copy nothing names: never read, a warning that says to remove it
+    let f = run(vec![file("sounds/vo/lash/hello - Copy.vsnd_c", res(&[]))], Some(&g), None);
+    let x = m001(&f);
+    assert!(x.severity == Severity::Warn && x.message.contains("never looks this file up"), "{x:?}");
+    // one beside its lowercase twin: the lookup finds the twin
+    let f = run(vec![file("models/heroes_wip/lash/materials/lash_body.vmat_c", res(&[])), file("models/heroes_wip/lash/materials/Lash_Body.vmat_c", res(&[]))], Some(&g), None);
+    let x = m001(&f);
+    assert!(x.severity == Severity::Warn && x.message.contains("a copy of"), "{x:?}");
+    // with no game build to look in, it stays an error
+    let f = run(vec![file("sounds/vo/lash/hello - Copy.vsnd_c", res(&[]))], None, None);
+    assert_eq!(m001(&f).severity, Severity::Error);
+}
+
+#[test]
+fn m170_names_the_compiler_that_built_a_file() {
+    let clip = |v: i64| resource::synth_with(&[], &[resource::red2_block(&[("Animation Clip Compiler Version", v)])]);
+    let valve_clip = "models/heroes_wip/lash/clips/idle.vnmclip_c";
+    let mut g = game();
+    with(&mut g, &[valve_clip]);
+    let fake = Fake { files: HashMap::from([(valve_clip.to_string(), clip(21))]), ..Default::default() };
+    let at = |files: Vec<ModFile>| lint(&Input { vpk_name: "pak03_dir.vpk".into(), files, base: Some(&g), built_against: None, original_refs: no_originals(), game: Some(&fake), deep: false, fair_play: &policy::DEFAULT });
+    // two new clips an older kit compiled: one note, with the count, the versions and the kit's known cause
+    let f = at(vec![file("models/mine/a.vnmclip_c", clip(14)), file("models/mine/b.vnmclip_c", clip(14))]);
+    let m: Vec<&Finding> = f.iter().filter(|x| x.code == "M170").collect();
+    assert!(m.len() == 1 && m[0].severity == Severity::Info && m[0].message.contains("2 .vnmclip_c files") && m[0].message.contains("Animation Clip Compiler Version 14 where the game's own") && m[0].message.contains("carry 21") && m[0].message.contains("CSDK 12"), "{m:?}");
+    // clips of the game's own version, and Valve's own file against itself: nothing said
+    assert!(!at(vec![file("models/mine/a.vnmclip_c", clip(21))]).iter().any(|x| x.code == "M170"));
+    assert!(!at(vec![file(valve_clip, clip(21))]).iter().any(|x| x.code == "M170"));
+}
+
+#[test]
+fn m030_an_animgraph_1_reference_is_a_warning() {
+    let g = game();
+    let f = run(vec![file(MODEL, res(&["models/heroes_wip/lash/lash.vanmgrph", "models/heroes_wip/lash/gone.vmat"]))], Some(&g), None);
+    let m: Vec<&Finding> = f.iter().filter(|x| x.code == "M030").collect();
+    assert!(m.iter().any(|x| x.severity == Severity::Warn && x.message.contains("AnimGraph 1") && x.message.contains("lash.vanmgrph_c")), "{m:?}");
+    assert!(m.iter().any(|x| x.severity == Severity::Error && x.message == "needs 'models/heroes_wip/lash/gone.vmat_c'"), "a missing material stays an error: {m:?}");
 }
 
 #[test]
@@ -303,13 +345,45 @@ fn m061_still_fires_when_a_particle_loses_a_child_or_a_model_its_effect() {
 
 #[test]
 fn m070_ships_protected_file() {
-    let g = game();
-    for p in ["models/heroes_wip/lash/lash.vnmskel_c", "animgraphs/animgraph2/hero/lash/lash_loco_set_idle.vnmgraph_c", "scripts/heroes.vdata_c"] {
+    let (skel, graph, vdata) = ("models/heroes_wip/lash/lash.vnmskel_c", "animgraphs/animgraph2/hero/lash/lash_loco_set_idle.vnmgraph_c", "scripts/heroes.vdata_c");
+    let data = |t: &str| res_kv(&[], &[(b"DATA", kv(t))]);
+    let valve = [
+        (skel, data(r#"{ m_boneIDs = [ "root", "pelvis", "head" ] }"#)),
+        (graph, data(r#"{ m_controlParameterIDs = [ "forward_speed", "crouch_fraction" ] }"#)),
+        (vdata, data(r#"{ _include = [ "scripts/other.vdata" ] hero_lash = { m_bDisabled = false } hero_haze = { m_bDisabled = false } }"#)),
+    ];
+    let mut g = game();
+    with(&mut g, &[skel, graph, vdata]);
+    let fake = Fake { files: valve.iter().map(|(p, d)| (p.to_string(), d.clone())).collect(), ..Default::default() };
+    let one = |p: &str, d: Vec<u8>, base: &Baseline, game: Option<&Fake>| -> Finding {
         let mut files = clean();
-        files.push(file(p, res(&[])));
-        let f = run(files, Some(&g), None);
-        assert!(codes(&f).contains("M070"), "{p}: {:?}", codes(&f));
+        files.push(file(p, d));
+        let f = lint(&Input { vpk_name: "pak03_dir.vpk".into(), files, base: Some(base), built_against: None, original_refs: no_originals(), game: game.map(|x| x as &dyn Game), deep: false, fair_play: &policy::DEFAULT });
+        f.into_iter().find(|x| x.code == "M070").unwrap_or_else(|| panic!("{p}: no M070"))
+    };
+    // a copy that holds all Valve's current file has plays today: a warning that names patch day
+    for (p, d) in [
+        (skel, data(r#"{ m_boneIDs = [ "root", "pelvis", "head" ] }"#)),
+        (graph, data(r#"{ m_controlParameterIDs = [ "Forward_Speed", "crouch_fraction", "mine" ] }"#)),
+        (vdata, data(r#"{ hero_lash = { m_bDisabled = true } hero_haze = { m_bDisabled = false } }"#)),
+    ] {
+        let x = one(p, d, &g, Some(&fake));
+        assert!(x.severity == Severity::Warn && x.message.contains("plays today") && x.message.contains("patchday"), "{p}: {x:?}");
     }
+    // one that already lacks part of it is out of date now: an error that names what
+    let x = one(skel, data(r#"{ m_boneIDs = [ "root", "head" ] }"#), &g, Some(&fake));
+    assert!(x.severity == Severity::Error && x.message.contains("1 of Valve's bones missing (pelvis)"), "{x:?}");
+    let x = one(skel, data(r#"{ m_boneIDs = [ "root", "head", "pelvis" ] }"#), &g, Some(&fake));
+    assert!(x.severity == Severity::Error && x.message.contains("another order"), "{x:?}");
+    let x = one(graph, data(r#"{ m_controlParameterIDs = [ "forward_speed" ] }"#), &g, Some(&fake));
+    assert!(x.severity == Severity::Error && x.message.contains("lacks 1 control parameters the game sets") && x.message.contains("crouch_fraction"), "{x:?}");
+    let x = one(vdata, data(r#"{ hero_lash = { } }"#), &g, Some(&fake));
+    assert!(x.severity == Severity::Error && x.message.contains("lacks 1 entries") && x.message.contains("hero_haze"), "{x:?}");
+    // with no game to compare against it stays an error; at a path Valve does not ship it replaces nothing
+    let x = one(vdata, data("{ }"), &g, None);
+    assert!(x.severity == Severity::Error && x.message.contains("could not be compared"), "{x:?}");
+    let x = one("scripts/my_own.vdata_c", data("{ }"), &g, Some(&fake));
+    assert!(x.severity == Severity::Warn && x.message.contains("a path Valve does not ship"), "{x:?}");
 }
 
 #[test]
@@ -371,6 +445,8 @@ struct Fake {
     code: Option<std::collections::HashSet<String>>,
     /// The particles nothing in the game names (`unreached_particles`).
     unreached: Option<std::collections::HashSet<String>>,
+    /// Who outside a model names each bone (`bone_users`).
+    bones: Option<crate::carry::BoneUsers>,
 }
 impl Game for Fake {
     fn read(&self, path: &str) -> Option<Vec<u8>> {
@@ -396,6 +472,9 @@ impl Game for Fake {
     }
     fn unreached_particles(&self) -> Option<&std::collections::HashSet<String>> {
         self.unreached.as_ref()
+    }
+    fn bone_users(&self) -> Option<&crate::carry::BoneUsers> {
+        self.bones.as_ref()
     }
 }
 

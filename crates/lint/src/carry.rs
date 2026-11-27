@@ -19,7 +19,7 @@
 
 use crate::mesh::views::VIEW_UNIT;
 use resource::kv3::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 type V = [f64; 3];
 
@@ -111,6 +111,11 @@ pub struct Rig {
     /// Model-space bind transform of each bone (rotation row-major, translation).
     pub world: Vec<([[f32; 3]; 3], [f32; 3])>,
     pub load: Vec<Load>,
+    /// Every bone name the model itself names, in lowercase, with what names it: an attachment's influence, a hitbox,
+    /// a physics part, a cloth node, a mesh's bone list. A name here that the skeleton lacks is a reference to nothing.
+    pub named: BTreeMap<String, BTreeSet<String>>,
+    /// The model's attachment names, in lowercase.
+    pub attachment_names: BTreeSet<String>,
 }
 
 impl Rig {
@@ -149,7 +154,18 @@ pub fn rig(data: &[u8]) -> Result<Rig, String> {
         return Err("the model has no skeleton".into());
     }
     let n = m.skeleton.names.len();
-    let mut r = Rig { names: m.skeleton.names.clone(), parents: m.skeleton.parents.clone(), world: m.skeleton.world(), load: vec![Load::default(); n] };
+    let mut r = Rig { names: m.skeleton.names.clone(), parents: m.skeleton.parents.clone(), world: m.skeleton.world(), load: vec![Load::default(); n], ..Default::default() };
+    let name = |r: &mut Rig, bone: &str, what: String| {
+        r.named.entry(bone.to_ascii_lowercase()).or_default().insert(what);
+    };
+    for me in &m.meshes {
+        for b in &me.bones {
+            name(&mut r, &b.name, "its mesh's bone list (vertices are bound to it)".into());
+        }
+    }
+    for h in &m.hitboxes {
+        name(&mut r, &h.bone, format!("hitbox '{}/{}'", h.set, h.name));
+    }
     let at: Vec<V> = (0..n).map(|i| r.at(i)).collect();
     let (surfaces, _) = m.every_surface();
     for s in &surfaces {
@@ -194,6 +210,12 @@ pub fn rig(data: &[u8]) -> Result<Rig, String> {
             let weights = v.get("m_influenceWeights").map(Value::numbers).unwrap_or_default();
             let offsets: Vec<Vec<f64>> = v.get("m_vInfluenceOffsets").map(|x| x.as_array().iter().map(Value::numbers).collect()).unwrap_or_default();
             let used = v.get("m_nInfluences").and_then(Value::as_f64).map(|x| x.max(1.0) as usize).unwrap_or(infl.len());
+            if !name.is_empty() {
+                r.attachment_names.insert(name.to_ascii_lowercase());
+            }
+            for bone in infl.iter().take(used.min(3)) {
+                r.named.entry(bone.to_ascii_lowercase()).or_default().insert(format!("attachment '{name}'"));
+            }
             for (k, bone) in infl.iter().enumerate().take(used.min(3)) {
                 // a lone influence holds the attachment whatever weight it is written with (Valve writes 0 for some,
                 // and the compiler still marks the bone as used by an attachment)
@@ -211,12 +233,14 @@ pub fn rig(data: &[u8]) -> Result<Rig, String> {
     }
     if let Some(Ok(phys)) = resource::kv3_block(data, b"PHYS") {
         for bone in phys.get("m_boneNames").map(Value::as_array).unwrap_or(&[]).iter().filter_map(Value::as_str) {
+            r.named.entry(bone.to_ascii_lowercase()).or_default().insert("a physics part".into());
             if let Some(i) = r.index(bone) {
                 r.load[i].ragdoll = true;
             }
         }
         if let Some(c) = ::mesh::cloth::from_value(&phys) {
             for name in &c.names {
+                r.named.entry(name.to_ascii_lowercase()).or_default().insert("a cloth node".into());
                 if let Some(i) = r.index(name) {
                     r.load[i].cloth = true;
                 }
@@ -282,6 +306,8 @@ pub struct Motion {
     pub unread: Vec<String>,
     /// Where the bounded walk over the graphs stopped, when it did.
     pub stopped: Option<String>,
+    /// The anim graphs read on the way (compiled paths).
+    pub graphs: BTreeSet<String>,
 }
 
 /// The most anim graphs and clips `motion` reads for one model. A hero's graphs reach about 300 clips (6875).
@@ -416,6 +442,7 @@ pub fn motion(model: &[u8], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Mo
             }
             continue;
         }
+        m.graphs.insert(path.clone());
         let Ok(r) = resource::parse(&bytes) else { continue };
         for e in &r.ext_refs {
             let p = e.compiled_path();
@@ -577,6 +604,52 @@ fn quaternion(w: &[u16]) -> [f64; 4] {
     }
 }
 
+// ------------------------------------------------------------------------------- who outside the model names a bone
+
+/// The bone users of a build (`magician index` writes them beside the users index, `bone_users.tsv`): every name a
+/// file outside a model names as a bone, with the kind of file (`graph`, `clip`, `particle`, `vdata`, or `code` for
+/// a string the game's client library holds), the key it sits under and the file. Names are lowercase: the engine
+/// finds a bone by name, case aside.
+///
+/// What the index found on 6880: only the anim graphs name bones (`m_boneID`, `m_effectorBoneID`,
+/// `m_followTargetBone`, `m_bone`, `m_endEffectorBoneID`: IK targets, follow targets, root motion); particles, vdata
+/// and clips name attachments and hitbox sets, never a bone. A graph poses the animation skeleton (`.vnmskel`), not
+/// the model: Valve's own hero models lack bones their graphs name (`weaponHand_L` and `weaponHand_R` on most heroes,
+/// leg IK targets on one) and those heroes play. The client code holds 154 of the names on Valve's hero models, and
+/// Valve's models carry 153 of them (the other is an attachment's name on an effect model).
+#[derive(Debug, Clone, Default)]
+pub struct BoneUsers {
+    pub by_name: HashMap<String, Vec<(String, String, String)>>,
+    /// Whether the client library was read when the file was written (`code=yes`): without it, whether the code names
+    /// a bone is unknown.
+    pub code_read: bool,
+}
+
+/// The bone users file's format; one written in another is not read.
+pub const BONE_USERS_REV: u32 = 1;
+
+impl BoneUsers {
+    /// Read `bone_users.tsv`: `None` when it is not one, or is in another format.
+    pub fn parse(text: &str) -> Option<BoneUsers> {
+        let head = text.lines().next()?;
+        if !head.starts_with("# magician bone users ") || !head.split_whitespace().any(|w| w == format!("rev={BONE_USERS_REV}")) {
+            return None;
+        }
+        let mut u = BoneUsers { code_read: head.split_whitespace().any(|w| w == "code=yes"), ..Default::default() };
+        for l in text.lines().skip(1) {
+            let p: Vec<&str> = l.split('\t').collect();
+            if let [name, kind, key, path] = p[..] {
+                u.by_name.entry(name.to_string()).or_default().push((kind.to_string(), key.to_string(), path.to_string()));
+            }
+        }
+        Some(u)
+    }
+
+    fn of(&self, name: &str) -> &[(String, String, String)] {
+        self.by_name.get(&name.to_ascii_lowercase()).map(Vec::as_slice).unwrap_or(&[])
+    }
+}
+
 // ------------------------------------------------------------------------------- the judgement
 
 /// Said of a lost or reparented bone whose loss or new parent changes nothing a player sees: the mark of an M062 finding
@@ -622,6 +695,97 @@ fn rot_angle(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> f64 {
     ((tr - 1.0) / 2.0).clamp(-1.0, 1.0).acos().to_degrees()
 }
 
+/// A bone Valve's model has and ours lacks, judged by who still names it: a full skin brings its own mesh, cloth and
+/// ragdoll, so what Valve's model hung on the bone is not in the mod, and what can break is something that looks the
+/// bone up by name. That is this model itself (an attachment riding it, a hitbox, a physics part or cloth node, a
+/// mesh's bone list: each a reference to a bone the skeleton no longer has), or the game's client code, which holds
+/// the name as a string (what it looks up by it is UNVERIFIED), unless the model has an attachment of that name for
+/// the lookup to find. Either is an error that names what. The hero's anim graphs name bones too, but they pose the
+/// animation skeleton, which the model does not change, and Valve's own models lack bones their graphs name: said,
+/// never an error. With no bone users index, who names the bone is unknown, and unknown is not clean: an error that
+/// says so.
+fn lost_bone(msg: &str, name: &str, ours: Option<&Rig>, v: &Rig, vi: usize, motion: &Result<Motion, String>, users: Option<&BoneUsers>) -> String {
+    let clips = |m: &Motion| format!("its {} animation {}", m.clips, if m.clips == 1 { "clip" } else { "clips" });
+    let lower = name.to_ascii_lowercase();
+    let anim = match motion {
+        Ok(m) => match (m.index(name), m.incomplete()) {
+            (None, _) => "its animation skeleton has no such bone".into(),
+            (Some(_), Some(why)) => format!("how its clips move it is not known: {why}"),
+            (Some(a), None) => format!("in {} it {}", clips(m), m.moved[a].describe()),
+        },
+        Err(e) => format!("its animation could not be read: {e}"),
+    };
+    let hung = &v.load[vi];
+    let valve_had = if hung.is_empty() {
+        "Valve's model hangs nothing on it".to_string()
+    } else {
+        let mut why = Vec::new();
+        if hung.vertices > 0 || hung.cloth || hung.ragdoll {
+            why.push("its mesh, cloth and ragdoll are the mod's own now");
+        }
+        if !hung.attachments.is_empty() {
+            why.push("an attachment is judged on its own");
+        }
+        if !hung.hitboxes.is_empty() {
+            why.push("the hitboxes are compared on their own, as fair play");
+        }
+        format!("Valve's model hangs {} on it ({})", hung.describe(), why.join("; "))
+    };
+    // what in this model still names it: a reference to a bone its skeleton lacks
+    let inner: Vec<String> = ours.and_then(|o| o.named.get(&lower)).map(|s| s.iter().cloned().collect()).unwrap_or_default();
+    let Some(users) = users else {
+        let also = if inner.is_empty() { String::new() } else { format!("; this model still names it in {}", list(&inner)) };
+        return format!(
+            "{msg}: {valve_had}, and who outside the model names it could not be checked: there is no bone users index for this build (`magician index` builds it){also}; {anim}"
+        );
+    };
+    let named = users.of(name);
+    let attachment_here = ours.is_some_and(|o| o.attachment_names.contains(&lower));
+    let code = named.iter().any(|(k, _, _)| k == "code") && !attachment_here;
+    let in_play = |p: &str| motion.as_ref().map_or(true, |m| m.graphs.contains(p));
+    let mut graph_keys: Vec<String> = named.iter().filter(|(k, _, p)| k == "graph" && in_play(p)).map(|(_, key, _)| key.clone()).collect();
+    graph_keys.sort();
+    graph_keys.dedup();
+    let graphs = if graph_keys.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "; the hero's anim graphs name it ({}), but they pose the animation skeleton, which the model does not change, and Valve's own models lack bones their graphs name and play",
+            graph_keys.join(", ")
+        )
+    };
+    let mut who = Vec::new();
+    if !inner.is_empty() {
+        who.push(format!("this model itself ({})", list(&inner)));
+    }
+    if code {
+        who.push("the game's client code (it holds the name as a string and may look the bone up by it: UNVERIFIED)".to_string());
+    }
+    if who.is_empty() && !users.code_read {
+        return format!(
+            "{msg}: {valve_had}, and whether the game's client code names it could not be checked: the bone users index was written without the client library; {anim}"
+        );
+    }
+    if who.is_empty() {
+        return format!("{msg}: nothing outside the model looks it up as a bone, and the model names it nowhere; {valve_had}{graphs}; {anim}; {NOTHING_CHANGES}");
+    }
+    format!(
+        "{msg}, and {} still name{} it: what is placed by it has no bone to follow and goes to the model's origin or is not found (UNVERIFIED in game); {}; {valve_had}{graphs}; {anim}",
+        who.join(", and "),
+        if who.len() == 1 { "s" } else { "" },
+        if inner.is_empty() { "put the bone back under Valve's name" } else { "put the bone back under Valve's name, or move what names it onto a bone the model has" }
+    )
+}
+
+/// `a`, `a and b`, `a, b and c`.
+fn list(v: &[String]) -> String {
+    match v.len() {
+        0 => String::new(),
+        1 => v[0].clone(),
+        n => format!("{} and {}", v[..n - 1].join(", "), v[n - 1]),
+    }
+}
+
 /// M062's bone breaches judged by what hangs on the bone: `ours` and `valve` are the two models' bytes, `read` the
 /// game's files (for the hero's animation). A lost bone that Valve's model hangs nothing on, with nothing it hangs
 /// anything on lost below it, says so and is a warning; one that carries something says what, and stays an error. A
@@ -632,7 +796,7 @@ fn rot_angle(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> f64 {
 /// it is a warning; past that, an error that says how far and what. A mod that ships the animation skeleton itself
 /// (`ships`, a path in the mod) moves the bone its own way, which Valve's files cannot judge: its reparented bones stay
 /// errors that say so. Every other breach is returned as it is.
-pub fn judge(breaches: Vec<String>, ours: &[u8], valve: &[u8], read: &dyn Fn(&str) -> Option<Vec<u8>>, ships: &dyn Fn(&str) -> bool) -> Vec<String> {
+pub fn judge(breaches: Vec<String>, ours: &[u8], valve: &[u8], read: &dyn Fn(&str) -> Option<Vec<u8>>, ships: &dyn Fn(&str) -> bool, users: Option<&BoneUsers>) -> Vec<String> {
     let bone = |m: &str| m.strip_prefix("bone '").and_then(|r| r.split_once('\'')).map(|(n, rest)| (n.to_string(), rest.starts_with(" missing")));
     if !breaches.iter().any(|m| bone(m).is_some()) {
         return breaches;
@@ -656,33 +820,7 @@ pub fn judge(breaches: Vec<String>, ours: &[u8], valve: &[u8], read: &dyn Fn(&st
             let Ok(v) = &vr else { return msg };
             let Some(vi) = v.index(&name) else { return msg };
             if lost {
-                let o = or.as_ref().ok();
-                let mut carried = v.load[vi].clone();
-                let gone: Vec<usize> = v.below(vi).into_iter().filter(|&d| o.is_none_or(|o| o.index(&v.names[d]).is_none()) && !v.load[d].is_empty()).collect();
-                let anim = match &motion {
-                    Ok(m) => match (m.index(&name), m.incomplete()) {
-                        (None, _) => "its animation skeleton has no such bone".into(),
-                        (Some(_), Some(why)) => format!("how its clips move it is not known: {why}"),
-                        (Some(a), None) => format!("in {} it {}", clips(m), m.moved[a].describe()),
-                    },
-                    Err(e) => format!("its animation could not be read: {e}"),
-                };
-                if carried.is_empty() && gone.is_empty() {
-                    return format!(
-                        "{msg}: Valve's model hangs nothing on it (no vertex, hitbox, attachment, cloth or ragdoll part, on it or on a bone lost with it), and {anim}; {NOTHING_CHANGES}"
-                    );
-                }
-                let own = if carried.is_empty() { "nothing".to_string() } else { carried.describe() };
-                let mut below = String::new();
-                if !gone.is_empty() {
-                    let shown: Vec<String> = gone.iter().take(3).map(|&d| format!("'{}' ({})", v.names[d], v.load[d].describe())).collect();
-                    let more = if gone.len() > 3 { format!(" and {} more", gone.len() - 3) } else { String::new() };
-                    below = format!(", and below it, lost with it, {}{more}", shown.join(", "));
-                    for &d in &gone {
-                        carried.add(&v.load[d]);
-                    }
-                }
-                return format!("{msg}: Valve's model hangs {own} on it{below}; {anim}");
+                return lost_bone(&msg, &name, or.as_ref().ok(), v, vi, &motion, users);
             }
 // reparented: judged by what this model hangs on it, since that is what can move differently
             let Ok(o) = &or else { return msg };

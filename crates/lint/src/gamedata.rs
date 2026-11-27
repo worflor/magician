@@ -110,7 +110,7 @@ pub fn judge(ours: &[u8], valve: &[u8], ours_has: &dyn Fn(&str) -> bool) -> Vec<
     if let Some(v) = vs.first() {
         let lower = |x: &[String]| x.iter().map(|s| s.to_ascii_lowercase()).collect::<Vec<_>>();
         if os.is_empty() {
-            out.push(format!("animation skeleton: none, Valve's model names '{v}' (m_vecNmSkeletonRefs): its clips have no skeleton to play on, so the model stands in its bind pose (the A-pose); compile the final model with its AnimGraph 2 references, which write it"));
+            out.push(format!("animation skeleton: none, Valve's model names '{v}' (m_vecNmSkeletonRefs): its clips have no skeleton to play on, so the model stands in its bind pose (the A-pose); compile the final model with its AnimGraph 2 references, which write it (a known kit cause: CSDK 12 cannot compile AnimGraph 2 references into a model, the community pages say; CSDK 13 can)"));
         } else if lower(&os) != lower(&vs) {
             out.push(format!("animation skeleton: '{}', Valve's model names '{}': its clips are posed on another skeleton than the one its graphs were made for, and it can stand in its bind pose or twist (the A-pose); name Valve's skeleton", os.join("', '"), vs.join("', '")));
         }
@@ -119,7 +119,7 @@ pub fn judge(ours: &[u8], valve: &[u8], ours_has: &dyn Fn(&str) -> bool) -> Vec<
         if !og.iter().any(|(_, o)| o.eq_ignore_ascii_case(g)) {
             let what = if id.eq_ignore_ascii_case("ui") { "the hero page and the shop show it unanimated, in its bind pose" } else { "it does not animate in a match: the A-pose, and it does not turn" };
             let named = if id.is_empty() { String::new() } else { format!(" (identifier '{id}')") };
-            out.push(format!("anim graph '{g}'{named} missing from m_animGraph2Refs, which Valve's model names: {what}; compile the final model with Valve's AnimGraph 2 references"));
+            out.push(format!("anim graph '{g}'{named} missing from m_animGraph2Refs, which Valve's model names: {what}; compile the final model with Valve's AnimGraph 2 references (a known kit cause: CSDK 12 cannot compile them into a model, the community pages say; CSDK 13 can)"));
         }
     }
 
