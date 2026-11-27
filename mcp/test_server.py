@@ -104,7 +104,7 @@ def main():
     r = c.call("rules", {})["result"]
     d = r["structuredContent"]
     check(r["isError"] is False and d["count"] > 50 and len(d["rules"]) == d["count"], "rules: %d rules" % d["count"])
-    check(d["schema"] == "magician.rules/1" and set(d["rules"][0]) == {"code", "name", "severity", "in_game"}, "rules: schema and object shape")
+    check(d["schema"] == "magician.rules/1" and set(d["rules"][0]) == {"code", "name", "severity", "fair_play", "in_game"}, "rules: schema and object shape")
     check(any(x["code"] == "M129" and x["severity"] == "error" for x in d["rules"]), "rules: M129 is an error")
     check(json.loads(r["content"][0]["text"]) == d, "rules: text content equals structuredContent")
 

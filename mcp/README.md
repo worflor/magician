@@ -29,7 +29,7 @@ Seventeen tools:
 |---|---|---|
 | `check` | `mod` (its folder or `mod.toml`), `light`, `policy` | the mod's one verdict on the installed build (`magician.check/1`): `verdict` (ok, re-prove, broken), `label`, `steps[]` (lint, grade, drift, scene, each with its state), the grade record, `next[]`; `ok` when the verdict is ok. The first call on a new build may capture its baseline into the reference folder |
 | `doctor` | `mod` | read-only: is this machine ready (`magician.doctor/1`): `checks[]` (name, state ok, todo, skip or fail, detail, fix), `failing`, `todo`; `ok` when nothing fails |
-| `rules` | | every lint rule: code, name, severity, in_game (`magician.rules/1`) |
+| `rules` | | every lint rule: code, name, severity, fair_play, in_game (`magician.rules/1`) |
 | `lint` | `vpk`, `deep`, `allow`, `policy` | the lint run (`magician.lint/1`): `findings[]` (code, name, severity, path, message, allowed, reason), `counts`, `stale_allowances`, `depth`, `build`; `ok` when no error |
 | `mesh` | `vpk`, `model`, `against`, `with[]` | `verdict` (PASS / ATTENTION / FAIL), `silhouettes[]` (each view against Valve's: `percent_of_valve`, IoU, pixels added and lost), `findings[]` with in_game, `report_head` (LODs and the rest of the text report). No PNG is written |
 | `cloth` | `vpk`, `model`, `against`, `shapes` | `summary[]` (field, ours, valve) and the full per-chain `report` |

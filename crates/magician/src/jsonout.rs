@@ -104,12 +104,16 @@ pub fn rules() -> String {
     rules_where(|_| true)
 }
 
-/// The catalogue as `magician.rules/1`, the rules `keep` takes by code.
+/// The catalogue as `magician.rules/1`, the rules `keep` takes by code. `fair_play` says the rule is judged on the
+/// fair-play axis rather than as a break (M062 for its hitboxes only, and M144, the check that could not run).
 pub fn rules_where(keep: impl Fn(&str) -> bool) -> String {
     let items: Vec<String> = RULES
         .iter()
         .filter(|r| keep(r.code))
-        .map(|r| format!("{{\"code\":{},\"name\":{},\"severity\":{},\"in_game\":{}}}", s(r.code), s(r.name), s(severity(r.severity)), s(r.in_game)))
+        .map(|r| {
+            let fair = grade::rubric::FAIR_PLAY_RULES.contains(&r.code) || r.code == grade::rubric::UNCHECKED;
+            format!("{{\"code\":{},\"name\":{},\"severity\":{},\"fair_play\":{fair},\"in_game\":{}}}", s(r.code), s(r.name), s(severity(r.severity)), s(r.in_game))
+        })
         .collect();
     format!("{{\"schema\":\"magician.rules/1\",\"rules\":[{}]}}\n", items.join(","))
 }
@@ -123,6 +127,8 @@ mod tests {
         let j = rules();
         assert!(j.starts_with("{\"schema\":\"magician.rules/1\",\"rules\":[{\"code\":\"M001\",\"name\":\"path-case\",\"severity\":\"error\""));
         assert!(j.trim_end().ends_with("}]}"));
+        assert!(j.contains("\"code\":\"M124\",\"name\":\"silhouette-fair-play\",\"severity\":\"error\",\"fair_play\":true,") && j.contains("\"code\":\"M144\",\"name\":\"fair-play-unchecked\",\"severity\":\"warn\",\"fair_play\":true,"), "{j}");
+        assert!(j.contains("\"code\":\"M030\",\"name\":\"dangling-ref\",\"severity\":\"error\",\"fair_play\":false,"), "{j}");
     }
 
     #[test]
