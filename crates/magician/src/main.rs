@@ -278,8 +278,9 @@ Every command:
                                                 the last build a proof holds its installed bytes on (proofs.tsv; owners it installs
                                                 under other names in [mod] owners = [...]), `proven on N of M`, and per
                                                 era whether the engine changed too (`data only` / `engine too`, from
-                                                engine.tsv). --verify-engine detects changes within the installed build
-                                                and refuses stale engine evidence. Exit 1 broken, 4 re-prove,
+                                                engine.tsv). --verify-engine measures the installed engine against the
+                                                build's sidecar: a hotfix within the build re-proves every installed mod.
+                                                Exit 1 broken, 4 re-prove,
                                                 0 clear. The mods: each --mod, else every mod under MAGICIAN_MODS (or
                                                 `mods =`), else the nearest folder, from the working one upward, with
                                                 mod.toml files one or two levels below it
