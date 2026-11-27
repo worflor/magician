@@ -1079,10 +1079,10 @@ fn m062_reads_the_hero_s_game_data_against_valve_s() {
     let caps: Vec<(&str, &str)> = vec![HERO_GRAPHS[0], ("UI", HERO_GRAPHS[1].1)];
     assert!(hero_findings(hero(&reworded, &[HERO_SKEL], &caps, 90.0, 90.0), None).is_empty(), "{:?}", hero_findings(hero(&reworded, &[HERO_SKEL], &caps, 90.0, 90.0), None));
 
-    // a CSDK 12 compile: the unit status written as a list. The health bar at the feet: an error
+    // a CSDK 12 compile: the unit status written as a list. No place for the bar (seen on 6880 for a missing block): an error
     let list = GAMEDATA.replace("CitadelUnitStatusSettings_t = {", "CitadelUnitStatusSettings_t = [ {").replace("\"healthbar\" }", "\"healthbar\" } ]");
     let f = hero_findings(hero(&list, &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0), None);
-    assert!(f.len() == 1 && f[0].message.contains("is a list") && f[0].message.contains("feet") && f[0].severity == Severity::Error, "{f:?}");
+    assert!(f.len() == 1 && f[0].message.contains("is a list") && f[0].message.contains("no place for its health bar") && f[0].severity == Severity::Error, "{f:?}");
     // the tagged sounds gone: footsteps silent, a hidden cue (fair play: `rubric::is_fair_play` reads "tagged sounds")
     let silent = GAMEDATA.replace(r#"TaggedSoundSettings_t = { m_taggedSounds = [ resource:"scripts/tagged_sounds/haze_anim_sounds.vdata" ] }"#, "");
     let f = hero_findings(hero(&silent, &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0), None);

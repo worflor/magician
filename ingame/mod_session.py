@@ -398,6 +398,9 @@ def _up(st, o, mod):
             shot(os.path.join(st["out"], "harness_fail_enter.png"))
             raise Stop(7, f"{st['hero']} never loaded")
         say(f"{st['hero']} loaded")
+        # from 6880 the sandbox hero spawns with no ability learned, and +in_abilityN casts nothing until one is:
+        # the testing tools' All Upgrades (their own console command) learns and upgrades every ability
+        con.run("giveallupgrades")
     st["take"] = newest_take(st["launched_at"]) if not (o.get("no-tv") or o.get("menu")) else None
     st["up"] = True
     save(st)

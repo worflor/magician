@@ -10,7 +10,7 @@
 //!   `TaggedSoundSettings_t` (the tagged-sound sets the animations play: footsteps, effort, ability sounds),
 //!   `CitadelCameraSettings_t` (the third-person camera's offsets), `AttachmentCameraData` (which attachments are
 //!   camera poses), and more. A CSDK 12 compile writes the unit-status block as an array where the game reads one
-//!   object: the health bar at the feet.
+//!   object, which is as good as none: a goo ball without the block was seen with no bar at all (6880).
 //! - its camera attachments, the ones the game names: listed in `AttachmentCameraData`, or held in the hero's own
 //!   frame and named by the game's client code (`standing_pivot`, `crouching_pivot`). Those are held to Valve's numbers
 //!   within `mesh::rules::CAMERA_ATTACH_STEP`, far tighter than the two decimals the contract prints.
@@ -130,8 +130,8 @@ pub fn judge(ours: &[u8], valve: &[u8], ours_has: &dyn Fn(&str) -> bool) -> Vec<
         let ob = ogd.get(block);
         match block.as_str() {
             "CitadelUnitStatusSettings_t" => match ob {
-                None => out.push(format!("game data: {block} missing, which Valve's model has: the game has no place for the unit's health bar, status and damage numbers and draws them at its feet; copy Valve's block into the model's GameDataList")),
-                Some(Value::Array(_)) => out.push(format!("game data: {block} is a list where the game reads one block (what a CSDK 12 compile writes): the game does not read it, and the health bar, status and damage numbers sit at the unit's feet; write it as one block, as Valve's model has it")),
+                None => out.push(format!("game data: {block} missing, which Valve's model has: the game has no place for the unit's health bar, status and damage numbers (seen on 6880: a goo ball without it shows no bar where Valve's shows one above the ball); copy Valve's block into the model's GameDataList")),
+                Some(Value::Array(_)) => out.push(format!("game data: {block} is a list where the game reads one block (what a CSDK 12 compile writes): the game does not read it, so the unit has no place for its health bar, status and damage numbers, as when the block is missing; write it as one block, as Valve's model has it")),
                 Some(ob) => {
                     let key = "m_strUnitStatusAttachmentName";
                     let (oa, va) = (ob.get(key).and_then(Value::as_str).unwrap_or(""), vb.get(key).and_then(Value::as_str).unwrap_or(""));
