@@ -272,13 +272,14 @@ Every command:
   magician drift <mod.vpk>... --from <build> [--to <build>] [--json]
                                                 what changed under a mod since the build it was proven on (bones and graph
                                                 parameters too, when both builds have a rig.tsv); exit 1 broken, 4 re-prove
-  magician patchday [--from <build>] [--capture] [--mod <mod.toml>]... [--json]
+  magician patchday [--from <build>] [--capture] [--verify-engine] [--mod <mod.toml>]... [--json]
                                                 the patch-day check: baseline for the installed build (--capture writes it),
                                                 install state, every installed pak's drift grouped by mod and compared from
                                                 the last build a proof holds its installed bytes on (proofs.tsv; owners it installs
                                                 under other names in [mod] owners = [...]), `proven on N of M`, and per
                                                 era whether the engine changed too (`data only` / `engine too`, from
-                                                engine.tsv; it never changes the verdict); exit 1 broken, 4 re-prove,
+                                                engine.tsv). --verify-engine detects changes within the installed build
+                                                and refuses stale engine evidence. Exit 1 broken, 4 re-prove,
                                                 0 clear. The mods: each --mod, else every mod under MAGICIAN_MODS (or
                                                 `mods =`), else the nearest folder, from the working one upward, with
                                                 mod.toml files one or two levels below it
@@ -601,7 +602,7 @@ const COMMANDS: &[&str] = &[
 
 /// Options that take no value. Every other `--option` takes the argument after it, so `positional` skips that one.
 const SWITCHES: &[&str] = &[
-    "--deep", "--light", "--gate", "--timings", "--capture", "--all", "--force", "--status", "--no-compile", "--force-compile", "--no-wait",
+    "--deep", "--light", "--gate", "--timings", "--capture", "--verify-engine", "--all", "--force", "--status", "--no-compile", "--force-compile", "--no-wait",
     "--ignore-game", "--dry-run", "--summary", "--list", "--shapes", "--no-png", "--verbose", "--check", "--describe", "--updates",
 ];
 
@@ -776,7 +777,7 @@ fn capture_era(game: &Path, b: &Baseline, out: &Path) -> Result<Vec<String>, Str
 /// The engine sidecar (`engine.tsv`): size and sha256 of every executable, library and shader archive the build ships
 /// (patchday.rs, `Engine`), and of `gameinfo.gi` as shipped: the citadel one from its stock backup of this build, or
 /// as it is when no install has edited it; otherwise recorded as not known, never guessed.
-fn capture_engine(game: &Path, build: &str, out: &Path) -> Result<String, String> {
+fn measure_engine(game: &Path, build: &str) -> Result<patchday::Engine, String> {
     let mut e = patchday::Engine { build: build.to_string(), ..Default::default() };
     for (rel, abs) in patchday::engine_files(game) {
         let bytes = std::fs::read(&abs).map_err(|err| format!("{}: {err}", abs.display()))?;
@@ -789,16 +790,22 @@ fn capture_engine(game: &Path, build: &str, out: &Path) -> Result<String, String
     } else {
         std::fs::read_to_string(ip.gameinfo()).ok().filter(|t| install::add_addons_search_path(t).ok().flatten().is_some()).and_then(|_| stock(&ip.gameinfo()))
     };
-    let mut unknown = "";
     if ip.gameinfo().is_file() {
-        if citadel_gi.is_none() {
-            unknown = "; citadel/gameinfo.gi not known as shipped (an install edited it and no stock backup of this build exists)";
-        }
         e.files.insert("citadel/gameinfo.gi".into(), citadel_gi);
     }
     if let Some(core) = stock(&game.join("core").join("gameinfo.gi")) {
         e.files.insert("core/gameinfo.gi".into(), Some(core));
     }
+    Ok(e)
+}
+
+fn capture_engine(game: &Path, build: &str, out: &Path) -> Result<String, String> {
+    let e = measure_engine(game, build)?;
+    let unknown = if e.files.get("citadel/gameinfo.gi").is_some_and(Option::is_none) {
+        "; citadel/gameinfo.gi not known as shipped (an install edited it and no stock backup of this build exists)"
+    } else {
+        ""
+    };
     let mut text = Vec::new();
     e.write(&mut text).map_err(|err| err.to_string())?;
     install::write_atomic(out, &text).map_err(|err| format!("{}: {err}", out.display()))?;

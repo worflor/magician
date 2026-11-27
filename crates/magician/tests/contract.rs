@@ -328,6 +328,14 @@ fn patchday_says_per_era_whether_the_engine_changed_too() {
     assert!(out.contains("\"engine\":[{\"from\":\"6864\",\"to\":\"6866\",\"changed\":[\"bin/win64/engine2.dll\"],\"added\":[],\"removed\":[],\"unknown\":[\"citadel/gameinfo.gi\"],\"state\":\"engine-too\"}"), "{out}");
     let o = magician(&d, &["patchday", "--game", &g, "--mod", &ts]);
     assert!(String::from_utf8_lossy(&o.stdout).contains("engine 6864 -> 6866: engine too: 1 file(s) changed, added or removed: bin/win64/engine2.dll (1 not known"),"{}", text(&o));
+    // A same-build engine replacement leaves the asset table alone and must keep the original sidecar.
+    let hotfix_sidecar = d.join("reference").join("6866").join("engine.tsv");
+    let prior = std::fs::read(&hotfix_sidecar).unwrap();
+    std::fs::write(bin.join("engine2.dll"), b"engine v3").unwrap();
+    let o = magician(&d, &["patchday", "--game", &g, "--mod", &ts, "--verify-engine", "--json"]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(String::from_utf8_lossy(&o.stdout).contains("\"engine_sidecar\":{\"state\":\"stale\""), "{}", text(&o));
+    assert_eq!(std::fs::read(hotfix_sidecar).unwrap(), prior);
     // an era captured before the sidecar existed: no record, never a guess
     std::fs::remove_file(&engine).unwrap();
     let o = magician(&d, &["patchday", "--game", &g, "--mod", &ts]);
