@@ -334,7 +334,7 @@ Nobody has seen a lost bone the code names, or an attachment riding a lost bone,
 | M030, an AnimGraph 1 graph (`.vanmgrph`) | 153 errors, 29 mods | 153 warnings | No build ships an AnimGraph 1 graph and none of Valve's files names one. The hero animates from the model's AnimGraph 2 references, which M062 judges. Every other M030 (3,046, sounds most of them) stays an error. |
 | M137 albedo-absolute | 57 errors, 38 mods (6 skins broken by it alone) | 57 warnings | A look: the game draws the colours it is given. 12 of Valve's 78 hero models with hitboxes are past the line on their own art (Mirage 18.2% black, Haze 12.4% black, Geist 64% white). |
 | M070 ships-protected-file | 110 errors, 33 mods | 6 errors, 104 warnings | Judged against Valve's file at the same path. Errors: 5 animation skeletons that lack Valve's bones (`attachWorld`, `weapon_hand_R`) and one `generic_data.vdata` that lacks 14 of Valve's entries. Warnings: 59 at paths Valve does not ship (the CSDK's `image_compiler.vdata` most of them), and 45 copies that hold everything Valve's file has, which play until a patch changes Valve's file. A key that starts with `_` (`_include`) is the file's own bookkeeping. |
-| M001 path-case | 14 errors, 6 mods | 2 errors, 12 warnings | Nothing names the 12 (`- Copy` files, an exported folder, a renamed old event file, a loose image) and they replace no game file, so the game never looks them up. The 2 errors are fonts under `panorama/fonts/`, which Panorama finds by folder (UNVERIFIED either way). |
+| M001 path-case | 14 errors, 6 mods | 2 errors, 12 warnings | Nothing names the 12 (`- Copy` files, an exported folder, a renamed old event file, a loose image) and they replace no game file, so the game never looks them up. The 2 errors were fonts under `panorama/fonts/`; the next round found that Panorama reads fonts from disk, not from a pak, and made them warnings. |
 | M139 alpha-coverage-gameplay | 15 errors, 7 mods | 15 warnings | A look, as M138 at 8 m is. No material on Valve's 78 hero models is past it at 4 m, so it still says something Valve's art does not do. |
 
 Tests: `m001_uppercase_path`, `m030_an_animgraph_1_reference_is_a_warning`, `m070_ships_protected_file` (both sides of every kind), and the severity checks in `m136_m137_albedo` and `m138_m139_alpha_coverage`.
@@ -365,7 +365,7 @@ Clips, graphs and skeletons of an older version name CSDK 12, whose AnimGraph 2 
 
 ### M031 and the scripts a compiled layout names
 
-The dogfood lane found M031 on 15 of 23 files of one HUD mod: its own scripts, which its replaced `hud.vxml` loads. The game's compile keeps a layout's tree LZ4-compressed in its `LaCo` block, so the earlier fix's scan of the raw bytes saw `cripts/aspect_ratio.vj` and not the path. The tree is now decoded and its strings read as Panorama names (`panorama/scripts/aspect_ratio.vjs_c` under SCRIPTS). On the 12 HUD mods that had Panorama findings: scripts 294 to 9, styles 84 to 37, images 149 to 141; vector images and materials are unchanged (21, 4). The 9 scripts left are tool scripts and older numbered copies of a bootstrap that nothing names; the 37 styles are named by no file of the mod and are not Valve's paths, and whether one of Valve's own layouts asks for them was not searched. Test: `m031_counts_the_scripts_a_compiled_layout_tree_names` (the fixture's KV3 is written uncompressed, so it holds the read, not the codec).
+The dogfood lane found M031 on 15 of 23 files of one HUD mod: its own scripts, which its replaced `hud.vxml` loads. The game's compile keeps a layout's tree LZ4-compressed in its `LaCo` block, so the earlier fix's scan of the raw bytes saw `cripts/aspect_ratio.vj` and not the path. The tree is now decoded and its strings read as Panorama names (`panorama/scripts/aspect_ratio.vjs_c` under SCRIPTS). On the 12 HUD mods that had Panorama findings: scripts 294 to 9, styles 84 to 37, images 149 to 141; vector images and materials are unchanged (21, 4). The 9 scripts left are tool scripts and older numbered copies of a bootstrap that nothing names; the 37 styles are named by no file of the mod and are not Valve's paths; the next round searched Valve's own layouts and stylesheets for them and found none that does. Test: `m031_counts_the_scripts_a_compiled_layout_tree_names` (the fixture's KV3 is written uncompressed, so it holds the read, not the codec).
 
 ### Drift and the mod's own contract
 
@@ -373,7 +373,7 @@ The dogfood lane found `drift` calling a mod's long-standing hitbox changes BROK
 
 ### What stays UNVERIFIED
 
-Nothing here was seen in game (another lane holds the seat): what the client code looks up by a bone's name, where an attachment riding a lost bone ends up, whether an older compiler version plays as made, the error material on a bare-named draw, how Panorama finds a font, and how a copy of an older skeleton, graph or vdata fails. Lint judgement revision 7.
+Nothing here was seen in game (another lane holds the seat): what the client code looks up by a bone's name, where an attachment riding a lost bone ends up, whether an older compiler version plays as made, the error material on a bare-named draw, and how a copy of an older skeleton, graph or vdata fails. Lint judgement revision 7.
 
 ## The 6877 round in game (6880)
 
@@ -396,3 +396,106 @@ What the 6877 round left UNVERIFIED, put to the game. The game moved to 6880 bef
 Rule changes: M042 also says a replaced layout's panel types the game no longer registers (in neither Valve's layout at that path nor the client or Panorama UI library's strings), an error; on the corpus that is 6 paks of 3 mods (one HUD mod in four variants, another HUD collection, a config pack's settings popup), every one already broken by another rule, so no verdict changes. Its id error now says what the game does. M065 is a note, with what was heard. M160's and M084's texts say what was seen. Tests: `m042_a_replaced_layout_uses_a_panel_type_the_game_no_longer_has`, the M065 and M160 tests' new lines, and in `test_mod_session.py` the hand-back of a test pak put over another mod's slot, which failed once in these sessions (the kept copy was refused while the test pak still held the slot). Lint judgement revision 8.
 
 What the harness learned on the way, kept in the harness README: `!picker` passes through players (a bot dies with `ent_kill <index>`), the sandbox hero has no ability until one is upgraded, and a fatal layout leaves the game on its loading screen with the console dead.
+
+## Judgement round on 6880: lost attachments and what still breaks the skins
+
+The same build, 6880, and the same dataset as the round above: the community corpus (144 mods, 143 with paks, 285 paks, 83 skins), linted deep with no allowances and read as data only; Valve against itself (Haze, Lash, Viscous and Geist's model folders, Haze's ability particles, `heroes.vdata`, `abilities.vdata`, Haze's hero graph and the base hero graph: 1,093 of Valve's files packed unchanged into one pak); and woflo's skins, Maid Lash and Lööps Viscous. Valve's files were measured with a throwaway reader over the build's own paks (not committed).
+
+| Corpus, deep, no allowances | Before (judgement 7) | After (judgement 8) |
+|---|---|---|
+| Errors | 4,244 | 3,494 |
+| Warnings | 78,420 | 79,170 |
+| Mods broken | 87 of 143 | 77 of 143 |
+| Skins broken | 66 of 83 | 61 of 83 |
+| Lost attachments | 623 errors | 121 errors, 502 warnings |
+
+Valve's own files packed unchanged read 0 errors before and after. Maid Lash (0 errors, 48 warnings) and Lööps Viscous (0 errors, 31 warnings) are unchanged.
+
+### Lost attachments, judged by who names them
+
+`magician index` now writes `attachment_users.tsv`: every name a vdata entry, particle, anim graph or clip holds under a key that says attach, with who the game runs it for (a vdata entry's owners, a file's users), and the attachment names of Valve's hero models that the client library holds, each with how many of the 42 playable heroes' own models carry it.
+
+What the index found:
+
+- vdata names attachments in abilities, items and NPCs: 157 uses (`m_strAttachmentName` beside `m_eAttachmentType`, `ability_apply` most often; `m_strCustomAttachmentSource`, `m_strEffectsAttachName`, `m_sHealthBarAttachment`, `m_strShootAttachment`).
+- Clips name them in animation events: 96 uses (`m_attachmentName`, `m_attachmentPoint0`, `attachment_point`). The users index gives a clip to every hero whose data reaches it, so the line counts only a clip the model's own graphs play.
+- Particles name attachments almost only in `m_controlPointConfigurations` (1,456 uses), the particle editor's preview (Valve names the configuration `preview`). The other 48 are `C_OP_SetControlPointsToModelParticles`, which reads the models the particle draws, not the hero. No particle function attaches to the hero by name at run time; the game attaches an effect where vdata or the code says.
+- Anim graphs name no attachment.
+- A hero model's own game data names its health bar's attachment (`m_strUnitStatusAttachmentName`), its muzzles, its zipline effect point and its camera poses (`AttachmentCameraData`).
+- The client library holds 65 attachment names of Valve's hero models.
+
+Calibrated on Valve, the 42 playable heroes' own models:
+
+| What names an attachment the hero's own model lacks | Lacked | Heroes |
+|---|---|---|
+| the hero's own game data | 0 | 0 |
+| a clip the hero's graphs play | 0 | 0 |
+| the hero's own vdata | 1 (Seven's `melee_fx`, a melee ability's effect point) | 1 |
+| an item any hero carries | 0 | 0 |
+| a particle editor preview of the hero's own effects | 108 | 39 |
+| the client code | 17 names are on all 42 heroes; the other 48 on 0 to 41 (`attach_hitloc` on 8, most on 1) | every hero lacks some |
+
+Those heroes play. So a preview names nothing the game looks up, and the code's string alone does not say a hero needs the name: it copes without the 48 that only some heroes carry. The 17 every hero carries are `aim`, `healthbar`, `standing_pivot`, `crouching_pivot`, `ability_apply`, `ability_apply_ground`, `ability_cast`, `palm_l`, `palm_r`, `head_fx`, `idol`, `mask`, `sole_l`, `sole_r`, `zipline` and the two `shoot_test_` points.
+
+The line: a lost attachment is an error when something the game runs for the model names it, and the message says what and where, and that what is placed there goes to the model's origin or nowhere (UNVERIFIED in game): the model's own game data; the vdata of its own unit's abilities, or of an item or cosmetic ability any hero carries (an NPC's, a boss's or another hero's own data is that unit's); an animation event in a clip its graphs play; or the client code, for a name every playable hero carries. A name Valve's game data gives a role (the health bar's attachment, a camera pose) that this model's game data gives no attachment or another is not looked up on this model: a warning that points at the game-data finding, which already says what moves. Otherwise a warning that says who does name it: a preview, another unit's data, animation played on another model, or nothing. With no attachment users index, or one written without the client library, a lost attachment stays an error that says so.
+
+| The 623 lost-attachment errors of the baseline | Now |
+|---|---|
+| nothing in the game names it (`hero_attach_0` to `_4`, `placementOrigin` and the like) | 313 warnings |
+| Valve's game data names it in a role this model's game data places elsewhere (`healthbar` 55, the camera poses `near_00`, `far_00`, `gunaim_00` 39 each, `portrait_camera_attach` 11) | 183 warnings |
+| only particle editor previews name it | 6 warnings |
+| the client code, for a name every hero carries (`mask` 41, `standing_pivot` 39, `crouching_pivot` 39, `head_fx` 2) | 121 errors |
+
+The 55 `healthbar` sites are all models whose game data is an older build's, with no attachment for the bar: the game places the bar from the origin whether or not the attachment is there (seen on 6880 in the round above), and the game-data finding says so. The round above saw the standing camera follow `standing_pivot` in game, so the code does look that name up. All 121 are on models of abilities and summons: a rabbit form (117, one mod in 39 paks), a cat form (2) and a summon (2). The last 4 are in skins, none of them broken by it alone. Tests: `m062_a_lost_attachment_is_judged_by_who_names_it`, `attachment_users_read_back_only_in_their_own_format`, `attachment_names_are_what_a_key_that_says_attach_holds`.
+
+### What still breaks the skins
+
+Per skin, the error kinds that break it, after this round; 38 of the 61 are broken by one kind. A skin can be broken by several.
+
+| Error kind | Skins | Broken by it alone | Sites | Call |
+|---|---|---|---|---|
+| M062 attachment moved in the hero's own frame | 22 | 8 | 242 | real |
+| M030 texture a drawn material lacks | 21 | 8 | 75 | real (what the fallback looks like UNVERIFIED) |
+| M062 lost bone the model or code still names | 20 | 13 | 21 | real (where the attachment lands UNVERIFIED) |
+| M030 sound a replaced event file lacks | 11 | 6 | 1,831 | real |
+| M062 animation references missing (the A-pose) | 5 | 2 | 16 | real |
+| M062 game data (unit status missing or a list) | 5 | 1 | 6 | real |
+| M070 skeleton, graph or vdata that lacks Valve's | 5 | 0 | 5 | real |
+| M083 particle function in the wrong list | 5 | 0 | 26 | real |
+| M030 material a model lacks | 4 | 0 | 5 | real |
+| M062 lost attachment the code names, every hero carrying it | 4 | 0 | 4 | real (what the code looks up UNVERIFIED) |
+| M062 bone reparented with its vertices | 3 | 0 | 46 | real |
+| M030 particle a file lacks | 2 | 0 | 4 | real |
+| M153 draw with the error material | 2 | 0 | 2 | real |
+| M071, M010, M143, M030 on a graph | 1 each | 0 | 1 to 32 | real |
+
+Why each is real:
+
+- **Moved attachments in the hero's own frame** (`aim`, `root_aim`, `ability_apply_ground`, the camera poses): mostly Valve's attachments through a Y-up/Z-up export swap. The aim point moves from 67 units up to 67 units forward, a ground effect stands on its side. Kept an error by woflo's call of 2026-11-27.
+- **M030 on textures**: the material is drawn by a model the game loads, and the texture is in neither the mod nor the build. The engine binds a fallback resource in its place (`resourcesystem.dll` warns "requested but is not in the system"; `materialsystem2.dll` holds "[Fallback Resource]"). What the fallback looks like was not seen (UNVERIFIED). This includes morph atlases a model names and does not ship (its faces stop moving) and the CSDK's own default textures (`default_mask_tga_2aa88af4` and the like), which the CSDK compiles under another hash than the build ships.
+- **Lost bones**: 17 are `attachWorld` with the portrait camera's attachment still riding it. In Valve's animation `attachWorld` sits at the origin turned 120 degrees about (1, 1, 1) and never moves, so the camera's offsets are read in that frame; without the bone the attachment has no frame to be read in. Where the portrait camera lands then was not seen (UNVERIFIED), so it stays an error. The others are a bag's hitbox and attachment on a lost bone and three bones the client code names on effect models.
+- **M030 on sounds**: replaced sound-event files name sound files the build no longer ships; those lines and sounds are silent.
+- **M062 game data and A-pose**: no animation skeleton or AnimGraph 2 reference, or no unit status: the model stands in its bind pose or has no place for its health bar.
+- The rest (M070 skeletons that lack Valve's bones, M083 particle classes in the wrong list, M153 error material, M071, M010, M143, reparented bones a skin moved with its vertices) are as the rounds above measured them.
+
+Two kinds were suspicious and are fixed by measurement:
+
+- **M030 in a file the game never reads.** A file that replaces no game file and that no file the game reads names, at any remove, is never opened, so what it lacks is never asked for. Valve ships the same: Infernus's unused arm material names three textures 6880 does not ship. Reached from the files that replace a game file, through what each mod file names (compiled references, Panorama text, sound files): 240 M030 errors became warnings that say so. Test: `m030_in_a_file_the_game_never_reads_is_a_warning` (the same material drawn by a replaced model stays an error).
+- **M030 on a model's AnimGraph 1 include model** (`m_refAnimIncludeModels`, a `_backup` or `_temp` copy of the hero): none of Valve's 22,326 files under `models/` names one, and the hero animates from its AnimGraph 2 references, as with the AnimGraph 1 graphs the round above made warnings. 6 errors became warnings. Test: in `m030_an_animgraph_1_reference_is_a_warning`.
+
+### M031 on the HUD mods' styles
+
+The 37 style findings the round above left open (34 paths on 6 mods) were searched for in Valve's own Panorama files and in every file of the mod that ships them. Valve's stylesheets import with `@import url("s2r://panorama/styles/...")` (64 of them), which the reader already follows, and no Valve file holds `<include` in its text. None of Valve's layouts, stylesheets or scripts names any of the 34 paths, whether in its raw bytes, its decoded layout tree or its DATA strings. No file of the mods names them either, apart from one orphan naming another orphan (`base/citadel_hud_top_bar_chat` imports `base/citadel_hud_top_bar`, and nothing imports it). They are copies of Valve's stylesheets under a `base/` folder that the mod's own overrides import in other variants, older notifier styles and a numbered mist stylesheet. The reader is right and the findings stay.
+
+### M001 and the fonts
+
+Panorama finds fonts through fontconfig. `citadel/panorama/fonts/fonts.conf` lists folders on disk (`../../citadel/panorama/fonts`, the system's font folders) and the file names its `fontpattern`s allow, and includes `core/panorama/fonts/conf.d`. Valve ships its 82 fonts and `fonts.conf` loose in `game/citadel/panorama/fonts`; no font is in any pak but VGUI's `vgui/fonts/*.ttf` in core. Valve's stylesheets name fonts by family (207 Panorama files use `font-family`), and none of its layouts, stylesheets or scripts names a font file. So a font inside an addon pak is not on disk and fontconfig never sees it, whatever its case. The two M001 errors were one mod's `panorama/fonts/Mojang-Bold.ttf` and `Mojang-Regular.ttf`, asking for a rename that would not help; they are warnings that say the font is not read. Whether the engine's fontconfig also reads through the pak file system was not tried in game (UNVERIFIED). Test: the font case in `m001_uppercase_path`.
+
+### Open
+
+- What the engine's fallback resource for a missing texture looks like on a hero (M030 on textures, 21 skins, 8 broken by it alone).
+- Where an attachment riding a lost `attachWorld` lands (17 sites, 13 skins broken by it alone).
+- What the client code looks up by the other 16 names every hero carries (`standing_pivot` was seen), and whether it does so on the ability and summon models that lack them.
+- Whether a font in a pak is ever read.
+
+None of these was seen in game: another lane holds the seat. Lint judgement revision 9.
