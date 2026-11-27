@@ -305,6 +305,26 @@ fn patchday_compares_each_mod_from_its_last_proven_build() {
 }
 
 #[test]
+fn patchday_never_calls_a_mod_proven_whose_mod_toml_it_was_not_given() {
+    // mods installed on the machine, and the check run with --mod for others: their paks hold, and the verdict must not
+    // say they are proven (seen dogfooding: "every installed mod is proven on it" over eight unasked owners)
+    let d = scratch("patchday-unclaimed");
+    let game = fake_install(&d, "6864", b"valve clip").to_string_lossy().into_owned();
+    assert_eq!(magician(&d, &["baseline", "--game", &game]).status.code(), Some(0));
+    let toml = d.join("mod.toml");
+    std::fs::write(&toml, "[mod]\nslug = \"other-mod\"\n[proven]\nbuilds = []\n").unwrap();
+    let ts = toml.to_string_lossy().into_owned();
+    let o = magician(&d, &["patchday", "--game", &game, "--mod", &ts]);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(!out.contains("every installed mod is proven on it"), "{out}");
+    assert!(out.contains("clear: every installed pak holds on 6864, and every mod whose mod.toml was found is proven on it") && out.contains("proofs not asked: mod_a (installed, and no mod.toml here claims it"), "{out}");
+    let o = magician(&d, &["patchday", "--game", &game, "--mod", &ts, "--json"]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("\"not_installed\":[\"other-mod\"],\"unclaimed\":[\"mod_a\"]"), "{}", text(&o));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
 fn patchday_says_per_era_whether_the_engine_changed_too() {
     let d = scratch("patchday-engine");
     let game = fake_install(&d, "6864", b"valve clip");

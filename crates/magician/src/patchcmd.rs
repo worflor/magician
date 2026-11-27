@@ -529,6 +529,8 @@ pub fn cmd_patchday(args: &[String]) -> R {
     let doc = doc.raw("manifests", jsonout::arr(manifests_json));
 
     say!("\nverdict");
+    // Installed owners no mod.toml here claims: their paks are drift-checked, but whether they are proven was not asked.
+    let unclaimed: Vec<String> = by_owner.keys().filter(|o| !manifests.iter().any(|m| m.owners.contains(o))).cloned().collect();
     let mut who: Vec<String> = reprove.into_iter().chain(unproven).collect();
     who.sort();
     who.dedup();
@@ -539,17 +541,27 @@ pub fn cmd_patchday(args: &[String]) -> R {
         say!("  loads, but re-prove in game: {}", who.join(", "));
         say!("  then, per mod: `magician session qa --mod <its folder> --out <dir>`, look at the frames, and `magician prove <mod.toml> --evidence <dir>` to record its installed bytes on build {installed}");
         "re-prove"
-    } else {
+    } else if unclaimed.is_empty() {
         say!("  clear: every installed pak holds on {installed} and every installed mod is proven on it");
         "clear"
+    } else {
+        say!("  clear: every installed pak holds on {installed}, and every mod whose mod.toml was found is proven on it");
+        "clear"
     };
+    if !unclaimed.is_empty() {
+        say!(
+            "  proofs not asked: {} (installed, and no mod.toml here claims {}: `--mod <its mod.toml>`, `[mod] owners` in the mod.toml that ships it, or run from the folder that holds the mods)",
+            unclaimed.join(", "),
+            if unclaimed.len() == 1 { "it" } else { "them" }
+        );
+    }
     if !idle.is_empty() {
         idle.sort();
         say!("  not installed, so not judged: {} (`magician check <its folder>` judges a mod's own paks)", idle.join(", "));
     }
     if json_mode() {
         let listed: &[String] = if state == "re-prove" { &who } else { &[] };
-        let verdict = jsonout::Obj::new().str("state", state).int("problems", hard as i64).strs("reprove", listed).strs("not_installed", &idle);
+        let verdict = jsonout::Obj::new().str("state", state).int("problems", hard as i64).strs("reprove", listed).strs("not_installed", &idle).strs("unclaimed", &unclaimed);
         outln!("{}", doc.raw("verdict", verdict.build()).build());
     }
     Ok(state_code(if state == "clear" { "clean" } else { state }))
