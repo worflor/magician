@@ -149,7 +149,7 @@ pub fn checks(args: &[String]) -> Vec<Check> {
     let vrf_at = if vrf.path.components().count() > 1 { Some(vrf.path.clone()).filter(|p| p.is_file()) } else { on_path(&vrf.path) };
     match vrf_at {
         Some(p) => out.push(c("viewer", State::Ok, format!("Source 2 Viewer CLI {} ({})", p.display(), vrf.source), None)),
-        None => out.push(c("viewer", State::Skip, format!("no Source 2 Viewer CLI at {} ({}): grade, footprint and index need it", vrf.path.display(), vrf.source), Some(format!("install Source 2 Viewer 21.1's CLI, then {}", config_line("vrf", if cfg!(windows) { "<...>\\Source2Viewer-CLI.exe" } else { "<...>/Source2Viewer-CLI" }))))),
+        None => out.push(c("viewer", State::Skip, format!("no Source 2 Viewer CLI at {} ({}): grade, footprint and index need it", vrf.path.display(), vrf.source), Some(format!("install Source 2 Viewer 21.1's CLI (github.com/ValveResourceFormat/ValveResourceFormat, release 21.1), then {}", config_line("vrf", if cfg!(windows) { "<...>\\Source2Viewer-CLI.exe" } else { "<...>/Source2Viewer-CLI" }))))),
     }
     match paths::csdk(flag(args, "--csdk")) {
         Ok(f) => {
