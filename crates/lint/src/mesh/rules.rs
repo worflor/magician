@@ -587,9 +587,14 @@ pub fn judge(ours: &Census, valve: Option<&Census>, fp: &FairPlay) -> Out {
                 }
             }
         }
-        for c in sil {
-            if c.ratio() < fp.silhouette_min {
-                out.push(("M124", format!("{} view: our in-game silhouette is {:.1}% of Valve's ({} vs {} px at 6 mm, {} px lost): the hero is harder to see than the original", c.view, 100.0 * c.ratio(), c.ours, c.valve, c.lost)));
+        // Fair play asks that a target stay as easy to see: what bullets can hit, which is what Valve's model carries
+        // hitboxes for (heroes, troopers, bosses, a turret, a summoned skeleton). A model with none is an effect (an
+        // ability's prop, a trooper's break-off pieces, a companion no one can shoot), which its own measures judge.
+        if !v.model.hitboxes.is_empty() {
+            for c in sil {
+                if c.ratio() < fp.silhouette_min {
+                    out.push(("M124", format!("{} view: our in-game silhouette is {:.1}% of Valve's ({} vs {} px at 6 mm, {} px lost): the target is harder to see than the original", c.view, 100.0 * c.ratio(), c.ours, c.valve, c.lost)));
+                }
             }
         }
     }

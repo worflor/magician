@@ -168,7 +168,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M123", name: "mesh-budget", severity: Severity::Warn,
         in_game: "LOD0 triangles, draw calls, bones or texture memory well over Valve's model: frame cost in team fights." },
     Rule { code: "M124", name: "silhouette-fair-play", severity: Severity::Error,
-        in_game: "Our in-game silhouette is smaller than Valve's in a view: the hero is harder to see than the original, a fair-play break." },
+        in_game: "Our in-game silhouette is smaller than Valve's in a view: a target is harder to see than the original, a fair-play break. A target is what bullets can hit, a model Valve gives hitboxes (heroes, troopers, bosses, turrets, summons); a model with none (an ability's prop, a trooper's break-off pieces, a companion no one can shoot) is an effect, judged by its own measures." },
     Rule { code: "M125", name: "seam-crack", severity: Severity::Warn,
         in_game: "Boundary vertices of neighbouring pieces sit a hair apart without welding: a hairline crack shows the background along the seam." },
     Rule { code: "M126", name: "texture-without-uv", severity: Severity::Error,

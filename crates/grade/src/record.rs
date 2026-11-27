@@ -721,7 +721,7 @@ mod tests {
 
     #[test]
     fn a_long_message_is_cut_at_a_word_never_inside_one() {
-        let m124 = "front view: our in-game silhouette is 75.7% of Valve's (28231 vs 37272 px at 6 mm, 10569 px lost): the hero is harder to see than the original";
+        let m124 = "front view: our in-game silhouette is 75.7% of Valve's (28231 vs 37272 px at 6 mm, 10569 px lost): the target is harder to see than the original";
         assert_eq!(brief(m124), m124, "a fair-play message is shown whole");
         let long = "word ".repeat(60);
         let b = brief(&long);

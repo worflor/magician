@@ -196,9 +196,14 @@ fn mesh_run(ours: &SynthModel, extra_files: Vec<ModFile>, cloth: Vec<u8>) -> Vec
 
 /// `mesh_run` judged at other fair-play limits.
 fn mesh_run_at(ours: &SynthModel, extra_files: Vec<ModFile>, cloth: Vec<u8>, fp: &policy::FairPlay) -> Vec<Finding> {
+    mesh_run_against(ours, &valve(), extra_files, cloth, fp)
+}
+
+/// `mesh_run_at` against another Valve model at the same path.
+fn mesh_run_against(ours: &SynthModel, theirs: &SynthModel, extra_files: Vec<ModFile>, cloth: Vec<u8>, fp: &policy::FairPlay) -> Vec<Finding> {
     let mut g = game();
     let mut fake = Fake::default();
-    fake.files.insert(MODEL.into(), ::mesh::synth::model(&valve()));
+    fake.files.insert(MODEL.into(), ::mesh::synth::model(theirs));
     fake.files.insert(format!("{BODY}_c"), vmat_with(&["F_USE_STATUS_EFFECTS_PROXY", "F_USE_NPR_LIGHTING"], BODY_COLOR, None));
     // Valve's body texture: greys from sRGB 60 to 160, so its range is a band, not a point
     let mut grad = Vec::new();
@@ -711,6 +716,19 @@ fn m124_silhouette_fair_play() {
     let f = run_ours(&hero(vec![boxd([-8.0, -8.0, 0.0], [8.0, 8.0, 60.0], BODY, 1)], Some(vec![body()])));
     assert!(has(&f, "M124", "harder to see"), "{f:#?}");
     assert_eq!(rule("M124").severity, Severity::Error);
+}
+
+#[test]
+fn m124_judges_what_bullets_can_hit() {
+    // Real case (6871, community mods): a thinner trooper is a target harder to see; a thinner ability prop (a
+    // teapot, a magazine, a trooper's break-off piece) is an effect, and Valve's model for it has no hitboxes.
+    let thin = hero(vec![boxd([-8.0, -8.0, 0.0], [8.0, 8.0, 60.0], BODY, 1)], Some(vec![body()]));
+    let target = mesh_run_against(&thin, &valve(), vec![], hero_vmat(), &policy::DEFAULT);
+    assert!(has(&target, "M124", "target is harder to see"), "{target:#?}");
+    let mut prop = valve();
+    prop.hitboxes.clear();
+    let effect = mesh_run_against(&thin, &prop, vec![], hero_vmat(), &policy::DEFAULT);
+    assert!(!has(&effect, "M124", ""), "{effect:#?}");
 }
 
 #[test]
