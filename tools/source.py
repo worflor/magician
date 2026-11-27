@@ -33,8 +33,9 @@ Optional: homepage (default base_url), downloads_url (default base_url + "files/
 https://github.com/<user>/<repo>/releases/download/{id}-{version}/), media_url (default base_url + "media/"),
 download_origins (more origins artifacts may come from or redirect to), icon (an image; a 256 px square JPEG),
 taxonomy (DMM's taxonomy.json, to check hero and content-type ids), dmm_url (the Get DMM link).
-Per mod, for the pages: tagline, blurb (the card's text, default the bundle's description; both take inline Markdown)
-and links [{label, url, kind}] (a trailer, say): kind "same" says the link is this mod on another site (its Nexus
+Per mod, for the pages: tagline, blurb (the card's text, default the bundle's description; both take inline Markdown),
+badge (a short label shown as a pill beside the version on the card and the page, e.g. "early"; DMM has no place for
+one, so a listing that needs to say it says it in its description too) and links [{label, url, kind}] (a trailer, say): kind "same" says the link is this mod on another site (its Nexus
 Mods page), "video" that it is a video of it, and the pages' structured data says so (sameAs, subjectOf).
 authors {name: url}: an author's own site, for an author as bundle.json names them; the mod's page links it.
 page {title, intro, css, head, header, footer}: the pages' own look. css is a stylesheet appended to the built-in one
@@ -237,6 +238,9 @@ def read_bundle(entry, base, taxonomy):
         die(f"listing id {lid!r} must be lowercase letters, digits and hyphens (it names files in the tree)")
     if lid in RESERVED_DIRS:
         die(f"listing id {lid!r} is a folder the tree already uses; give the mod another id")
+    badge = entry.get("badge")
+    if badge is not None and (not isinstance(badge, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 .'-]{0,23}", badge)):
+        die(f"{lid}: badge must be a short plain label (up to 24 letters, digits, spaces, . ' -), e.g. \"early\"")
     links = entry.get("links", [])
     if not isinstance(links, list):
         die(f"{lid}: links must be a list of {{label, url}}")
@@ -961,6 +965,7 @@ a.card-title:hover { text-decoration: underline; }
 .pill { display: inline-flex; align-items: center; gap: 0.35em; padding: 0.1em 0.55em; border: 1px solid var(--line);
   border-radius: calc(var(--radius) * 0.5); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; color: var(--muted);
   white-space: nowrap; }
+.pill.badge { border-color: var(--accent); color: var(--accent); }
 .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 1rem 0 0.5rem; }
 .btn { display: inline-flex; align-items: center; gap: 0.5em; min-height: 2.75rem; padding: 0.55rem 1rem; border-radius: var(--radius);
   border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none; font-weight: 600;
@@ -1164,6 +1169,12 @@ def shell(title, desc, canonical, og_image, root, body, theme, icon_rel, og_size
 """
 
 
+def badge_html(b):
+    """The mod's badge (an early release, say), a pill beside its version on the card and the page."""
+    badge = b["entry"].get("badge")
+    return f' <span class="pill badge">{html.escape(badge)}</span>' if badge else ""
+
+
 def blurb_of(b):
     return b["entry"].get("blurb") or b["spec"]["description"]
 
@@ -1192,7 +1203,7 @@ def landing(src, base_url, desc_url, entries, icon_rel, theme, upcoming):
   <a class="card-shot" href="{e(l['id'])}/" tabindex="-1" aria-hidden="true">{img}</a>
   <div class="card-body">
     <p class="card-line"><a class="card-title" href="{e(l['id'])}/">{e(spec['name'])}</a>
-      <span class="meta">{e(hero_name)} &middot; {e(long_date(spec['date']))}</span> <span class="pill">{e(spec['release'])}</span></p>
+      <span class="meta">{e(hero_name)} &middot; {e(long_date(spec['date']))}</span> <span class="pill">{e(spec['release'])}</span>{badge_html(b)}</p>
     <p class="card-text">{md_inline(blurb_of(b))}</p>
     <p class="actions">{buttons(src, desc_url, b, l, dl_url)}<a class="more" href="{e(l['id'])}/">Details</a></p>
   </div>
@@ -1274,7 +1285,7 @@ def mod_page(src, base_url, desc_url, entry, icon_rel, theme):
 <header class="top">
   <h1 class="page-title">{e(spec['name'])}</h1>
   {tagline}
-  <p class="meta">{e(hero_name)} &middot; by {author} &middot; version {e(spec['release'])} &middot; {e(long_date(spec['date']))}{build}</p>
+  <p class="meta">{e(hero_name)} &middot; by {author} &middot; version {e(spec['release'])}{badge_html(b)} &middot; {e(long_date(spec['date']))}{build}</p>
 </header>
 <p class="actions">{buttons(src, desc_url, b, l, up(dl_url))}{links}</p>
 <p class="small">One click needs a Deadlock Mod Manager with mod sources (<strong>Settings &gt; Mods &gt; Mod sources</strong>).

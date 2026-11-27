@@ -90,7 +90,9 @@ Install with DMM button, the same description DMM shows, every release with its 
 The look is the spec's `page` block: `title` and `intro` for the front page, `css` (a stylesheet appended to the
 built-in one, which is written on a handful of variables), and `head`, `header` and `footer` (HTML files put on every
 page, with `{root}` standing for the way back to the top of the tree). That is enough to make the pages one with the
-site they are served from. Per mod, `tagline`, `blurb` and `links` (a trailer) feed its card and page.
+site they are served from. Per mod, `tagline`, `blurb` and `links` (a trailer) feed its card and page, and
+`badge` (a short label such as `early`) is a pill beside the version on both. DMM has no badge, so a listing that must
+say it is early says so in its description too.
 
 `upcoming` lists what is coming: `title`, `hero`, `when`, `note`, `image`. Each is a card on the front page. With
 `in_manager` (plus `id`, `author`, `hero_id`, `nsfw`) it is also written as a listing with `availability:

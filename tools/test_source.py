@@ -300,6 +300,21 @@ class Source(unittest.TestCase):
         self.assertIn("<title>Test Skin 1.0.0</title>", feed)
         self.assertIn("https://example.github.io/skins/test-skin/#" + listing["release"]["id"], feed)
 
+    def test_a_badge_is_a_pill_beside_the_version_on_the_card_and_the_page(self):
+        self.ok(self.source(self.bundle(), mods=[{"bundle": "package/bundle.json", "zip": os.path.join(self.d, "TestSkin_1.0.0.zip"),
+                                                  "badge": "early"}]))
+        pill = '<span class="pill badge">early</span>'
+        self.assertIn(pill, self.text("index.html"))
+        self.assertIn(pill, self.text("test-skin", "index.html"))
+        self.assertNotIn("early", json.dumps(self.doc("mods", "test-skin.json")), "DMM has no badge; the listing is unchanged")
+
+    def test_a_badge_is_a_short_plain_label(self):
+        for bad in ("<b>early</b>", "x" * 25, ""):
+            r = self.run_source(self.source(self.bundle(), mods=[{"bundle": "package/bundle.json", "badge": bad,
+                                                                  "zip": os.path.join(self.d, "TestSkin_1.0.0.zip")}]))
+            self.assertNotEqual(r.returncode, 0, bad)
+            self.assertIn("badge must be a short plain label", r.stderr + r.stdout)
+
     def proofs(self, *proofs):
         """A proof ledger beside the mod.toml, as `magician prove` writes it: (build, [(owner, bytes)]) per proof."""
         rows = ["# magician proofs/1", "build\tdate\tproof\towner\tfile\tcrc32\tsha256\tevidence\tevidence_sha256"]
