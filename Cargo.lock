@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "magician"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "magician-expr",
  "magician-fuzz",
@@ -18,22 +18,22 @@ dependencies = [
 
 [[package]]
 name = "magician-expr"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "magician-fuzz",
 ]
 
 [[package]]
 name = "magician-fuzz"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "magician-geom"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "magician-grade"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "magician-fuzz",
  "magician-lint",
@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "magician-lint"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "magician-fuzz",
  "magician-geom",
@@ -55,7 +55,7 @@ dependencies = [
 
 [[package]]
 name = "magician-mark"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "magician-fuzz",
  "magician-resource",
@@ -64,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "magician-mesh"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "magician-fuzz",
  "magician-resource",
@@ -72,7 +72,7 @@ dependencies = [
 
 [[package]]
 name = "magician-resource"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "magician-fuzz",
  "magician-vpk",
@@ -80,7 +80,7 @@ dependencies = [
 
 [[package]]
 name = "magician-vpk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "magician-fuzz",
 ]

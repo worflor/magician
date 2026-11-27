@@ -53,3 +53,4 @@ magician.signed
 
 # console.py blind-mode state (r_drawpanorama 0)
 ingame/.console-blind
+site/_preview/

@@ -4,7 +4,7 @@ Newest first. Dates are when the capability was proven, not when the code was wr
 
 Each release's entry says whether the lint rules, the grading rubric or the built-in policy changed (`magician update --describe` shows the fingerprints), because that is what `magician update --check` tells a user to re-run `lint` and `grade` for. An entry that says nothing about them says they did not.
 
-## Unreleased
+## 0.2.0 (2026-11-26)
 
 **Judgement changed in the lint rules (81 now, lint judgement revision 3); the grading rubric and the built-in policy are as in 0.1.0.** Re-run `lint` on every mod, and `magician index` once on each build you lint against: an index from 0.1.0 is not read.
 
