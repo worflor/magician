@@ -259,7 +259,7 @@ fn patchday_compares_each_mod_from_its_last_proven_build() {
     assert!(std::fs::read_to_string(&toml).unwrap().contains("builds = [6864, 6865]"), "the summary follows the proofs");
     // the human report says which build each mod was compared from
     let o = magician(&d, &["patchday", "--game", &game, "--mod", &ts]);
-    assert!(String::from_utf8_lossy(&o.stdout).contains("mod_a: ok (proven on 6865)"), "{}", text(&o));
+    assert!(String::from_utf8_lossy(&o.stdout).contains("mod_a: ok (proven on 6865; compared from 6864, proven before it)"), "{}", text(&o));
 
     // A rebuilt pak inherits nothing: the summary still lists 6864 and 6865, the new bytes are proven on neither.
     let pak = PathBuf::from(&game).join("citadel").join("addons").join("pak10_dir.vpk");
@@ -470,6 +470,11 @@ fn a_break_only_drift_sees_survives_a_proof_of_the_same_bytes_on_the_new_build()
     assert!(doc.contains("{\"step\":\"drift\",\"state\":\"broken\",\"from\":\"6864\",\"to\":\"6865\",\"proven_here\":true,\"compared\":\"broken\",\"problems\":1,"), "{doc}");
     let o = magician(&d, &["check", &ts, "--game", &game, "--light"]);
     assert!(String::from_utf8_lossy(&o.stdout).contains("BROKEN since 6864: these bytes are proven on 6865, but their contract broke since 6864, and only new bytes fix that: models/heroes/x/x.vnmskel_c: bone 'spine_1' is now 'spine_1_renamed' (renamed)"), "{}", text(&o));
+    // patch day reads the same: proven on 6865, compared from 6864, broken
+    let o = magician(&d, &["patchday", "--game", &game, "--mod", &ts, "--json"]);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(out.contains("\"owner\":\"mod_a\",\"state\":\"broken\",\"from\":\"6864\",\"note\":null,\"proven_here\":true"), "{out}");
     let _ = std::fs::remove_dir_all(&d);
 
     // A re-prove and nothing else (Valve changed the clip the mod replaces): exit 4, and the proof answers it.
@@ -492,6 +497,10 @@ fn a_break_only_drift_sees_survives_a_proof_of_the_same_bytes_on_the_new_build()
     let (code, doc) = check_doc(&d, &ts, &game);
     assert_eq!(code, Some(0), "{doc}");
     assert!(doc.contains("\"verdict\":\"ok\"") && doc.contains("{\"step\":\"drift\",\"state\":\"current\",\"from\":\"6864\",\"to\":\"6865\",\"proven_here\":true,\"compared\":\"re-prove\",\"problems\":0,\"changed\":1,"), "{doc}");
+    let o = magician(&d, &["patchday", "--game", &game, "--mod", &ts, "--json"]);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(out.contains("\"owner\":\"mod_a\",\"state\":\"ok\",\"from\":\"6864\",\"note\":null,\"proven_here\":true") && out.contains("\"verdict\":{\"state\":\"clear\""), "{out}");
     let _ = std::fs::remove_dir_all(&d);
 }
 

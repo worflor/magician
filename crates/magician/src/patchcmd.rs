@@ -1,7 +1,7 @@
 //! `magician patchday` and `magician prove`: the patch-day entry points (pure parts in patchday.rs).
 
 use super::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// `mod.toml` files for `patchday`: the `--mod` flags; else every mod under the mods folder when one is named
 /// (`MAGICIAN_MODS`, `mods =`); else the mods of the nearest folder, from the working one upward (then from this
@@ -270,13 +270,25 @@ pub fn cmd_patchday(args: &[String]) -> R {
     let mut eras: BTreeMap<String, Eras> = BTreeMap::new();
     let mut by_owner: BTreeMap<String, Vec<(String, usize, patchday::Drift)>> = BTreeMap::new();
     let mut owner_era: BTreeMap<String, (String, Option<String>)> = BTreeMap::new();
+    // Owners whose bytes are proven on the installed build and compared from the build proven before it (as check
+    // does): a proof answers their re-prove, never a break.
+    let mut proven_here: BTreeSet<String> = BTreeSet::new();
     for r in ledger.iter().filter(|r| rows.iter().any(|x| x.0 == r.name && x.2.is_some())) {
         let era = owner_era
             .entry(r.owner.clone())
             .or_insert_with(|| match &forced {
                 Some(f) => (f.clone(), None),
                 None => match manifests.iter().find(|m| m.owners.contains(&r.owner)) {
-                    Some(m) => patchday::era_for(&m.binding.bound, &builds, &installed),
+                    Some(m) => match patchday::era_for(&m.binding.bound, &builds, &installed) {
+                        (e, None) if e == installed => match proven_before(&m.binding.bound, &installed).filter(|b| builds.contains(b)) {
+                            Some(b) => {
+                                proven_here.insert(r.owner.clone());
+                                (b.clone(), None)
+                            }
+                            None => (e, None),
+                        },
+                        other => other,
+                    },
                     None => (previous.clone(), Some(format!("no mod.toml claims this owner; compared from {previous}"))),
                 },
             })
@@ -312,16 +324,23 @@ pub fn cmd_patchday(args: &[String]) -> R {
     for (owner, paks) in &by_owner {
         let (from, note) = &owner_era[owner];
         let bad: usize = paks.iter().map(|(_, _, d)| d.bad()).sum();
-        let changed: usize = paks.iter().map(|(_, _, d)| d.changed.len() + d.rig_deps().len() + d.params.len()).sum();
+        // proven here: what changed since the build proven before is answered by that proof; a break is not
+        let here = proven_here.contains(owner);
+        let changed: usize = if here { 0 } else { paks.iter().map(|(_, _, d)| d.changed.len() + d.rig_deps().len() + d.params.len()).sum() };
         let state = if bad > 0 { "BROKEN" } else if changed > 0 { "RE-PROVE" } else { "ok" };
         let since = match (note, forced.is_some()) {
+            _ if here => format!("proven on {installed}; compared from {from}, proven before it"),
             (None, false) if from == &installed => format!("proven on {installed}"),
             (None, false) => format!("last proven on {from}"),
             _ => format!("compared from {from}"),
         };
         say!("  {owner}: {state} ({since}){}", note.as_deref().map(|n| format!(": {}", n.split(';').next().unwrap_or(n))).unwrap_or_default());
         for (name, _, d) in paks {
-            say!("    {name}: {}", d.verdict(from, &installed));
+            if here && d.state() == "re-prove" {
+                say!("    {name}: {} changed original(s) and {} changed rig file(s) since {from}, answered by the proof on {installed}", d.changed.len(), d.rig_deps().len());
+            } else {
+                say!("    {name}: {}", d.verdict(from, &installed));
+            }
             let lines: Vec<String> = d
                 .removed
                 .iter()
@@ -350,6 +369,7 @@ pub fn cmd_patchday(args: &[String]) -> R {
                 .str("state", &state.to_ascii_lowercase())
                 .str("from", from)
                 .opt_str("note", note.as_deref())
+                .bool("proven_here", here)
                 .raw("paks", jsonout::arr(paks.iter().map(|(name, n, d)| jsonout::drift(name, *n, d, from, &installed))))
                 .build(),
         );
