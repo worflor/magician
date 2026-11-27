@@ -80,6 +80,29 @@ pub fn kv3_block(data: &[u8], tag: &[u8; 4]) -> Option<Result<kv3::Value, String
     Some(kv3::decode(bytes))
 }
 
+/// The compilers a resource's edit info names (`RED2`, or a KV3 `REDI`: `m_SpecialDependencies`), as `(name, version)`:
+/// every `... Compiler Version` or `... Script Version` entry with its fingerprint, which the compiler raises when what
+/// it writes changes (`Animation Clip Compiler Version` is 21 on every clip of build 6880, 10 or 14 on clips older
+/// kits compiled). Sorted by name; empty when the file names none.
+pub fn compilers(data: &[u8]) -> Vec<(String, i64)> {
+    let mut out: Vec<(String, i64)> = Vec::new();
+    for tag in [b"RED2", b"REDI"] {
+        let Some(Ok(v)) = kv3_block(data, tag) else { continue };
+        for s in v.get("m_SpecialDependencies").map(kv3::Value::as_array).unwrap_or(&[]) {
+            let name = s.get("m_String").and_then(kv3::Value::as_str).unwrap_or("");
+            if !(name.ends_with(" Compiler Version") || name.ends_with(" Script Version")) {
+                continue;
+            }
+            let Some(f) = s.get("m_nFingerprint").and_then(kv3::Value::as_f64) else { continue };
+            if !out.iter().any(|(n, _)| n == name) {
+                out.push((name.to_string(), f as i64));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 pub const KNOWN_HEADER_VERSION: u16 = 12;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -211,6 +234,16 @@ pub fn synth(ext_refs: &[&str]) -> Vec<u8> {
 
 /// A synthesized resource with extra blocks after the RERL (e.g. a `DATA` block holding KV3 from
 /// `kv3::encode`, or a texture header from `texture::synth_header`).
+/// A `RED2` block naming these compilers and their versions, as a compile writes it (for fixtures).
+pub fn red2_block(compilers: &[(&str, i64)]) -> ([u8; 4], Vec<u8>) {
+    use kv3::Value;
+    let deps = compilers
+        .iter()
+        .map(|(n, v)| Value::Object(vec![("m_String".into(), Value::Str(n.to_string())), ("m_CompilerIdentifier".into(), Value::Str("Compile".into())), ("m_nFingerprint".into(), Value::Int(*v)), ("m_nUserData".into(), Value::Int(0))]))
+        .collect();
+    (*b"RED2", kv3::encode(&Value::Object(vec![("m_SpecialDependencies".into(), Value::Array(deps))])))
+}
+
 pub fn synth_with(ext_refs: &[&str], extra: &[([u8; 4], Vec<u8>)]) -> Vec<u8> {
     let mut b = synth_rerl(ext_refs);
     if extra.is_empty() {
@@ -314,6 +347,13 @@ mod tests {
         let r = parse(&b).unwrap();
         assert_eq!(r.ext_refs[0].compiled_path(), "materials/a.vmat_c");
         assert_eq!(kv3_block(&b, b"DATA").unwrap().unwrap(), v);
+    }
+
+    #[test]
+    fn compilers_are_read_from_the_edit_info() {
+        let b = synth_with(&[], &[red2_block(&[("Animation Clip Compiler Version", 14), ("Texture Compiler Version Mip Box", 1)])]);
+        assert_eq!(compilers(&b), vec![("Animation Clip Compiler Version".to_string(), 14)], "a variant is no compiler version");
+        assert!(compilers(&synth(&[])).is_empty(), "no edit info");
     }
 
     #[test]
