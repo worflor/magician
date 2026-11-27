@@ -67,7 +67,7 @@ magician check <mod folder> --json       # the one verdict (magician.check/1): l
 magician lint <pak> [--deep]             # one pak's findings in full; --deep adds the mesh family M100-M148 (~8 s per hero model; MAGICIAN_THREADS=2 caps its threads beside a running game)
 magician grade <pak>... --mod <mod.toml> --json   # the grade record: label, description, identity, fair play, freshness, gate
 ```
-`check` exits 0 (`ok`: proven on this build and clean), 4 (`re-prove`: loads, not proven on this build) or 1 (`broken`), and its `next` lines say what remains. Under its lint line it counts the findings by rule (errors, warnings, fair play, and fair play's advisories, which never fail it; `by_rule` in the JSON): report those, and read `magician lint` for the sites. It grades only when the Source 2 Viewer CLI is set up; otherwise its `grade` step says why and lint stands alone.
+`check` exits 0 (`ok`: proven on this build and clean), 4 (`re-prove`: loads, not proven on this build) or 1 (`broken`), and its `next` lines say what remains. A proof answers a re-prove, never a break: a drift that broke since the build these bytes were proven on before stays `broken` after a proof on this build (the drift step carries `proven_here`), and only new bytes fix it. Under its lint line it counts the findings by rule (errors, warnings, fair play, and fair play's advisories, which never fail it; `by_rule` in the JSON): report those, and read `magician lint` for the sites. It grades only when the Source 2 Viewer CLI is set up; otherwise its `grade` step says why and lint stands alone.
 
 **Patch day** (a new Deadlock build landed):
 ```

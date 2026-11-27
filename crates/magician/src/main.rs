@@ -2653,6 +2653,49 @@ fn drift_vpk(vp: &Path, eras: &Eras, gf: Option<&gamefiles::GameFiles>) -> Resul
     Ok(d)
 }
 
+/// The last build before `build` that a recorded proof holds a mod's bytes on (`bound`, from `proofs::Binding`): the
+/// era a proof on `build` answers to. A proof on the new build resolves a re-prove, because someone looked; a break
+/// since that era is resolved only by new bytes, so `check` and `prove` still compare from it.
+fn proven_before<'a>(bound: &'a [String], build: &str) -> Option<&'a String> {
+    let n = build.parse::<u64>().unwrap_or(0);
+    bound.iter().filter(|b| b.parse::<u64>().is_ok_and(|x| x < n)).max_by_key(|b| b.parse::<u64>().unwrap_or(0))
+}
+
+/// Drift of every pak of one mod from one build to another, judged as one: what `check` reports and `prove` refuses on.
+struct ModDrift {
+    paks: Vec<(PathBuf, patchday::Drift)>,
+}
+
+impl ModDrift {
+    fn bad(&self) -> usize {
+        self.paks.iter().map(|(_, d)| d.bad()).sum()
+    }
+    fn changed(&self) -> usize {
+        self.paks.iter().map(|(_, d)| d.changed.len()).sum()
+    }
+    fn rig(&self) -> usize {
+        self.paks.iter().map(|(_, d)| d.rig_deps().len()).sum()
+    }
+    /// `broken`, `re-prove` or `clean`.
+    fn state(&self) -> &'static str {
+        if self.bad() > 0 { "broken" } else if self.changed() + self.rig() > 0 { "re-prove" } else { "clean" }
+    }
+    /// What broke, the first `n` and how many more: `Valve removed x; ...; and 2 more`.
+    fn broken_text(&self, n: usize) -> String {
+        let mut first: Vec<String> = self.paks.iter().flat_map(|(_, d)| d.removed.iter().map(|x| format!("Valve removed {x}")).chain(patchday::group_broken(&d.broken)).chain(d.skeleton.iter().cloned()).chain(d.contract.iter().cloned())).collect();
+        let more = first.len().saturating_sub(n);
+        first.truncate(n);
+        format!("{}{}", first.join("; "), if more > 0 { format!("; and {more} more") } else { String::new() })
+    }
+}
+
+/// Drift of a mod's paks from `from` to `to`, with the model-contract check when `gf` is the installed game (`to`).
+fn mod_drift(paks: &[PathBuf], from: &str, to: &str, gf: Option<&gamefiles::GameFiles>) -> Result<ModDrift, String> {
+    let eras = load_eras(from, to)?;
+    let paks = paks.iter().map(|p| drift_vpk(p, &eras, gf).map(|d| (p.clone(), d))).collect::<Result<Vec<_>, String>>()?;
+    Ok(ModDrift { paks })
+}
+
 fn print_drift(label: &str, nfiles: usize, eras: &Eras, d: &patchday::Drift) {
     say!("drift {label} : from {} to {} ({nfiles} files)", eras.from, eras.to);
     let show = |title: &str, l: &[String]| {

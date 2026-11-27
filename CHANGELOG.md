@@ -4,6 +4,14 @@ Newest first. Dates are when the capability was proven, not when the code was wr
 
 Each release's entry says whether the lint rules, the grading rubric or the built-in policy changed (`magician update --describe` shows the fingerprints), because that is what `magician update --check` tells a user to re-run `lint` and `grade` for. An entry that says nothing about them says they did not.
 
+## Unreleased
+
+**Judgement changed in `check`; the lint rules, the grading rubric and the built-in policy are as in 0.2.0.** Re-run `check` on every mod proven on the installed build.
+
+### Judgement changed
+
+- **A proof on a build no longer hides a break that only drift sees.** When a mod's bytes were proven on the installed build, `check` reported drift as current and compared nothing, so a bone the mod's model uses renamed by Valve, a replaced original removed or a model contract lost went away once someone recorded a proof of those same bytes on the new build. Re-prove (exit 4) is resolved by a look in game; broken (exit 1) only by new bytes. `check` now still compares drift from the last earlier build a proof holds these bytes on: broken stays broken (exit 1, "these bytes are proven on N, but their contract broke since M"), and a re-prove or a clean comparison reads as current, answered by the proof. The drift step's `state` keeps its values; it now says what was compared (`from`, `to`), and for bytes proven here carries `proven_here` and the comparison's own verdict as `compared` (`broken`, `re-prove`, `clean`, or `unknown` with `why` when a baseline is not on record). With no earlier proof of these bytes, nothing changes. The comparison costs what `check` already spent on a mod not proven here.
+
 ## 0.2.0 (2026-11-26)
 
 **Judgement changed in the lint rules (81 now, lint judgement revision 3); the grading rubric and the built-in policy are as in 0.1.0.** Re-run `lint` on every mod, and `magician index` once on each build you lint against: an index from 0.1.0 is not read.

@@ -383,6 +383,97 @@ fn prove_records_the_installed_bytes_and_the_evidence_and_release_copies_with_pa
     let _ = std::fs::remove_dir_all(&d);
 }
 
+const SKEL: &str = "models/heroes/x/x.vnmskel_c";
+const MODEL: &str = "models/heroes/x/x.vmdl_c";
+
+/// A compiled resource whose DATA block is this KV3 text.
+fn kv3_file(text: &str) -> Vec<u8> {
+    resource::synth_with(&[], &[(*b"DATA", resource::kv3::encode(&resource::kv3::parse_text(text).unwrap()))])
+}
+
+/// `fake_install` on `build` with Valve's skeleton for hero x (`bones`), the model that names it and the clip, and an
+/// installed pak of mod_a that replaces the model and the clip.
+fn fake_rig_install(root: &Path, build: &str, bones: &[&str], valve_clip: &[u8]) -> PathBuf {
+    let game = fake_install(root, build, valve_clip);
+    let citadel = game.join("citadel");
+    let skel = kv3_file(&format!("{{ m_boneIDs = [ {} ] }}", bones.iter().map(|b| format!("\"{b}\"")).collect::<Vec<_>>().join(", ")));
+    let model = |name: &str| kv3_file(&format!("{{ m_name = \"{name}\" m_vecNmSkeletonRefs = [ \"models/heroes/x/x.vnmskel\" ] }}"));
+    let clip = |name: &str| kv3_file(&format!("{{ m_name = \"{name}\" }}"));
+    vpk::write(citadel.join("pak01_dir.vpk"), &[(CLIP.to_string(), clip(&String::from_utf8_lossy(valve_clip))), (MODEL.to_string(), model("valve")), (SKEL.to_string(), skel)]).unwrap();
+    let pak = citadel.join("addons").join("pak10_dir.vpk");
+    vpk::write(&pak, &[(CLIP.to_string(), clip("ours")), (MODEL.to_string(), model("ours"))]).unwrap();
+    let crc = vpk::crc32(&std::fs::read(&pak).unwrap());
+    std::fs::write(citadel.join("addons").join(".magician-installed.tsv"), format!("pak10_dir.vpk\t{crc:08x}\tmod_a\n")).unwrap();
+    game
+}
+
+/// `check --json` on the mod, its exit code and its document with the scratch folder's paths taken out.
+fn check_doc(d: &Path, ts: &str, game: &str) -> (Option<i32>, String) {
+    let o = magician(d, &["check", ts, "--game", game, "--light", "--json"]);
+    let out = String::from_utf8_lossy(&o.stdout).trim_end().to_string();
+    assert_eq!(out.lines().count(), 1, "one document: {}", text(&o));
+    let root = d.to_string_lossy().replace('\\', "\\\\");
+    let doc = out.replace(&root, "<scratch>").replace("\\\\", "/");
+    println!("check --json, exit {:?}:\n{doc}\n", o.status.code());
+    (o.status.code(), doc)
+}
+
+/// A bone the mod's model uses is renamed in the new build. Only drift across the two builds sees it: lint and the
+/// scene stay clean. Broken (exit 1) is resolved only by new bytes, so a proof of these bytes on the new build must
+/// not make it go away; a re-prove (exit 4) is resolved by the proof.
+#[test]
+fn a_break_only_drift_sees_survives_a_proof_of_the_same_bytes_on_the_new_build() {
+    let d = scratch("drift-break");
+    let toml = d.join("mod.toml");
+    let ts = toml.to_string_lossy().into_owned();
+    std::fs::write(&toml, "[mod]\nslug = \"mod-a\"\n[proven]\nbuilds = []\n").unwrap();
+    let game = fake_rig_install(&d, "6864", &["pelvis", "spine_1", "head"], b"valve clip").to_string_lossy().into_owned();
+    assert_eq!(magician(&d, &["baseline", "--game", &game]).status.code(), Some(0));
+    assert_eq!(magician(&d, &["prove", &ts, "--game", &game, "--date", "2026-11-20"]).status.code(), Some(0));
+    // Valve renames spine_1 in 6865; nothing else the mod touches changes
+    fake_rig_install(&d, "6865", &["pelvis", "spine_1_renamed", "head"], b"valve clip");
+    assert_eq!(magician(&d, &["baseline", "--game", &game]).status.code(), Some(0));
+    let o = magician(&d, &["lint", &PathBuf::from(&game).join("citadel").join("addons").join("pak10_dir.vpk").to_string_lossy(), "--game", &game, "--json"]);
+    assert_eq!(o.status.code(), Some(0), "lint alone sees nothing broken: {}", text(&o));
+    // before any proof on 6865: broken since 6864
+    let (code, doc) = check_doc(&d, &ts, &game);
+    assert_eq!(code, Some(1), "{doc}");
+    assert!(doc.contains("\"verdict\":\"broken\"") && doc.contains("{\"step\":\"drift\",\"state\":\"broken\",\"from\":\"6864\",\"to\":\"6865\",\"problems\":1,"), "{doc}");
+    // a proof of the same bytes on 6865: the proof is real, and the break is still there
+    let ledger = std::fs::read_to_string(d.join("proofs.tsv")).unwrap();
+    let o = magician(&d, &["prove", &ts, "--game", &game, "--date", "2026-11-26"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert_ne!(std::fs::read_to_string(d.join("proofs.tsv")).unwrap(), ledger);
+    let (code, doc) = check_doc(&d, &ts, &game);
+    assert_eq!(code, Some(1), "{doc}");
+    assert!(doc.contains("\"step\":\"proof\",\"state\":\"current\",\"proven\":[\"6864\",\"6865\"]"), "{doc}");
+    assert!(doc.contains("{\"step\":\"drift\",\"state\":\"broken\",\"from\":\"6864\",\"to\":\"6865\",\"proven_here\":true,\"compared\":\"broken\",\"problems\":1,"), "{doc}");
+    let o = magician(&d, &["check", &ts, "--game", &game, "--light"]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("BROKEN since 6864: these bytes are proven on 6865, but their contract broke since 6864, and only new bytes fix that: models/heroes/x/x.vnmskel_c: bone 'spine_1' is now 'spine_1_renamed' (renamed)"), "{}", text(&o));
+    let _ = std::fs::remove_dir_all(&d);
+
+    // A re-prove and nothing else (Valve changed the clip the mod replaces): exit 4, and the proof answers it.
+    let d = scratch("drift-reprove");
+    let toml = d.join("mod.toml");
+    let ts = toml.to_string_lossy().into_owned();
+    std::fs::write(&toml, "[mod]\nslug = \"mod-a\"\n[proven]\nbuilds = []\n").unwrap();
+    let bones = ["pelvis", "spine_1", "head"];
+    let game = fake_rig_install(&d, "6864", &bones, b"valve clip v1").to_string_lossy().into_owned();
+    assert_eq!(magician(&d, &["baseline", "--game", &game]).status.code(), Some(0));
+    assert_eq!(magician(&d, &["prove", &ts, "--game", &game, "--date", "2026-11-20"]).status.code(), Some(0));
+    fake_rig_install(&d, "6865", &bones, b"valve clip v2");
+    assert_eq!(magician(&d, &["baseline", "--game", &game]).status.code(), Some(0));
+    let (code, doc) = check_doc(&d, &ts, &game);
+    assert_eq!(code, Some(4), "{doc}");
+    assert!(doc.contains("\"verdict\":\"re-prove\"") && doc.contains("{\"step\":\"drift\",\"state\":\"re-prove\",\"from\":\"6864\",\"to\":\"6865\",\"problems\":0,\"changed\":1,"), "{doc}");
+    let o = magician(&d, &["prove", &ts, "--game", &game, "--date", "2026-11-26"]);
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let (code, doc) = check_doc(&d, &ts, &game);
+    assert_eq!(code, Some(0), "{doc}");
+    assert!(doc.contains("\"verdict\":\"ok\"") && doc.contains("{\"step\":\"drift\",\"state\":\"current\",\"from\":\"6864\",\"to\":\"6865\",\"proven_here\":true,\"compared\":\"re-prove\",\"problems\":0,\"changed\":1,"), "{doc}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
 fn sha256_hex(b: &[u8]) -> String {
     grade::sha256::hex(b)
 }

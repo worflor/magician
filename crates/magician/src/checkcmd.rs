@@ -12,7 +12,8 @@
 //! ```
 //!
 //! Exit 1 when something is broken (lint errors, a drift that breaks the mod, a scene patch that no longer fits), 4
-//! when it loads but is not proven on this build, 0 when it is proven here and clean. `--json` prints the same as one
+//! when it loads but is not proven on this build, 0 when it is proven here and clean. A proof on this build answers a
+//! re-prove, not a break: drift is still compared from the build these bytes were proven on before it. `--json` prints the same as one
 //! document (`magician.check/1`, the grade record inside it); `--verbose` adds the full grade and drift reports.
 
 use super::*;
@@ -252,47 +253,57 @@ pub fn cmd_check(args: &[String]) -> R {
             .raw("files", jsonout::arr(bytes.iter().map(|f| jsonout::Obj::new().str("owner", &f.owner).str("file", &f.file).str("crc", &f.crc).str("sha256", &f.sha256).build())))
             .build(),
     });
+    // Drift is compared from the last build these bytes are proven on. When that is the installed build, it is still
+    // compared from the one proven before it: the proof here answers a re-prove (someone looked), never a break, which
+    // only new bytes fix. With no earlier proof of these bytes there is nothing to compare.
     let mut drift_text = String::new();
-    match binding.last() {
-        None => items.push(Item { what: "drift", state: "warn", text: "these bytes are proven on no build yet: nothing to compare from".into(), json: jsonout::Obj::new().str("state", "unproven").build() }),
-        Some(_) if !reprove => items.push(Item { what: "drift", state: "ok", text: format!("proven on {build}, the installed build"), json: jsonout::Obj::new().str("state", "current").str("from", &build).str("to", &build).build() }),
+    let drift_from: Option<&String> = if reprove { binding.last() } else { proven_before(&binding.bound, &build) };
+    match drift_from {
+        None if reprove => items.push(Item { what: "drift", state: "warn", text: "these bytes are proven on no build yet: nothing to compare from".into(), json: jsonout::Obj::new().str("state", "unproven").build() }),
+        None => items.push(Item { what: "drift", state: "ok", text: format!("proven on {build}, the installed build"), json: jsonout::Obj::new().str("state", "current").str("from", &build).str("to", &build).build() }),
         Some(from) => {
             if !default_baseline_path(&build).exists() {
                 auto_capture(&game, &installed_baseline(&game.path)?);
             }
             let hint = progress::start(&format!("comparing {from} with {build}"));
-            let eras = load_eras(from, &build);
-            let r = eras.and_then(|eras| {
-                let gf = gamefiles::GameFiles::open(&game.path, None);
-                paks.iter().map(|p| drift_vpk(&p.path, &eras, Some(&gf)).map(|d| (p.path.clone(), d))).collect::<Result<Vec<_>, String>>()
-            });
+            let gf = gamefiles::GameFiles::open(&game.path, None);
+            let r = mod_drift(&paks.iter().map(|p| p.path.clone()).collect::<Vec<_>>(), from, &build, Some(&gf));
             drop(hint);
+            let here = !reprove;
             match r {
+                Err(e) if here => items.push(Item {
+                    what: "drift",
+                    state: "ok",
+                    text: format!("proven on {build}, the installed build; whether anything broke since {from}, the build these bytes were proven on before, was not compared: {e}"),
+                    json: jsonout::Obj::new().str("state", "current").str("from", from).str("to", &build).bool("proven_here", true).str("compared", "unknown").str("why", &e).build(),
+                }),
                 Err(e) => items.push(Item { what: "drift", state: "skip", text: format!("not compared from {from}: {e}"), json: jsonout::Obj::new().str("state", "unknown").str("from", from).str("to", &build).str("why", &e).build() }),
-                Ok(ds) => {
-                    let bad: usize = ds.iter().map(|(_, d)| d.bad()).sum();
-                    let changed: usize = ds.iter().map(|(_, d)| d.changed.len()).sum();
-                    let rig: usize = ds.iter().map(|(_, d)| d.rig_deps().len()).sum();
-                    let state = if bad > 0 { "broken" } else if changed + rig > 0 { "re-prove" } else { "clean" };
+                Ok(md) => {
+                    let (bad, changed, rig) = (md.bad(), md.changed(), md.rig());
+                    let compared = md.state();
                     broken |= bad > 0;
-                    let text = match state {
-                        "broken" => {
-                            let mut first: Vec<String> = ds.iter().flat_map(|(_, d)| d.removed.iter().map(|x| format!("Valve removed {x}")).chain(patchday::group_broken(&d.broken)).chain(d.skeleton.iter().cloned()).chain(d.contract.iter().cloned())).collect();
-                            let more = first.len().saturating_sub(3);
-                            first.truncate(3);
-                            format!("BROKEN since {from}: {}{}", first.join("; "), if more > 0 { format!("; and {more} more") } else { String::new() })
-                        }
-                        "re-prove" => format!("{from} -> {build}: loads; {changed} replaced original(s) and {rig} rig file(s) changed under it"),
-                        _ => format!("{from} -> {build}: nothing under it changed"),
+                    // proven here: a re-prove or a clean comparison is answered by that proof, and reads as current
+                    let state = if here && compared != "broken" { "current" } else { compared };
+                    let text = match (compared, here) {
+                        ("broken", false) => format!("BROKEN since {from}: {}", md.broken_text(3)),
+                        ("broken", true) => format!("BROKEN since {from}: these bytes are proven on {build}, but their contract broke since {from}, and only new bytes fix that: {}", md.broken_text(3)),
+                        ("re-prove", false) => format!("{from} -> {build}: loads; {changed} replaced original(s) and {rig} rig file(s) changed under it"),
+                        ("re-prove", true) => format!("proven on {build}, the installed build; {from} -> {build}: {changed} replaced original(s) and {rig} rig file(s) changed under it, which that proof answers"),
+                        (_, false) => format!("{from} -> {build}: nothing under it changed"),
+                        (_, true) => format!("proven on {build}, the installed build; {from} -> {build}: nothing under it changed"),
                     };
-                    for (p, d) in &ds {
+                    for (p, d) in &md.paks {
                         drift_text.push_str(&format!("{}: {}\n", p.display(), d.verdict(from, &build)));
+                    }
+                    let mut j = jsonout::Obj::new().str("state", state).str("from", from).str("to", &build);
+                    if here {
+                        j = j.bool("proven_here", true).str("compared", compared);
                     }
                     items.push(Item {
                         what: "drift",
-                        state: if state == "clean" { "ok" } else if state == "broken" { "broken" } else { "warn" },
+                        state: match state { "broken" => "broken", "re-prove" => "warn", _ => "ok" },
                         text,
-                        json: jsonout::Obj::new().str("state", state).str("from", from).str("to", &build).int("problems", bad as i64).int("changed", changed as i64).int("rig", rig as i64).build(),
+                        json: j.int("problems", bad as i64).int("changed", changed as i64).int("rig", rig as i64).build(),
                     });
                 }
             }
@@ -322,7 +333,7 @@ pub fn cmd_check(args: &[String]) -> R {
         // name only the list that holds what broke it: a drift with nothing to compare from has nothing to list
         let drift_broke = items.iter().any(|i| i.what == "drift" && i.state == "broken");
         let lint_broke = items.iter().any(|i| i.what == "lint" && i.state == "broken");
-        let lists = match (lint_broke, drift_broke, binding.last()) {
+        let lists = match (lint_broke, drift_broke, drift_from) {
             (true, true, Some(from)) => format!("`magician lint` lists every finding, `magician drift --from {from}` every change"),
             (false, true, Some(from)) => format!("`magician drift --from {from}` lists every change"),
             _ => "`magician lint` lists every finding".to_string(),
