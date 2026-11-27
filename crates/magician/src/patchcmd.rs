@@ -153,19 +153,23 @@ pub fn cmd_patchday(args: &[String]) -> R {
     };
     // The engine sidecar: the executables and shader archives the data is run by.
     let epath = patchday::engine_path(&reference, &installed);
+    // --verify-engine: the sidecar against the engine installed now. Valve can replace executables or shaders within a
+    // build (a hotfix that leaves the build number alone); then every proof of this build saw another engine, and each
+    // installed mod is re-proven (exit 4). Nothing is broken by it. A file known on neither side (an edited
+    // gameinfo.gi with no stock backup) is said, never counted as a change.
+    let mut engine_stale = false;
     let engine_state = if epath.is_file() {
         if args.iter().any(|arg| arg == "--verify-engine") {
             let old = patchday::Engine::load(&epath)?;
             let now = measure_engine(&game, &installed)?;
             let delta = patchday::engine_delta(&old, &now);
-            if !delta.same() || !delta.unknown.is_empty() {
-                let mut paths = delta.files();
-                paths.extend(delta.unknown);
-                say!("  STALE: installed engine differs from or cannot be checked against {}: {}", epath.display(), paths.join(", "));
-                hard += 1;
+            let note = if delta.unknown.is_empty() { String::new() } else { format!(" ({} not known on one side: {})", delta.unknown.len(), delta.unknown.join(", ")) };
+            if !delta.same() {
+                say!("  STALE: the installed engine is not the one {} records for build {installed}: {}{note}; every mod proven on {installed} is re-proven", epath.display(), delta.files().join(", "));
+                engine_stale = true;
                 "stale"
             } else {
-                say!("  engine sidecar matches the live engine: {}", epath.display());
+                say!("  engine sidecar matches the installed engine: {}{note}", epath.display());
                 "verified"
             }
         } else {
@@ -173,13 +177,9 @@ pub fn cmd_patchday(args: &[String]) -> R {
             "present"
         }
     } else if capture {
+        // Just captured from the installed engine: it matches by construction.
         say!("  {}", capture_engine(&game, &installed, &epath)?);
-        if args.iter().any(|arg| arg == "--verify-engine") && patchday::Engine::load(&epath)?.files.values().any(Option::is_none) {
-            hard += 1;
-            "stale"
-        } else {
-            "captured"
-        }
+        "captured"
     } else {
         say!("  no engine sidecar {}: whether the engine changed can't be said next patch; `magician patchday --capture` writes it", epath.display());
         "missing"
@@ -451,7 +451,7 @@ pub fn cmd_patchday(args: &[String]) -> R {
                 }
             }
         }
-        if is_installed && !here {
+        if is_installed && (!here || engine_stale) {
             unproven.push(m.slug.clone());
         }
         if !is_installed {

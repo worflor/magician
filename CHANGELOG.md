@@ -4,6 +4,10 @@ Newest first. Dates are when the capability was proven, not when the code was wr
 
 Each release's entry says whether the lint rules, the grading rubric or the built-in policy changed (`magician update --describe` shows the fingerprints), because that is what `magician update --check` tells a user to re-run `lint` and `grade` for. An entry that says nothing about them says they did not.
 
+## Unreleased
+
+- **`magician patchday --verify-engine`** measures the installed engine (executables, libraries, shader archives) against the build's own sidecar. Valve can replace the engine within a build, leaving the build number alone; then every proof of that build saw another engine, so each installed mod is listed to re-prove (exit 4) and the sidecar reads `stale` in `--json`. A file known on neither side (an edited `gameinfo.gi` with no stock backup) is said and never counted as a change. Without the switch nothing is measured. Opt-in, so no verdict changes for anyone who doesn't ask.
+
 ## 0.2.1 (2026-11-26)
 
 **Judgement changed in `check`; the lint rules, the grading rubric and the built-in policy are as in 0.2.0.** Re-run `check` on every mod proven on the installed build.
