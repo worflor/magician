@@ -25,6 +25,8 @@ Each release's entry says whether the lint rules, the grading rubric or the buil
 - **M160 physics-dropped (new, warning).** Valve's model simulates cloth and ours has none, or ours lacks ragdoll parts Valve's has: the loss a Source 2 Viewer decompile makes silently, as M142 says for distance fields.
 - **`magician install --status` lists the paths installed paks share** and which pak the game reads them from (the lowest number); `--json` carries them as `shared_paths`.
 - **`magician doctor` reads `gameinfo.gi` against the build's stock file**: SearchPaths lines the stock file has and this one lacks (a block pasted from before `Game_UILanguage`), lines another tool added, and the sections a config must not change (Engine2, MaterialSystem2, NetworkSystem, Particles, RenderSystem, SceneSystem, WorldRenderer), which a community page reports keep a party out of matchmaking.
+- **Rough edges found by running every command on 20 community mods** (skins, recolours, HUD, quality-of-life, maps, animations, variant packs, paks up to 800 MB) on a fresh machine:
+  - `check` counts each finding where it belongs: an M062 attachment error (not fair play) was printed in the fair-play row and left out of the errors row, on four of the 20 mods. A mod for no hero lists its model's findings `on the model`, and its next step is a look in game after `install`, since it has no stock scenario to film.
 - The record for all of the above, measured on Valve's files, 75 community mods and two finished skins on 6877, is [docs/research/rule-calibration-6871.md](docs/research/rule-calibration-6871.md), "The hero model contract and its neighbours (6877)".
 
 ## 0.3.0 (2026-11-27)

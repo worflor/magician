@@ -57,6 +57,62 @@ fn kind_gloss(label: &str) -> Option<(&'static str, &'static str)> {
     [Kind::New, Kind::Same, Kind::SameModel, Kind::NoModel].into_iter().find(|k| word(*k) == first).map(|k| (word(k), means(k)))
 }
 
+/// The lint line's findings by rule, as `check` prints them under it and puts them in its JSON.
+struct Rows {
+    rows: Vec<(&'static str, String)>,
+    first_error: Option<&'static str>,
+    warned: bool,
+    json: String,
+}
+
+/// Errors first, then the warnings by where a player meets them (on the hero, effects and sound, other heroes, frame
+/// cost, loading, the pak alone), then fair play, which the policy judges apart, and its advisories. Fair play is a
+/// finding's, not a code's: M062 is fair play for a hitbox and an error like any other for an attachment, so the
+/// findings are split first and each side is counted by rule.
+fn rows(kept: &[lint::Finding], advisory: &[String], no_hero: bool, stale: &[String]) -> Rows {
+    let (fair_findings, plain_findings): (Vec<lint::Finding>, Vec<lint::Finding>) = kept.iter().cloned().partition(|f| grade::rubric::is_compliance(f.code, &f.message));
+    let tally: Vec<(bool, Tally)> = rule_tally(&plain_findings).into_iter().map(|t| (false, t)).chain(rule_tally(&fair_findings).into_iter().map(|t| (true, t))).collect();
+    let is_advisory = |t: &Tally| advisory.iter().any(|a| a == t.code);
+    let pick = |f: &dyn Fn(bool, &Tally) -> bool| -> Vec<&Tally> { tally.iter().filter(|(fair, t)| f(*fair, t)).map(|(_, t)| t).collect() };
+    let mut rows: Vec<(&'static str, String)> = Vec::new();
+    let errors = pick(&|fair, t| !fair && t.severity == Severity::Error);
+    if !errors.is_empty() {
+        rows.push(("errors", tally_line(&errors)));
+    }
+    for seen in lint::SEEN {
+        let these = pick(&|fair, t| !fair && t.severity == Severity::Warn && lint::seen(t.code) == *seen);
+        if !these.is_empty() {
+            rows.push((if no_hero && *seen == "on the hero" { "on the model" } else { seen }, tally_line(&these)));
+        }
+    }
+    // Fair play's advisory rules (M081 by default) are reported and never a violation: a row of their own, so a
+    // "fair play pass" above a row of them reads as what it is.
+    let fp = pick(&|fair, t| fair && t.severity != Severity::Info && !is_advisory(t));
+    if !fp.is_empty() {
+        rows.push(("fair play", tally_line(&fp)));
+    }
+    if !stale.is_empty() {
+        rows.push(("stale", format!("{} (an allowance no pak of the mod uses: remove it)", stale.join("; "))));
+    }
+    let adv = pick(&|fair, t| fair && t.severity != Severity::Info && is_advisory(t));
+    if !adv.is_empty() {
+        rows.push(("advisory", format!("{} (fair play's advisories: reported, never a violation)", tally_line(&adv))));
+    }
+    let json = jsonout::arr(tally.iter().map(|(fair, t)| {
+        jsonout::Obj::new()
+            .str("code", t.code)
+            .str("name", t.name)
+            .str("severity", sev_label(t.severity).trim())
+            .str("seen", lint::seen(t.code))
+            .bool("fair_play", *fair)
+            .bool("advisory", *fair && is_advisory(t))
+            .int("count", t.count as i64)
+            .int("files", t.files as i64)
+            .build()
+    }));
+    Rows { first_error: errors.first().map(|t| t.code), warned: tally.iter().any(|(_, t)| t.severity == Severity::Warn), rows, json }
+}
+
 pub fn cmd_check(args: &[String]) -> R {
     let pos = positional(args);
     let ctx = match pos.first().map(|p| p.as_str()).or(flag(args, "--mod").as_deref().map(|_| "")) {
@@ -166,7 +222,8 @@ pub fn cmd_check(args: &[String]) -> R {
                 for f in &allow {
                     a.extend(["--allow".into(), f.to_string_lossy().into_owned()]);
                 }
-                a.extend(common.iter().filter(|x| *x != "--csdk" && *x != "--vrf").cloned());
+                // lint takes neither the CSDK nor the viewer: leave out each of those flags with its value
+                a.extend(common.chunks(2).filter(|kv| kv[0] != "--csdk" && kv[0] != "--vrf").flatten().cloned());
                 let hint = progress::start(&format!("linting {}", p.path.display()));
                 let o = lint_run(&p.path, &a);
                 drop(hint);
@@ -188,50 +245,10 @@ pub fn cmd_check(args: &[String]) -> R {
         }
     }
 
-    // The lint line's findings by rule: errors first, then the warnings by where a player meets them (on the hero,
-    // effects and sound, other heroes, frame cost, loading, the pak alone), then fair play, which the policy judges apart.
-    let tally = rule_tally(&kept);
-    let fair = |t: &&Tally| kept.iter().any(|f| f.code == t.code && grade::rubric::is_compliance(f.code, &f.message));
-    let mut by_rule: Vec<(&str, String)> = Vec::new();
-    let errors: Vec<&Tally> = tally.iter().filter(|t| t.severity == Severity::Error && !fair(t)).collect();
-    if !errors.is_empty() {
-        by_rule.push(("errors", tally_line(&errors)));
-    }
-    let first_error: Option<&str> = errors.first().map(|t| t.code);
-    let warned = tally.iter().any(|t| t.severity == Severity::Warn);
-    for seen in lint::SEEN {
-        let these: Vec<&Tally> = tally.iter().filter(|t| t.severity == Severity::Warn && !fair(t) && lint::seen(t.code) == *seen).collect();
-        if !these.is_empty() {
-            by_rule.push((seen, tally_line(&these)));
-        }
-    }
-    // Fair play's advisory rules (M081 by default) are reported and never a violation: a row of their own, so a
-    // "fair play pass" above a row of them reads as what it is.
+    // A mod for no hero has no hero to meet its findings on: its model is a prop's, a map's or nothing at all.
+    let no_hero = ctx.hero().is_none();
     let policy = load_policy(args)?;
-    let advisory = |t: &&Tally| policy.compliance.advisory.iter().any(|a| a == t.code);
-    let fp: Vec<&Tally> = tally.iter().filter(|t| t.severity != Severity::Info && fair(t) && !advisory(t)).collect();
-    if !fp.is_empty() {
-        by_rule.push(("fair play", tally_line(&fp)));
-    }
-    if !stale.is_empty() {
-        by_rule.push(("stale", format!("{} (an allowance no pak of the mod uses: remove it)", stale.join("; "))));
-    }
-    let adv: Vec<&Tally> = tally.iter().filter(|t| t.severity != Severity::Info && fair(t) && advisory(t)).collect();
-    if !adv.is_empty() {
-        by_rule.push(("advisory", format!("{} (fair play's advisories: reported, never a violation)", tally_line(&adv))));
-    }
-    let by_rule_json = jsonout::arr(tally.iter().map(|t| {
-        jsonout::Obj::new()
-            .str("code", t.code)
-            .str("name", t.name)
-            .str("severity", sev_label(t.severity).trim())
-            .str("seen", lint::seen(t.code))
-            .bool("fair_play", fair(&t))
-            .bool("advisory", fair(&t) && advisory(&t))
-            .int("count", t.count as i64)
-            .int("files", t.files as i64)
-            .build()
-    }));
+    let Rows { rows: by_rule, first_error, warned, json: by_rule_json } = rows(&kept, &policy.compliance.advisory, no_hero, &stale);
     if let Some(i) = items.iter_mut().find(|i| i.what == "lint") {
         i.json = format!("{},\"by_rule\":{by_rule_json}}}", &i.json[..i.json.len() - 1]);
     }
@@ -351,6 +368,13 @@ pub fn cmd_check(args: &[String]) -> R {
     reprove &= !broken;
     let verdict = if broken { "BROKEN" } else if reprove { "RE-PROVE" } else { "ok" };
     let mut next: Vec<String> = Vec::new();
+    // How a look in game is had: a hero mod's pass films the hero's stock scenarios; a mod for no hero has none to
+    // film, so it is installed and looked at by someone who knows what it changes.
+    let pass = if no_hero {
+        "a look in game: `magician install` puts it in (a mod for no hero has no stock scenario to film, so someone plays and looks at what it changes), then `magician prove`".to_string()
+    } else {
+        format!("the in-game pass (`magician session qa --mod {} --out <dir>`, which launches the game on this machine), a look at its frames, then `magician prove --evidence <dir>`", ctx.dir.display())
+    };
     if broken {
         // name only the list that holds what broke it: a drift with nothing to compare from has nothing to list
         let drift_broke = items.iter().any(|i| i.what == "drift" && i.state == "broken");
@@ -367,17 +391,12 @@ pub fn cmd_check(args: &[String]) -> R {
     } else if reprove && never_proven {
         // A first look at a mod: lint is as far as the files go, and a mod author may want no more than that.
         next.push(format!(
-            "nothing in its files breaks the mod{}. That is as far as lint can see: if it is what you wanted to know, you can stop here, and RE-PROVE says only that nobody has seen the mod in game on {build} yet. To prove it: the in-game pass (`magician session qa --mod {} --out <dir>`, which launches the game on this machine), a look at its frames, then `magician prove --evidence <dir>`",
+            "nothing in its files breaks the mod{}. That is as far as lint can see: if it is what you wanted to know, you can stop here, and RE-PROVE says only that nobody has seen the mod in game on {build} yet. To prove it: {pass}",
             if warned { format!(", and its warnings are what a player might notice (`{}` lists them)", if light { "magician lint" } else { "magician lint --deep" }) } else { String::new() },
-            ctx.dir.display()
         ));
     } else if reprove {
         let quiet_patch = items.iter().any(|i| i.what == "drift" && i.state == "ok");
-        next.push(format!(
-            "{}the in-game pass on build {build} (`magician session qa --mod {} --out <dir>`), look at the frames, then `magician prove --evidence <dir>`",
-            if quiet_patch { "nothing under it changed since its last proven build, so a quick look: " } else { "" },
-            ctx.dir.display()
-        ));
+        next.push(format!("{}on build {build}, {pass}", if quiet_patch { "nothing under it changed since its last proven build, so a quick look: " } else { "" }));
     }
     let kin = ctx.unclaimed_kin(Some(&game.path));
     if !kin.is_empty() {
@@ -431,4 +450,38 @@ pub fn cmd_check(args: &[String]) -> R {
         }
     }
     Ok(ExitCode::from(if broken { cli::BROKEN } else if reprove { cli::REPROVE } else { cli::CLEAN }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn f(code: &'static str, severity: Severity, message: &str) -> lint::Finding {
+        lint::Finding { code, name: lint::rule(code).name, severity, path: Some("models/heroes/x/x.vmdl_c".into()), message: message.into() }
+    }
+
+    #[test]
+    fn a_rule_that_is_fair_play_only_for_some_findings_is_counted_where_each_finding_belongs() {
+        // M062 is fair play for a hitbox and an error like any other for an attachment (seen on four community skins:
+        // the attachment errors were printed in the fair-play row and left out of the errors row)
+        let kept = vec![
+            f("M062", Severity::Error, "attachment 'muzzle' moved 12 units"),
+            f("M062", Severity::Error, "attachment 'eyes' moved 9 units"),
+            f("M062", Severity::Warn, "hitbox 'default/head_capsule' changed"),
+            f("M030", Severity::Error, "needs 'sounds/x.vsnd_c'"),
+            f("M102", Severity::Warn, "opening of 1 u2"),
+            f("M081", Severity::Warn, "particle energy 1.4x Valve's"),
+        ];
+        let r = rows(&kept, &["M081".to_string()], false, &[]);
+        let row = |name: &str| r.rows.iter().find(|(w, _)| *w == name).map(|(_, l)| l.clone()).unwrap_or_default();
+        assert_eq!(row("errors"), "M062 model-contract x2, M030 dangling-ref x1", "{:?}", r.rows);
+        assert_eq!(row("fair play"), "M062 model-contract x1", "{:?}", r.rows);
+        assert_eq!(row("advisory"), "M081 particle-energy x1 (fair play's advisories: reported, never a violation)");
+        assert_eq!(r.first_error, Some("M062"));
+        assert!(r.json.contains("{\"code\":\"M062\",\"name\":\"model-contract\",\"severity\":\"error\",\"seen\":") && r.json.contains("\"fair_play\":false,\"advisory\":false,\"count\":2"), "{}", r.json);
+        assert!(r.json.contains("\"fair_play\":true,\"advisory\":false,\"count\":1"), "{}", r.json);
+        // a mod for no hero meets its model's findings on a model, not on a hero
+        let r = rows(&kept, &[], true, &[]);
+        assert!(r.rows.iter().any(|(w, l)| *w == "on the model" && l.contains("M102")) && !r.rows.iter().any(|(w, _)| *w == "on the hero"), "{:?}", r.rows);
+    }
 }
