@@ -1,8 +1,9 @@
 //! Compliance: is the mod fair to play with? Three states, read from the lint run and the allowances.
 //!
-//! - **pass**: every fair-play check the mod's files call for ran, and nothing is unresolved;
-//! - **fail** (`NSFR`, not safe for ranked): at least one confirmed violation;
-//! - **unknown** (`FP?`): a check that should have run could not (a light lint over a model, or M144: a file or
+//! - **pass** (`ranked-safe`): every fair-play check the mod's files call for ran, and nothing is unresolved;
+//! - **fail** (`freeform`): at least one measurement past a fair-play limit; the skin took liberties with how the hero
+//!   reads, which informs and never rates it lower;
+//! - **unknown** (`fair play not checked`): a check that should have run could not (a light lint over a model, or M144: a file or
 //!   Valve's original that did not decode). Unknown never becomes pass.
 //!
 //! Each fair-play rule is one of three kinds (`rubric.rs` defaults, moved by a policy): never allowable (a finding
@@ -19,7 +20,7 @@ use lint::{Finding, Severity};
 
 /// The severity a finding is reported at under the policy. Fair play is lenient unless enforced: by default every
 /// fair-play finding and every M144 is at most a warning, so lint, build and install never stop on one alone (the
-/// grade still reads them, and its label still says NSFR or FP?). With `fair_play.enforce = true` every one that can
+/// grade still reads them, and its label still says freeform or fair play not checked). With `fair_play.enforce = true` every one that can
 /// fail fair play or leave it unknown (all but the advisory rules) is an error. Anything else keeps its rule's own
 /// severity: a broken reference is an error whatever the policy says.
 pub fn severity(code: &str, message: &str, own: Severity, p: &Policy) -> Severity {
@@ -56,12 +57,20 @@ impl State {
             State::Unknown => "unknown",
         }
     }
-    /// The label's mark: `NSFR`, `FP?` or nothing.
+    /// The words a reader sees: `ranked-safe`, `freeform` or `fair play not checked`. `id` stays the machine value.
+    pub fn name(self) -> &'static str {
+        match self {
+            State::Pass => "ranked-safe",
+            State::Fail => "freeform",
+            State::Unknown => "fair play not checked",
+        }
+    }
+    /// The label's mark: `freeform`, `fair play not checked` or nothing (a ranked-safe skin adds no mark).
     pub fn mark(self) -> Option<&'static str> {
         match self {
             State::Pass => None,
-            State::Fail => Some("NSFR"),
-            State::Unknown => Some("FP?"),
+            State::Fail => Some("freeform"),
+            State::Unknown => Some("fair play not checked"),
         }
     }
 }
@@ -290,12 +299,12 @@ mod tests {
     #[test]
     fn an_m140_without_a_reason_is_a_violation() {
         let r = judge(&[m140(11.27, 0.0039)], &[], Depth::Deep, MODELS, &Policy::default());
-        assert_eq!((r.state, r.state.mark()), (State::Fail, Some("NSFR")));
+        assert_eq!((r.state, r.state.mark()), (State::Fail, Some("freeform")));
         assert!(r.violations[0].why.contains("written reason"));
     }
 
     #[test]
-    fn an_allowance_over_the_policy_limit_is_nsfr_just_under_at_and_just_over() {
+    fn an_allowance_over_the_policy_limit_is_freeform_just_under_at_and_just_over() {
         let a = allow("M140\t*\t*\tthe train is the whole point of the costume\n");
         let at = |limit: f64| {
             let p = crate::policy::parse(&format!("[compliance]\nm140_max_worst_units = {limit}\n"), "p").unwrap();
@@ -340,7 +349,7 @@ mod tests {
         // a replaced particle whose data did not decode (lint M144)
         let u = f("M144", "particles/abilities/lash/lash_flog.vpcf_c", "the particle's data did not decode, so its energy and lights were not compared with Valve's (M081, M082)");
         let r = judge(std::slice::from_ref(&u), &[], Depth::Deep, Applicable { particles: true, ..Default::default() }, &Policy::default());
-        assert_eq!((r.state, r.state.mark()), (State::Unknown, Some("FP?")));
+        assert_eq!((r.state, r.state.mark()), (State::Unknown, Some("fair play not checked")));
         assert_eq!(r.unknown[0].rules, vec!["M081", "M082"]);
         assert!(r.checks_run.is_empty());
         // an allowance cannot make an unknown known

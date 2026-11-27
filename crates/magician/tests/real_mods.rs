@@ -148,11 +148,11 @@ fn maid_lash_is_a_costume_of_look_effects_and_sound_with_its_m140_allowance_list
     assert!(worst > 10.0 && worst <= limit && limit == 18.0, "the bell skirt sits between the taste line and the M129 line: {worst} (limit {limit})");
     // the same pak judged twice is the same record, byte for byte
     assert_eq!(record(std::slice::from_ref(&pak), &toml, Some(&allow), None), r);
-    // with only --mod the grade finds the mod's own allowance file: the same label, not an unexplained NSFR
+    // with only --mod the grade finds the mod's own allowance file: the same label, not an unexplained freeform
     let found = record(std::slice::from_ref(&pak), &toml, None, None);
-    assert!(found.contains("\"label\":\"Costume (look, effects, sound)\"") && found.contains("\"fair_play\":{\"state\":\"pass\""), "{found}");
+    assert!(found.contains("\"label\":\"Costume (look, effects, sound)\"") && found.contains("\"fair_play\":{\"state\":\"pass\",\"name\":\"ranked-safe\""), "{found}");
 
-    // A policy that moves the M140 allowance limit: just under the bell's worst point it is NSFR; at it, or just over,
+    // A policy that moves the M140 allowance limit: just under the bell's worst point it is freeform; at it, or just over,
     // the allowance holds. The record names the policy by fingerprint.
     let d = std::env::temp_dir().join(format!("magician-real-policy-{}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
@@ -163,12 +163,12 @@ fn maid_lash_is_a_costume_of_look_effects_and_sound_with_its_m140_allowance_list
     };
     let at = |limit: f64| at_with(limit, false);
     let under = at(worst - 0.01);
-    assert!(under.contains("\"fair_play\":{\"state\":\"fail\"") && under.contains("\"label\":\"Costume (look, effects, sound) · NSFR"), "{under}");
+    assert!(under.contains("\"fair_play\":{\"state\":\"fail\",\"name\":\"freeform\"") && under.contains("\"label\":\"Costume (look, effects, sound) · freeform"), "{under}");
     assert!(under.contains("\"overrides\":[\"compliance.m140_max_worst_units\"]"), "{under}");
-    // lenient, the NSFR is a warning at the gate; enforced, it blocks
-    assert!(under.contains("\"release_gate\":{\"pass\":true,\"blockers\":[],\"warnings\":[\"fair play: NSFR (M140"), "{under}");
+    // lenient, freeform is a warning at the gate; enforced, it blocks
+    assert!(under.contains("\"release_gate\":{\"pass\":true,\"blockers\":[],\"warnings\":[\"fair play: freeform (M140"), "{under}");
     let strict = at_with(worst - 0.01, true);
-    assert!(strict.contains("\"release_gate\":{\"pass\":false,\"blockers\":[\"fair play: NSFR (M140") && strict.contains("\"label\":\"Costume (look, effects, sound) · NSFR"), "{strict}");
+    assert!(strict.contains("\"release_gate\":{\"pass\":false,\"blockers\":[\"fair play: freeform (M140") && strict.contains("\"label\":\"Costume (look, effects, sound) · freeform"), "{strict}");
     for limit in [worst, worst + 0.01] {
         let ok = at(limit);
         assert!(ok.contains("\"fair_play\":{\"state\":\"pass\""), "{limit}: {ok}");

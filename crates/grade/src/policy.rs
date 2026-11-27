@@ -72,8 +72,8 @@ pub struct Identity {
 pub struct Policy {
     pub fair_play: FairPlay,
     pub compliance: Compliance,
-    /// Whether fair play is enforced (`fair_play.enforce`): its findings errors, NSFR and FP? blockers at the gate.
-    /// Off by default: the same findings are warnings and the gate lists NSFR and FP? as warnings.
+    /// Whether fair play is enforced (`fair_play.enforce`): its findings errors, freeform and fair play not checked blockers at the gate.
+    /// Off by default: the same findings are warnings and the gate lists freeform and fair play not checked as warnings.
     pub enforce: bool,
     /// Whether rights must be cleared to pass the release gate (`rights.enforce`). Off by default: `unreviewed` is a
     /// warning; `denied` blocks either way.
@@ -166,7 +166,7 @@ pub fn keys() -> Vec<Key> {
     k.push(Key {
         name: "fair_play.enforce".into(),
         kind: Kind::Bool,
-        what: "true: fair-play findings are errors (lint exits 1, install refuses) and NSFR or FP? blocks the release gate; false: the same are warnings".into(),
+        what: "true: fair-play findings are errors (lint exits 1, install refuses) and freeform or fair play not checked blocks the release gate; false: the same are warnings".into(),
     });
     for f in lint::policy::KEYS {
         k.push(num(&format!("fair_play.{}", f.name), f.min, f.max, &format!("{} ({})", f.what, f.rules)));

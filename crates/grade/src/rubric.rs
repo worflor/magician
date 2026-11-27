@@ -171,8 +171,8 @@ pub fn is_compliance(code: &str, message: &str) -> bool {
 }
 
 /// Whether fair play is enforced (`[fair_play] enforce`). Lenient by default: a fair-play finding is a warning, so
-/// lint, build and install never stop on one alone, and NSFR or FP? is a warning at the release gate; the label and
-/// the record say exactly what they say when enforced. Enforced, the same findings are errors and NSFR and FP? block.
+/// lint, build and install never stop on one alone, and freeform or fair play not checked is a warning at the release gate; the label and
+/// the record say exactly what they say when enforced. Enforced, the same findings are errors and freeform and fair play not checked block.
 pub const FAIR_PLAY_ENFORCED: bool = false;
 /// Whether rights must be cleared to pass the release gate (`[rights] enforce`). Lenient by default: `unreviewed` is a
 /// warning at the gate; `denied` is a blocker either way.

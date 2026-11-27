@@ -1,13 +1,13 @@
 //! The grade record: a measured claim about separate properties of a mod, and the label that projects it.
 //!
 //! ```text
-//! <Kind> (<groups>)[ · broken][ · NSFR | · FP?][ · stale(<last proven build>) | · unproven]
-//! not graded (<kind>)[ · broken][ · NSFR | · FP?][ · stale(<build>) | · unproven]
+//! <Kind> (<groups>)[ · broken][ · freeform | · fair play not checked][ · stale(<last proven build>) | · unproven]
+//! not graded (<kind>)[ · broken][ · freeform | · fair play not checked][ · stale(<build>) | · unproven]
 //! ```
 //!
 //! The description says what the mod is and what it makes its own: the kind (Echo, Costume, Variant, Kit) and the
 //! groups (look, effects, sound; `some <group>` when begun, left out while Valve's). The flags never touch it:
-//! **broken** (lint errors that are not fair play), **compliance** (fair play: pass, fail `NSFR`, unknown `FP?`) and
+//! **broken** (lint errors that are not fair play), **compliance** (fair play: pass is ranked-safe, fail is `freeform`, unknown is `fair play not checked`) and
 //! **freshness** (proven on the target build, or the last build it was). The **release gate** is separate from the
 //! label: it lists what stops automated packaging or publishing. Whoever reads it years later must be able to explain
 //! any grade from the record alone, so every criterion, signal, rule, allowance, build and blocker behind the label is
@@ -144,7 +144,7 @@ pub struct Inputs<'a> {
     pub rights: Rights,
     pub rights_notes: String,
     /// The allowance files the grade read, one line each (name, SHA-256, where it was found), or one line saying
-    /// there were none: an unexplained NSFR is often a missing allowance file.
+    /// there were none: an unexplained freeform is often a missing allowance file.
     pub allowance_files: Vec<String>,
     pub evidence: Vec<String>,
 }
@@ -222,7 +222,7 @@ pub fn build(i: Inputs) -> Record {
         }
         State::Fail => {
             let v = &i.fair_play.violations[0];
-            let text = format!("fair play: NSFR ({} on {}: {}{})", v.rule, v.path.as_deref().unwrap_or("the pak"), v.why, if i.fair_play.violations.len() > 1 { format!("; {} more", i.fair_play.violations.len() - 1) } else { String::new() });
+            let text = format!("fair play: freeform ({} on {}: {}{})", v.rule, v.path.as_deref().unwrap_or("the pak"), v.why, if i.fair_play.violations.len() > 1 { format!("; {} more", i.fair_play.violations.len() - 1) } else { String::new() });
             if i.policy.enforce {
                 blockers.push(text);
             } else {
@@ -262,7 +262,7 @@ fn item_json(x: &compliance::Item) -> String {
 /// The ten most useful missing items of a criterion, and how many there are.
 const MISSING_SHOWN: usize = 10;
 
-/// How a report paints a mark (`broken`, `NSFR`, `FP?`, `stale(N)`, `unproven`, `pass`): the CLI colours them on a
+/// How a report paints a mark (`broken`, `freeform`, `fair play not checked`, `stale(N)`, `unproven`, `ranked-safe`): the CLI colours them on a
 /// terminal, everything else keeps the words as they are.
 pub type Paint<'p> = &'p dyn Fn(&str) -> String;
 
@@ -364,6 +364,7 @@ impl<'a> Record<'a> {
         let fp = &i.fair_play;
         let fair_play = Obj::new()
             .str("state", fp.state.id())
+            .str("name", fp.state.name())
             .strs("checks_run", &fp.checks_run)
             .raw("checks_unknown", arr(fp.unknown.iter().map(|u| Obj::new().strs("rules", &u.rules).opt_str("path", u.path.as_deref()).str("why", &u.why).build())))
             .raw("violations", arr(fp.violations.iter().map(item_json)))
@@ -438,10 +439,7 @@ impl<'a> Record<'a> {
             line(format!("  {k}: {v}"));
         }
         let fp = &i.fair_play;
-        let state = match fp.state.mark() {
-            Some(m) => format!("{} {}", fp.state.id(), paint(m)),
-            None => paint(fp.state.id()),
-        };
+        let state = paint(fp.state.name());
         line(format!("fair play: {state}  (checks run: {})", if fp.checks_run.is_empty() { "none".to_string() } else { fp.checks_run.join(", ") }));
         for u in &fp.unknown {
             line(format!("  not run: {} {}: {}", u.rules.join(", "), u.path.as_deref().unwrap_or(""), u.why));
@@ -452,12 +450,12 @@ impl<'a> Record<'a> {
             let n = shown.entry(v.rule).or_default();
             *n += 1;
             if *n <= VIOLATIONS_SHOWN {
-                line(format!("  violation {} {}: {} ({})", v.rule, v.path.as_deref().unwrap_or("(vpk)"), brief(&v.message), v.why));
+                line(format!("  past the limit {} {}: {} ({})", v.rule, v.path.as_deref().unwrap_or("(vpk)"), brief(&v.message), v.why));
             }
         }
         for (rule, n) in &shown {
             if *n > VIOLATIONS_SHOWN {
-                line(format!("  and {} more {rule} violation(s): `magician lint` lists every one, the --json record too", n - VIOLATIONS_SHOWN));
+                line(format!("  and {} more {rule} past the limit: `magician lint` lists every one, the --json record too", n - VIOLATIONS_SHOWN));
             }
         }
         for a in &fp.allowances {
@@ -673,27 +671,27 @@ mod tests {
 
     #[test]
     fn fair_play_marks_the_label_without_touching_the_description() {
-        // NSFR: the egregious envelope (fair play enforced: it blocks the gate)
+        // freeform: the egregious envelope (fair play enforced: it blocks the gate)
         let mut c = Case::complete();
         c.findings = vec![finding("M129", "x")];
         c.policy = enforced();
         c.run(|r| {
-            assert_eq!(r.label, "Costume (look, effects, sound) · NSFR");
-            assert!(r.blockers.iter().any(|b| b.starts_with("fair play: NSFR (M129")), "{:?}", r.blockers);
+            assert_eq!(r.label, "Costume (look, effects, sound) · freeform");
+            assert!(r.blockers.iter().any(|b| b.starts_with("fair play: freeform (M129")), "{:?}", r.blockers);
             assert!(!r.broken(), "fair play is never broken");
-            assert!(r.text(&|m| format!("<{m}>")).contains("fair play: fail <NSFR>"));
+            assert!(r.text(&|m| format!("<{m}>")).contains("fair play: <freeform>"));
         });
-        // FP?: a check that could not run
+        // fair play not checked: a check that could not run
         let mut c = Case::complete();
         c.findings = vec![finding("M144", "the model's meshes could not be read, so its silhouette and hitbox envelope were not judged (M124, M129, M140)")];
         c.policy = enforced();
         c.run(|r| {
-            assert_eq!(r.label, "Costume (look, effects, sound) · FP?");
+            assert_eq!(r.label, "Costume (look, effects, sound) · fair play not checked");
             assert!(r.blockers.iter().any(|b| b.starts_with("fair play: unknown (M124, M129, M140 not run")), "{:?}", r.blockers);
             assert!(r.json().contains("\"fair_play_enforced\":true"), "{}", r.json());
         });
-        // lenient (the default): NSFR and FP? are warnings at the gate; the label and the record say the same
-        for (code, mark, warning) in [("M129", "NSFR", "fair play: NSFR (M129"), ("M144", "FP?", "fair play: unknown (M124")] {
+        // lenient (the default): freeform and fair play not checked are warnings at the gate; the label and the record say the same
+        for (code, mark, warning) in [("M129", "freeform", "fair play: freeform (M129"), ("M144", "fair play not checked", "fair play: unknown (M124")] {
             let mut c = Case::complete();
             c.findings = vec![finding(code, "the model's meshes could not be read (M124)")];
             c.run(|r| {
@@ -701,9 +699,28 @@ mod tests {
                 assert!(r.gate_passes(), "{:?}", r.blockers);
                 assert!(r.warnings[0].starts_with(warning) && r.warnings[0].ends_with("not blocking: fair play is not enforced (fair_play.enforce = false)"), "{:?}", r.warnings);
                 assert!(r.json().contains("\"fair_play_enforced\":false"), "{}", r.json());
-                assert!(r.json().contains(&format!("\"fair_play\":{{\"state\":\"{}\"", if mark == "NSFR" { "fail" } else { "unknown" })), "{}", r.json());
+                assert!(r.json().contains(&format!("\"fair_play\":{{\"state\":\"{}\"", if mark == "freeform" { "fail" } else { "unknown" })), "{}", r.json());
             });
         }
+    }
+
+    #[test]
+    fn a_skin_past_a_limit_says_freeform_and_one_inside_every_limit_says_ranked_safe() {
+        let mut c = Case::complete();
+        c.findings = vec![finding("M129", "x")];
+        c.run(|r| {
+            let t = r.text(&|m| m.to_string());
+            assert!(t.contains("fair play: freeform"), "{t}");
+            assert!(r.label.ends_with(" · freeform"), "{}", r.label);
+            assert!(r.json().contains("\"fair_play\":{\"state\":\"fail\",\"name\":\"freeform\""), "{}", r.json());
+        });
+        let c = Case::complete();
+        c.run(|r| {
+            let t = r.text(&|m| m.to_string());
+            assert!(t.contains("fair play: ranked-safe"), "{t}");
+            assert!(!r.label.contains("freeform"), "{}", r.label);
+            assert!(r.json().contains("\"fair_play\":{\"state\":\"pass\",\"name\":\"ranked-safe\""), "{}", r.json());
+        });
     }
 
     #[test]
@@ -712,9 +729,9 @@ mod tests {
         c.findings = (0..8).map(|i| finding("M124", &format!("front view: our in-game silhouette is 9{i}.0% of Valve's"))).collect();
         c.run(|r| {
             let t = r.text(&|m| m.to_string());
-            assert!(t.contains("  violation M124 models/heroes_wip/lash/lash.vmdl_c: front view: our in-game silhouette is 90.0% of Valve's (never allowable)\n"), "{t}");
-            assert_eq!(t.matches("  violation M124").count(), VIOLATIONS_SHOWN, "{t}");
-            assert!(t.contains("  and 3 more M124 violation(s): `magician lint` lists every one, the --json record too\n"), "{t}");
+            assert!(t.contains("  past the limit M124 models/heroes_wip/lash/lash.vmdl_c: front view: our in-game silhouette is 90.0% of Valve's (never allowable)\n"), "{t}");
+            assert_eq!(t.matches("  past the limit M124").count(), VIOLATIONS_SHOWN, "{t}");
+            assert!(t.contains("  and 3 more M124 past the limit: `magician lint` lists every one, the --json record too\n"), "{t}");
             assert_eq!(r.json().matches("\"rule\":\"M124\"").count(), 8, "the record keeps every one: {}", r.json());
         });
     }
@@ -753,7 +770,7 @@ mod tests {
         let mut c = Case::complete();
         c.findings = vec![finding("M144", "could not be read (M124)"), finding("M030", "needs 'x'")];
         c.target = "6865";
-        c.run(|r| assert_eq!(r.label, "Costume (look, effects, sound) · broken · FP? · stale(6864)"));
+        c.run(|r| assert_eq!(r.label, "Costume (look, effects, sound) · broken · fair play not checked · stale(6864)"));
     }
 
     #[test]
@@ -781,7 +798,7 @@ mod tests {
         blocked(c, "fair play: unknown");
         let mut c = Case::complete();
         c.findings = vec![finding("M124", "front view: our in-game silhouette is 90% of Valve's")];
-        blocked(c, "fair play: NSFR (M124");
+        blocked(c, "fair play: freeform (M124");
         // not proven on the target build
         let mut c = Case::complete();
         c.target = "6865";
@@ -818,7 +835,7 @@ mod tests {
         let mut c = Case::complete();
         c.depth = Depth::Light;
         c.run(|r| {
-            assert_eq!(r.label, "Costume (look, effects, sound) · FP?");
+            assert_eq!(r.label, "Costume (look, effects, sound) · fair play not checked");
             assert!(r.text(&|m| m.to_string()).contains("not run: M124, M129, M130, M140"), "{}", r.text(&|m| m.to_string()));
         });
     }

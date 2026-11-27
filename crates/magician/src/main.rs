@@ -203,7 +203,7 @@ Every command:
                 [--users FILE]                  grade a hero mod (every pak it ships, together; the lower pak number wins
                                                 a shared path): what kind of mod it is and which of the hero's look,
                                                 effects and sound it makes its own, broken (lint errors), fair play
-                                                (NSFR, FP?), freshness (stale(N): the builds a proof holds these paks on), rights and
+                                                (ranked-safe, freeform, fair play not checked), freshness (stale(N): the builds a proof holds these paks on), rights and
                                                 the release gate, as a label (`Echo (look, some effects) · stale(6864)`) and,
                                                 with --json, the record (magician.grade/3; --record-out writes it to a file too);
                                                 lints deep unless --light (against --baseline, with the --users index,
@@ -1732,16 +1732,16 @@ fn cmd_rubric(args: &[String]) -> R {
         let w: Vec<String> = p.weights(a).iter().map(|(id, w)| format!("{id} {w}{}", if app.contains(&id.as_str()) { "*" } else { "" })).collect();
         say!("{} weights within each group: {}{}", a.id(), w.join(", "), if app.is_empty() { String::new() } else { "  (* counts once the mod touches it)".into() });
     }
-    say!("Flags: broken (lint errors that are not fair play, as `magician check` calls it), NSFR or FP? (fair play), stale(N) or unproven (freshness)");
+    say!("Flags: broken (lint errors that are not fair play, as `magician check` calls it), freeform or fair play not checked (fair play; ranked-safe adds no flag), stale(N) or unproven (freshness)");
     say!("Fair play: never allowable {}; advisory {}; M140 allowable up to {} u worst point and {}% of the visible surface", p.compliance.never.join(" "), p.compliance.advisory.join(" "), jsonout::num(p.m140_limits().0), jsonout::num(100.0 * p.m140_limits().1));
     say!(
         "Fair play is {}; rights are {}",
-        if p.enforce { "enforced: its findings are errors, and NSFR or FP? blocks the release gate" } else { "lenient (fair_play.enforce = false): its findings are warnings, and NSFR or FP? is a warning at the release gate" },
+        if p.enforce { "enforced: its findings are errors, and freeform or fair play not checked blocks the release gate" } else { "lenient (fair_play.enforce = false): its findings are warnings, and freeform or fair play not checked is a warning at the release gate" },
         if p.rights_enforce { "enforced: unreviewed blocks the release gate" } else { "lenient (rights.enforce = false): unreviewed is a warning at the release gate" }
     );
     say!(
         "Release gate: lint errors that are not fair play, Valve's own files, {}not proven on the target build, rights {}",
-        if p.enforce { "fair play unknown, NSFR, " } else { "" },
+        if p.enforce { "fair play not checked, freeform, " } else { "" },
         if p.rights_enforce { "not cleared" } else { "denied" }
     );
     Ok(ExitCode::SUCCESS)
@@ -1779,7 +1779,7 @@ fn slot(p: &Path) -> u32 {
 /// The allowances a grade honours: every `--allow FILE` and the `magician.allow` of every `--addon-root DIR`; with
 /// neither, the mod's own files found from its `mod.toml` (`paths::mod_allowances`). Returns the allowances and one
 /// line per file read (name, SHA-256, where it was found) for the record, or one line saying none was found and where
-/// the grade looked, which is also said on stderr: a grade without its allowances can read NSFR for a reason the
+/// the grade looked, which is also said on stderr: a grade without its allowances can read freeform for a reason the
 /// author already wrote down.
 fn grade_allowances(args: &[String], toml: Option<(&Path, &str)>) -> Result<(Vec<lint::allow::Allowance>, Vec<String>), String> {
     let mut files: Vec<paths::Found> = flags(args, "--allow").into_iter().map(|p| paths::Found { path: PathBuf::from(p), source: "--allow".into() }).collect();

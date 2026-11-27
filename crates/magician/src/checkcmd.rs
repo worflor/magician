@@ -129,8 +129,8 @@ pub fn cmd_check(args: &[String]) -> R {
             items.push(Item {
                 what: "lint",
                 state: lint_state,
-                text: format!("{} error(s), {} warning(s), {} allowed{} ({}; fair play {})", g.lint_errors, warnings, g.lint_allowed, if g.lint_stale.is_empty() { String::new() } else { format!(", {} stale", g.lint_stale.len()) }, g.lint_depth, match g.fair_play { "fail" => format!("{}, not safe for ranked", style::mark("NSFR")), "unknown" => format!("{}, not checked", style::mark("FP?")), x => style::mark(x) }),
-                json: jsonout::Obj::new().str("state", lint_state).int("errors", g.lint_errors as i64).int("warnings", g.lint_warnings as i64).int("allowed", g.lint_allowed as i64).strs("stale", &g.lint_stale).str("depth", g.lint_depth).str("fair_play", g.fair_play).build(),
+                text: format!("{} error(s), {} warning(s), {} allowed{} ({}; fair play {})", g.lint_errors, warnings, g.lint_allowed, if g.lint_stale.is_empty() { String::new() } else { format!(", {} stale", g.lint_stale.len()) }, g.lint_depth, match g.fair_play { "fail" => style::mark("freeform"), "unknown" => "not checked".to_string(), _ => style::mark("ranked-safe") }),
+                json: jsonout::Obj::new().str("state", lint_state).int("errors", g.lint_errors as i64).int("warnings", g.lint_warnings as i64).int("allowed", g.lint_allowed as i64).strs("stale", &g.lint_stale).str("depth", g.lint_depth).str("fair_play", g.fair_play).str("fair_play_name", match g.fair_play { "fail" => "freeform", "unknown" => "fair play not checked", _ => "ranked-safe" }).build(),
             });
             items.push(Item {
                 what: "grade",

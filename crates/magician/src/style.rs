@@ -1,8 +1,8 @@
 //! Colour for a person at a terminal, and nowhere else: stdout piped into a file, a script or an agent gets the same
-//! bytes as ever, and the words carry the meaning on their own (`ok`, `todo`, `FAIL`, `BROKEN`, `NSFR`), so nothing is
+//! bytes as ever, and the words carry the meaning on their own (`ok`, `todo`, `FAIL`, `BROKEN`, `freeform`), so nothing is
 //! lost without it. `NO_COLOR` (any value) turns it off, `MAGICIAN_COLOR=always` on.
 //!
-//! In a grade, red means broken and nothing else: `NSFR` is pink (a property of the mod, not an alarm), `FP?`,
+//! In a grade, red means broken and nothing else: `freeform` is pink (a property of the mod, not an alarm), `fair play not checked`,
 //! `stale(N)` and `unproven` are orange (something to do, nothing to fear), a fair-play pass is green. Pink and orange
 //! need a 256-colour terminal; on a 16-colour one they fall back to magenta and yellow.
 
@@ -16,9 +16,9 @@ pub enum Tone {
     Bad,
     Dim,
     Bold,
-    /// A property, not an alarm (`NSFR`).
+    /// A property, not an alarm (`freeform`).
     Pink,
-    /// Something to do, not to fear (`FP?`, `stale(N)`, `unproven`).
+    /// Something to do, not to fear (`fair play not checked`, `stale(N)`, `unproven`).
     Orange,
 }
 
@@ -76,10 +76,10 @@ pub fn tone_of(word: &str) -> Tone {
         return Tone::Orange;
     }
     match w.as_str() {
-        "ok" | "clean" | "clear" | "pass" => Tone::Good,
+        "ok" | "clean" | "clear" | "pass" | "ranked-safe" => Tone::Good,
         "todo" | "warn" | "re-prove" => Tone::Warn,
-        "stale" | "unproven" | "fp?" => Tone::Orange,
-        "nsfr" => Tone::Pink,
+        "stale" | "unproven" | "fair play not checked" | "not checked" => Tone::Orange,
+        "freeform" => Tone::Pink,
         "fail" | "broken" | "error" | "refused" | "blocked" => Tone::Bad,
         "skip" | "--" | "note" | "info" => Tone::Dim,
         _ => Tone::Bold,
@@ -92,7 +92,7 @@ pub fn word(word: &str, width: usize) -> String {
     format!("{}{}", paint(word, tone_of(word)), " ".repeat(pad))
 }
 
-/// A grade mark (`broken`, `NSFR`, `FP?`, `stale(N)`, `unproven`, `pass`) in its tone.
+/// A grade mark (`broken`, `freeform`, `fair play not checked`, `stale(N)`, `unproven`, `ranked-safe`) in its tone.
 pub fn mark(m: &str) -> String {
     paint(m, tone_of(m))
 }
@@ -109,11 +109,12 @@ mod tests {
     #[test]
     fn red_is_only_broken_in_a_grade_and_every_mark_has_a_16_colour_fallback() {
         assert_eq!(tone_of("broken"), Tone::Bad);
-        assert_eq!(tone_of("NSFR"), Tone::Pink);
-        for m in ["FP?", "unproven", "stale(6864)"] {
+        assert_eq!(tone_of("freeform"), Tone::Pink);
+        for m in ["fair play not checked", "unproven", "stale(6864)"] {
             assert_eq!(tone_of(m), Tone::Orange, "{m}");
         }
         assert_eq!(tone_of("pass"), Tone::Good);
+        assert_eq!(tone_of("ranked-safe"), Tone::Good);
         for t in [Tone::Pink, Tone::Orange] {
             assert!(!code(t, false).contains(';'), "16 colours: a plain SGR code");
             assert!(code(t, true).starts_with("38;5;"));
