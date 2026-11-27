@@ -154,11 +154,32 @@ pub fn cmd_patchday(args: &[String]) -> R {
     // The engine sidecar: the executables and shader archives the data is run by.
     let epath = patchday::engine_path(&reference, &installed);
     let engine_state = if epath.is_file() {
-        say!("  engine sidecar present: {}", epath.display());
-        "present"
+        if args.iter().any(|arg| arg == "--verify-engine") {
+            let old = patchday::Engine::load(&epath)?;
+            let now = measure_engine(&game, &installed)?;
+            let delta = patchday::engine_delta(&old, &now);
+            if !delta.same() || !delta.unknown.is_empty() {
+                let mut paths = delta.files();
+                paths.extend(delta.unknown);
+                say!("  STALE: installed engine differs from or cannot be checked against {}: {}", epath.display(), paths.join(", "));
+                hard += 1;
+                "stale"
+            } else {
+                say!("  engine sidecar matches the live engine: {}", epath.display());
+                "verified"
+            }
+        } else {
+            say!("  engine sidecar present: {}", epath.display());
+            "present"
+        }
     } else if capture {
         say!("  {}", capture_engine(&game, &installed, &epath)?);
-        "captured"
+        if args.iter().any(|arg| arg == "--verify-engine") && patchday::Engine::load(&epath)?.files.values().any(Option::is_none) {
+            hard += 1;
+            "stale"
+        } else {
+            "captured"
+        }
     } else {
         say!("  no engine sidecar {}: whether the engine changed can't be said next patch; `magician patchday --capture` writes it", epath.display());
         "missing"
