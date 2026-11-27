@@ -2757,11 +2757,13 @@ fn drift_vpk(vp: &Path, eras: &Eras, gf: Option<&gamefiles::GameFiles>) -> Resul
                 let read = |q: &str| lint::Game::read(gf, q);
                 let ships = |q: &str| files.iter().any(|x| x.path == q);
                 let breaches = lint::carry::judge(lint::deep::contract_breaches(&a, &b), &f.data, &valve, &read, &ships, lint::Game::bone_users(gf));
-                for m in lint::deep::judge_breaches(breaches, &f.data, &valve) {
-                    if lint::deep::contract_severity(&m) == lint::Severity::Error {
-                        d.contract.push(format!("{}: {m}", f.path));
-                    }
-                }
+                // Drift judges what the patch changed under the mod. When Valve's model is the same bytes on both builds,
+                // every breach is the mod's own choice (a hitbox it reshaped long ago), which lint judges; and a
+                // fair-play finding never makes a mod broken.
+                let valve_moved = patchday::original_changed(&eras.then, &eras.now, &f.path);
+                let (breaks, own) = patchday::contract_breaks(lint::deep::judge_breaches(breaches, &f.data, &valve), valve_moved);
+                d.contract.extend(breaks.into_iter().map(|m| format!("{}: {m}", f.path)));
+                d.contract_own += own;
             }
         }
     }
@@ -2828,7 +2830,8 @@ fn print_drift(label: &str, nfiles: usize, eras: &Eras, d: &patchday::Drift) {
     let deps_v: Vec<String> = d.deps.iter().cloned().collect();
     show("game files the mod uses that changed", &deps_v);
     if d.contract_checked {
-        say!("  rig: {} skeleton/graph/model dependency change(s); {} contract breach(es) against the current models", d.rig_deps().len(), d.contract.len());
+        let own = if d.contract_own > 0 { format!(" ({} more are the mod's own: Valve's model did not change between the builds, so `lint` judges them)", d.contract_own) } else { String::new() };
+        say!("  rig: {} skeleton/graph/model dependency change(s); {} contract breach(es) against the current models{own}", d.rig_deps().len(), d.contract.len());
     } else {
         say!("  rig: {} skeleton/graph/model dependency change(s); model contract (bones, attachments, hitboxes) not checked: it needs Valve's models, so only when the checked build is the installed one", d.rig_deps().len());
     }

@@ -253,6 +253,32 @@ pub struct Drift {
     pub contract: Vec<String>,
     /// Whether the contract check ran (it needs Valve's current models, so only when the checked build is installed).
     pub contract_checked: bool,
+    /// Contract errors left out because they are the mod's own choice, not something the patch did: Valve's model at
+    /// that path is the same bytes on both builds, so nothing under the mod moved. Lint judges them.
+    pub contract_own: usize,
+}
+
+/// Whether Valve's file at `path` differs between two builds: another CRC or size, or missing from either side, which
+/// cannot be told apart from a change.
+pub fn original_changed(then: &Baseline, now: &Baseline, path: &str) -> bool {
+    match (then.get(path), now.get(path)) {
+        (Some(a), Some(b)) => a.crc != b.crc || a.size != b.size,
+        _ => true,
+    }
+}
+
+/// Which of a replaced model's contract findings drift calls breaks: the errors, not fair play (a hitbox the mod
+/// reshaped is a label, never broken), and only when Valve's model moved between the builds (`valve_moved`); when it
+/// did not, nothing under the mod changed, and its errors are the mod's own choices, which lint judges. Returns the
+/// breaks and how many errors were the mod's own.
+pub fn contract_breaks(findings: Vec<String>, valve_moved: bool) -> (Vec<String>, usize) {
+    let errors: Vec<String> = findings.into_iter().filter(|m| lint::deep::contract_severity(m) == lint::Severity::Error && !grade::rubric::is_fair_play("M062", m)).collect();
+    if valve_moved {
+        (errors, 0)
+    } else {
+        let n = errors.len();
+        (Vec::new(), n)
+    }
 }
 
 impl Drift {
@@ -629,6 +655,20 @@ mod tests {
         assert_eq!(d.changed, vec![CLIP.to_string()]);
         assert_eq!(d.bad(), 0);
         assert!(d.verdict("1", "2").starts_with("loads on 2"), "{}", d.verdict("1", "2"));
+    }
+
+    #[test]
+    fn drift_breaks_only_on_what_the_patch_moved() {
+        // Real case (6880, the dogfood lane): a skin's long-standing hitbox changes read BROKEN on patch day though
+        // Valve's model had not changed. Hitboxes are fair play, and a model Valve left alone moved nothing.
+        let model = "models/heroes_wip/lash/lash.vmdl_c";
+        let (then, same, moved) = (base("1", &[(model, 5)]), base("2", &[(model, 5)]), base("2", &[(model, 6)]));
+        assert!(!original_changed(&then, &same, model) && original_changed(&then, &moved, model));
+        assert!(original_changed(&then, &base("2", &[]), model), "gone from one side is not 'the same'");
+        let found = || vec!["hitbox 'default/head' changed".to_string(), "attachment 'eye_L' missing".to_string()];
+        let (breaks, own) = contract_breaks(found(), true);
+        assert_eq!((breaks, own), (vec!["attachment 'eye_L' missing".to_string()], 0), "a hitbox is fair play, never a break");
+        assert_eq!(contract_breaks(found(), false), (Vec::<String>::new(), 1), "Valve's model unchanged: the mod's own choice");
     }
 
     #[test]

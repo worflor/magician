@@ -96,6 +96,7 @@ pub fn drift(vpk: &str, files: usize, d: &crate::patchday::Drift, from: &str, to
         .strs("params_lost", &d.params)
         .bool("contract_checked", d.contract_checked)
         .strs("contract", &d.contract)
+        .int("contract_own", d.contract_own as i64)
         .build()
 }
 
