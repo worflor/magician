@@ -13,6 +13,30 @@ Named for The Magnificent Sinclair, Deadlock's own magician, and a sibling to [M
 
 Two of the three full hero skins made with it: [Maid Lash](https://woflo.dev/deadlock-skins/maid-lash/), public, with an in-game proof on every game build since its release, and Lööps Viscous, still in production. [What Magician says about each](docs/SHOWCASE.md), in its own output.
 
+**[woflo.dev/magician](https://woflo.dev/magician/)** walks a mod through all of it, in pictures.
+
+## What it does to a mod
+
+1. **Check every file the way the game will read it.** Each file in the mod is set beside Valve's at the same path in the build you have installed, and the report says what a player would see if it shipped: a pink checkerboard where a material is missing, a hero that breaks at the next patch because the mod ships Valve's skeleton, a hem you can see through from below. What Valve's own file already does is never blamed on the mod.
+2. **Keep it fair.** A skin is cosmetic. It should never make a hero harder to see, change the shape enemies aim at, or hide a cue they react to. Magician measures each against the stock hero: the silhouette from every side, how far the skin reaches past the hitboxes, an ability's effect against Valve's.
+
+   <p>
+     <img src="site/img/sil-lash.png" alt="Maid Lash's silhouette over stock Lash, front and side: the skirt adds a bell at the hips" height="200">
+     <img src="site/img/sil-viscous.png" alt="Lööps Viscous's silhouette over stock Viscous, front and side: almost unchanged" height="200">
+   </p>
+
+3. **Look at it in the game.** A clean check is not the end. Magician launches the real game, plays the mod's own scenarios, and cuts each take into a contact sheet for a person, or an agent that reads images, to look at. This is what the look caught under Maid Lash's petticoat, before and after the fix:
+
+   <p>
+     <img src="site/img/hem-before.jpg" alt="Before: flaps of skin stand off both thighs under the petticoat" width="49%">
+     <img src="site/img/hem-after.jpg" alt="After: the stockings sit clean under the petticoat" width="49%">
+   </p>
+
+4. **Record the proof.** Once the frames have been looked at, Magician records it: this game build, these exact bytes. Rebuild the mod and it starts unproven again, so nothing ships on an old proof.
+5. **Survive the patch.** When Valve ships an update, one offline command says what changed under every installed mod: still fine, needs a look in game, or broken, and why.
+
+`magician check` in a mod's folder runs all five and gives one verdict.
+
 ## Getting started
 
 You need Windows 10 or 11, or Linux on x86-64, with Deadlock installed through Steam (on Linux the game runs under Proton, and the files Magician reads and writes are the same).
