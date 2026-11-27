@@ -8,7 +8,8 @@ timeout; output goes to a log file whose path is returned, so nothing blocks for
 Safety: install, uninstall and anything that launches the game are not exposed. Only the sub-commands in
 ALLOWED_SUBCOMMANDS can be run at all.
 
-Commands with a JSON form (lint, grade, release, drift, patchday, rules, check, doctor) run with --json, and their one JSON document
+Commands with a JSON form (lint, grade, release, drift, patchday, rules, check, doctor, install --status, csdk, material)
+run with --json, and their one JSON document
 is read from stdout; nothing here parses their human text.
 """
 import json
@@ -28,16 +29,19 @@ SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"]
 # Never install, uninstall, launch or write into the game from here.
 ALLOWED_SUBCOMMANDS = {
     "lint", "mesh", "cloth", "grade", "release", "build", "ls", "refs", "dump", "verify", "rules",
-    "drift", "patchday", "policy", "check", "doctor",
+    "drift", "patchday", "policy", "check", "doctor", "csdk",
 }
-INSTALL_STATUS_ARGS = ["install", "--status"]  # the one read-only form of `install`
+# `material` only as its read-only sub-commands (export and apply write files)
+MATERIAL_READS = {"inspect", "diff", "verify"}
+INSTALL_STATUS_ARGS = ["install", "--status", "--json"]  # the one read-only form of `install`
 
 DEFAULT_TIMEOUT = {"lint": 300, "mesh": 300, "cloth": 120, "grade": 600, "release": 1800, "build": 1800,
                    "ls": 60, "refs": 60, "dump": 60, "verify": 600, "rules": 30, "install_status": 30,
                    "drift": 300, "patchday": 600, "policy": 30, "check": 900,
-                   "doctor": 60}
-# What each exit code means (`magician --help`): 0 clean, 1 broken, 2 usage error, 3 refused on purpose, 4 re-prove.
-EXIT_MEANING = {0: "clean", 1: "broken", 2: "usage error", 3: "refused", 4: "re-prove"}
+                   "doctor": 60, "csdk": 60, "material": 300}
+# What each exit code means (`magician --help`): 0 clean, 1 broken, 2 usage error, 3 refused on purpose, 4 re-prove,
+# 5 an update is available (`update --check` only, which no tool runs).
+EXIT_MEANING = {0: "clean", 1: "broken", 2: "usage error", 3: "refused", 4: "re-prove", 5: "update available"}
 TAIL_LINES = 30
 
 
@@ -82,7 +86,9 @@ def run_magician(tool, args, timeout=None, json_out=False):
 
     With json_out the command's stdout (its one JSON document) goes to a file of its own beside the log and is parsed
     into `json`; the log keeps stderr. Otherwise stdout and stderr share the log and `text`."""
-    if not args or (args[0] not in ALLOWED_SUBCOMMANDS and args[:2] != INSTALL_STATUS_ARGS):
+    allowed = args and (args[0] in ALLOWED_SUBCOMMANDS or args[:3] == INSTALL_STATUS_ARGS
+                        or (args[0] == "material" and len(args) > 1 and args[1] in MATERIAL_READS))
+    if not allowed:
         raise ToolError("sub-command not allowed through MCP: %r" % (args[:1],))
     exe = find_binary()
     if not os.path.isfile(exe):
@@ -442,26 +448,59 @@ def t_build(a):
 
 
 def t_install_status(a):
-    r = run_magician("install_status", INSTALL_STATUS_ARGS, a.get("timeout"))
-    fail_unless_ran(r, "install_status")
-    out = {"ok": r["exit_code"] == 0, "build": None, "search_path": None, "backup": None, "installed": [], "shared_paths": [], "run": run_meta(r)}
-    for l in r["text"].splitlines():
-        m = re.match(r"^build (\S+?): (.*)$", l)
-        if m:
-            out["build"], out["search_path"] = m.group(1), m.group(2)
-        m = re.match(r"^backup: (.*)$", l)
-        if m:
-            out["backup"] = m.group(1)
-        # which installed paks hold the same paths, and the one the game reads them from
-        m = re.match(r"^shared paths: (.*)$", l)
-        if m and not m.group(1).startswith("none"):
-            out["shared_paths"].append(m.group(1))
-        m = re.match(r"^\s+(\S+)\s+crc (\w+)\s+for (.*?)\s+(installed|\S.*)$", l)
-        if m:
-            out["installed"].append({"file": m.group(1), "crc": m.group(2), "mod": None if m.group(3) == "?" else m.group(3), "state": m.group(4)})
-    if not out["installed"] and out["build"] is None:
-        out["raw"] = r["text"]
-    return out
+    """`install --status --json` (magician.install-status/1): the ledger as the CLI reads it, nothing parsed from text."""
+    data = json_result(run_magician("install_status", INSTALL_STATUS_ARGS, a.get("timeout"), json_out=True), "install_status")
+    data["ok"] = data["run"]["exit_code"] == 0
+    return data
+
+
+def t_csdk(a):
+    """`csdk --json` (magician.csdk/1): which CSDK this is, its compilers, the build its files came from, its gaps."""
+    data = json_result(run_magician("csdk", ["csdk", "--json"], a.get("timeout"), json_out=True), "csdk")
+    data["ok"] = data["run"]["exit_code"] == 0
+    return data
+
+
+def material_arg(a, key, required=True):
+    """A material as the CLI names one: a file, <pak.vpk>:<path> or valve:<path>. A file, or a pak's own path, is made
+    absolute (the binary runs in the repository); a path inside a pak or the game is passed as it is."""
+    v = value(a, key, required)
+    if v is None:
+        return None
+    if v.startswith("valve:"):
+        return v
+    i = v.lower().find(".vpk:")
+    if i >= 0:
+        pak = v[:i + 4]
+        if not os.path.isfile(pak):
+            raise ToolError("%s: no such pak: %s" % (key, pak))
+        return os.path.abspath(pak) + v[i + 4:]
+    if not os.path.exists(v):
+        raise ToolError("%s: no such file: %s" % (key, v))
+    return os.path.abspath(v)
+
+
+def t_material(a):
+    """`material inspect|diff|verify --json`: a material as data, two side by side, or an addon's compiled materials
+    held to their sources. Read-only: export and apply, which write files, are not here."""
+    action = value(a, "action")
+    if action not in MATERIAL_READS:
+        raise ToolError("action must be one of %s" % ", ".join(sorted(MATERIAL_READS)))
+    if action == "verify":
+        argv = ["material", "verify", value(a, "addon")]
+        if a.get("pak"):
+            argv += ["--pak", existing_file(a, "pak")]
+    else:
+        argv = ["material", action, material_arg(a, "material")]
+        if action == "diff":
+            if a.get("against_valve"):
+                argv += ["--against", "valve"]
+            else:
+                argv.append(material_arg(a, "other"))
+    r = run_magician("material", argv + ["--json"], a.get("timeout"), json_out=True)
+    data = json_result(r, "material " + action)
+    data["ok"] = r["exit_code"] == 0
+    return data
 
 
 def t_refs(a):
@@ -523,6 +562,8 @@ def t_verify(a):
         argv.append("--summary")
     r = run_magician("verify", argv, a.get("timeout"))
     fail_unless_ran(r, "verify")
+    if r["exit_code"] == 2:  # a usage error (no key, no such pak) is an error, as for every other tool
+        raise ToolError(r["text"].strip() or "verify failed")
     text = r["text"]
     out = {"ok": r["exit_code"] == 0, "run": run_meta(r)}
     m = re.search(r"(\d+) of (\d+) texture\(s\)", text)
@@ -618,10 +659,28 @@ TOOLS = [
               "Does NOT install into the game. Default timeout 1800 s.",
      schema({"addon": {"type": "string"}, "out": {"type": "string", "description": "Output pakNN_dir.vpk path."},
              "no_compile": {"type": "boolean"}, "timeout": TIMEOUT_PROP}, ["addon", "out"]), t_build),
-    ("install_status", "Read-only: the game's addons search path, gameinfo backup, the VPKs Magician installed "
-                       "(file, crc, owning mod), and the paths installed paks share with the one the game reads. "
-                       "Cannot install or uninstall.",
+    ("install_status", "Read-only: the install ledger as one document (schema magician.install-status/1): the build, "
+                       "whether gameinfo.gi mounts the addons folder, the backup, each pak Magician installed (name, "
+                       "crc, owner, state, renamed_from), the paths installed paks share and the one the game reads "
+                       "them from, and paks in the addons folder nothing installed. Cannot install or uninstall.",
      schema({"timeout": TIMEOUT_PROP}, []), t_install_status),
+    ("csdk", "Read-only: which CSDK is configured (12 or 13) and on what evidence, its binary sets and compilers, the "
+             "game build its own files came from beside the installed one, and each known gap with what it breaks "
+             "and whether build works round it (schema magician.csdk/1).",
+     schema({"timeout": TIMEOUT_PROP}, []), t_csdk),
+    ("material", "Read-only materials as data. action=inspect: one material's shader, features, parameters and each "
+                 "texture slot with its format, mips and channel meanings (magician.material/1). action=diff: two "
+                 "side by side, or one against Valve's at its path with against_valve=true (magician.material-diff/1; "
+                 "ok when nothing differs). action=verify: every compiled material of an addon held to its source, "
+                 "down to the pixels of each packed channel (ok when all hold). A material is a file (.vmat, "
+                 ".vmat_c), <pak.vpk>:<path>, or valve:<path>.",
+     schema({"action": {"type": "string", "enum": ["inspect", "diff", "verify"]},
+             "material": {"type": "string", "description": "inspect, diff: the material."},
+             "other": {"type": "string", "description": "diff: the second material (or against_valve)."},
+             "against_valve": {"type": "boolean"},
+             "addon": {"type": "string", "description": "verify: the addon's name, or its content folder."},
+             "pak": {"type": "string", "description": "verify: the built pak to read the compiled side from."},
+             "timeout": TIMEOUT_PROP}, ["action"]), t_material),
     ("refs", "A compiled resource's block list and dependencies, each marked as resolving inside the VPK or not.",
      schema({"vpk": VPK_PROP, "path": {"type": "string"}, "timeout": TIMEOUT_PROP}, ["vpk", "path"]), t_refs),
     ("ls", "List the files in a VPK (path, crc, size), optionally under a prefix.",

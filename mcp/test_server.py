@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Starts the MCP server, lists the tools, calls `rules`, `doctor`, `policy`, `lint`, `grade`, `check`, `patchday` and `ls`,
-checks the JSON.
+"""Starts the MCP server, lists the tools, calls `rules`, `doctor`, `policy`, `lint`, `grade`, `check`, `patchday`, `ls`,
+`install_status`, `csdk` and `material`, checks the JSON.
 
     python mcp/test_server.py [path\to\small\pakNN_dir.vpk]
 
@@ -15,7 +15,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EXPECTED = {"rules", "lint", "mesh", "cloth", "grade", "release", "build", "install_status", "refs", "ls", "dump", "verify",
-            "drift", "patchday", "policy", "check", "doctor"}
+            "drift", "patchday", "policy", "check", "doctor", "csdk", "material"}
 FORBIDDEN = {"install", "uninstall", "launch"}
 
 failures = []
@@ -104,7 +104,9 @@ def main():
     r = c.call("rules", {})["result"]
     d = r["structuredContent"]
     check(r["isError"] is False and d["count"] > 50 and len(d["rules"]) == d["count"], "rules: %d rules" % d["count"])
-    check(d["schema"] == "magician.rules/1" and set(d["rules"][0]) == {"code", "name", "severity", "fair_play", "in_game"}, "rules: schema and object shape")
+    shape = {"code", "name", "severity", "fair_play", "in_game"}
+    # with the game found, each rule also carries its record on the installed build
+    check(d["schema"] == "magician.rules/1" and set(d["rules"][0]) in (shape, shape | {"corpus", "witness"}), "rules: schema and object shape")
     check(any(x["code"] == "M129" and x["severity"] == "error" for x in d["rules"]), "rules: M129 is an error")
     check(json.loads(r["content"][0]["text"]) == d, "rules: text content equals structuredContent")
 
@@ -157,6 +159,24 @@ def main():
     check(d.get("schema") == "magician.doctor/1" and isinstance(d.get("checks"), list) and d["checks"]
           and all({"name", "state", "detail"} <= set(x) for x in d["checks"]) and d.get("ok") == (d.get("failing") == 0),
           "doctor: one check per part (%d)" % len(d.get("checks") or []))
+
+    # the ledger as the CLI's own document, nothing read from its text
+    r = c.call("install_status", {})["result"]
+    d = r["structuredContent"]
+    if r["isError"]:
+        check("game" in d.get("error", "").lower() or "steam" in d.get("error", "").lower(), "install_status: without a game, an error that says so (%s)" % d.get("error"))
+    else:
+        check(d.get("schema") == "magician.install-status/1" and isinstance(d.get("paks"), list) and "shared_paths" in d, "install_status: the ledger document")
+    r = c.call("csdk", {})["result"]
+    d = r["structuredContent"]
+    check((r["isError"] and "CSDK" in d.get("error", "")) or d.get("schema") == "magician.csdk/1", "csdk: the kit, or why there is none (%s)" % d.get("error", "ok"))
+    r = c.call("material", {"action": "export", "material": "x.vmat"})["result"]
+    check(r["isError"] is True and "action must be one of" in r["structuredContent"]["error"], "material: export, which writes, is not reachable")
+    r = c.call("material", {"action": "inspect", "material": os.path.join(tempfile.gettempdir(), "magician-no-such.vmat_c")})["result"]
+    check(r["isError"] is True and "no such file" in r["structuredContent"]["error"], "material: a missing file is an error")
+    if os.path.isfile(pak):
+        r = c.call("material", {"action": "verify", "addon": os.path.abspath(pak)})["result"]
+        check(r["isError"] is True and "is a pak" in r["structuredContent"]["error"], "material: a pak given as an addon says so (%s)" % r["structuredContent"].get("error"))
 
     r = c.call("policy", {})["result"]
     d = r["structuredContent"]

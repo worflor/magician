@@ -23,7 +23,7 @@ The server runs `target/release/magician` (`magician.exe` on Windows), or the on
 
 ## Tools
 
-Seventeen tools:
+Nineteen tools:
 
 | Tool | Arguments | Returns |
 |---|---|---|
@@ -39,13 +39,15 @@ Seventeen tools:
 | `patchday` | `capture`, `from`, `mods[]` | the patch-day check (`magician.patchday/1`): baseline, install state, each mod's drift from its last proven build, manifests, `verdict` (clear, re-prove, broken). `capture` writes only to the reference folder |
 | `policy` | `policy` | every judgement value in force (`entries[]`: key, value, source), the `fingerprint` a grade records |
 | `build` | `addon`, `out`, `no_compile` | long-running: `ok`, `summary`, `lint`, `run.log` |
-| `install_status` | | read-only: build, search path, backup, `installed[]` (file, crc, mod) |
+| `install_status` | | read-only: the ledger (`magician.install-status/1`): `build`, `addons_search_path`, `backup`, `paks[]` (name, crc, owner, state, renamed_from), `shared_paths`, `unread_paks` |
+| `csdk` | | read-only: which CSDK this is (`magician.csdk/1`): its version and the evidence, every binary set and which hold a compiler, the build its own files came from, each known gap and whether `build` works round it |
+| `material` | `action` (inspect, diff, verify), `material`, `other`, `against_valve`, `addon`, `pak` | read-only: a material as data (`magician.material/1`), two side by side or one against Valve's (`magician.material-diff/1`, `ok` when nothing differs), or an addon's compiled materials held to their sources (`ok` when all hold). `export` and `apply` write files and are not here |
 | `refs` | `vpk`, `path` | `blocks`, `references[]` (path, resolves), `unresolved` |
 | `ls` | `vpk`, `prefix`, `limit` | `files[]` (path, crc, size), `total`, `truncated` |
 | `dump` | `vpk`, `path`, `block`, `max_chars` | KV3 block text (or a texture header), `truncated` |
 | `verify` | `vpk`, `summary` | `decoded`, `carry_mark`, `pooled` (z, p_below), `report` |
 
-Every tool takes an optional `timeout` (seconds). Results carry `run` (`exit_code`, `meaning`: clean, broken, usage error, refused or re-prove, `timed_out`, `seconds`, `log`). Failures come back as `isError: true` with `{"ok": false, "error": ...}`; a lint with errors is a normal result with `ok: false`.
+Every tool takes an optional `timeout` (seconds). Results carry `run` (`exit_code`, `meaning`: clean, broken, usage error, refused, re-prove or update available, `timed_out`, `seconds`, `log`). Failures come back as `isError: true` with `{"ok": false, "error": ...}`; a lint with errors is a normal result with `ok: false`.
 
 ## Long-running commands
 
@@ -53,11 +55,11 @@ Every tool runs with a timeout (defaults: `release` and `build` 1800 s, `check` 
 
 ## Safety
 
-No tool installs, uninstalls or launches the game, and the server refuses any sub-command outside its allow-list (`install` is reachable only as the read-only `--status`). Those steps stay CLI calls that a person or a pipeline makes on purpose: `magician install`, `magician uninstall`, `magician session`, `magician reprove`. An argument that starts with `-` is refused, so a path cannot smuggle in a flag.
+No tool installs, uninstalls or launches the game, and the server refuses any sub-command outside its allow-list (`install` is reachable only as the read-only `--status`, and `material` only as `inspect`, `diff` and `verify`). Those steps stay CLI calls that a person or a pipeline makes on purpose: `magician install`, `magician uninstall`, `magician session`, `magician reprove`. An argument that starts with `-` is refused, so a path cannot smuggle in a flag.
 
 ## JSON from the CLI
 
-`check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `release` and `rules` run with `--json`, which prints one JSON document with a `schema` string on stdout and nothing else; the server reads that document and keeps stderr in the log. `mesh` writes its verdict with `--json-out FILE`. The rest have no JSON form and the server reads their text (`cloth`, `refs`, `ls`, `dump`, `verify`, `install --status`, and `policy`, which is tab-separated), so a change to those layouts needs a change here.
+`check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `release`, `rules`, `install --status`, `csdk` and `material` run with `--json`, which prints one JSON document with a `schema` string on stdout and nothing else; the server reads that document and keeps stderr in the log. `mesh` writes its verdict with `--json-out FILE`. The rest have no JSON form and the server reads their text (`cloth`, `refs`, `ls`, `dump`, `verify`, and `policy`, which is tab-separated), so a change to those layouts needs a change here.
 
 ## Test
 
@@ -65,4 +67,4 @@ No tool installs, uninstalls or launches the game, and the server refuses any su
 python mcp/test_server.py [path/to/small/pakNN_dir.vpk]
 ```
 
-Starts the server, lists the tools, calls `rules`, `doctor`, `policy` (a good one and a bad file), `lint` (light and deep), `grade` (a pak with nothing of the hero: not graded, the gate blocked), `check`, `patchday` and `ls`, and checks the JSON shape, the error paths and that no install tool exists. Without an argument (or `MAGICIAN_TEST_PAK`) it packs a one-file pak of its own; the lint, grade, check and patchday calls need the game (grade the Source 2 Viewer CLI too) and are skipped, with a line saying so, when it isn't found.
+Starts the server, lists the tools, calls `rules`, `doctor`, `policy` (a good one and a bad file), `lint` (light and deep), `grade` (a pak with nothing of the hero: not graded, the gate blocked), `check`, `patchday`, `ls`, `install_status`, `csdk` and `material`, and checks the JSON shape, the error paths and that no install tool exists. Without an argument (or `MAGICIAN_TEST_PAK`) it packs a one-file pak of its own; the lint, grade, check and patchday calls need the game (grade the Source 2 Viewer CLI too) and are skipped, with a line saying so, when it isn't found.
