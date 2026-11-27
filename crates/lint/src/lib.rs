@@ -383,10 +383,13 @@ pub fn ref_targets(r: &resource::Resource) -> Vec<String> {
 }
 
 impl ModFile {
+    /// Every file of the pak, in its directory's order, read in the order the bytes lie on disk.
     pub fn from_vpk(v: &vpk::Vpk) -> vpk::Result<Vec<ModFile>> {
-        v.entries
+        let entries: Vec<&vpk::Entry> = v.entries.iter().collect();
+        entries
             .iter()
-            .map(|e| Ok(ModFile { path: e.path.clone(), stored_crc: e.crc, inline: e.is_inline(), data: v.read(e)? }))
+            .zip(v.read_many(&entries))
+            .map(|(e, data)| Ok(ModFile { path: e.path.clone(), stored_crc: e.crc, inline: e.is_inline(), data: data? }))
             .collect()
     }
 }

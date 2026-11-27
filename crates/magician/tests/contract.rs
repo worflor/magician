@@ -83,6 +83,19 @@ fn rules_print_their_catalogue_as_json() {
     let o = magician(&d, &["rules", "floating-shel"]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
     assert!(text(&o).contains("did you mean `floating-shell`?"), "{}", text(&o));
+    // the record on the installed build is in the JSON as in the text, and a build with none says so
+    let g = fake_game(&d, &[]);
+    let rules = |args: &[&str]| Command::new(env!("CARGO_BIN_EXE_magician")).args(args).env("MAGICIAN_REFERENCE", d.join("reference")).env("MAGICIAN_CONFIG", d.join("config.txt")).env("DEADLOCK_GAME", &g).output().unwrap();
+    let o = rules(&["rules", "M111"]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("Nothing on record for build 6864: `magician corpus` measures each rule on Valve's own content; `magician witness`"), "{}", text(&o));
+    std::fs::create_dir_all(d.join("reference").join("6864")).unwrap();
+    std::fs::write(d.join("reference").join("6864").join("corpus.tsv"), "# magician corpus build=6864 models=1\ncalibration\tM111\tgap\t2\t43\t0.5\tx\tfires on 2 Valve heroes\n").unwrap();
+    let o = rules(&["rules", "M111"]);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(out.contains("on Valve's own content (6864): fires on 2 of 43: fires on 2 Valve heroes") && out.contains("No witness on record for build 6864: `magician witness`"), "{out}");
+    let o = rules(&["rules", "M111", "--json"]);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(out.starts_with("{\"schema\":\"magician.rules/1\",\"build\":\"6864\",\"rules\":[{\"code\":\"M111\"") && out.contains("\"corpus\":[{\"fires\":2,\"of\":43,\"reading\":\"fires on 2 Valve heroes\"}],\"witness\":null"), "{out}");
     let _ = std::fs::remove_dir_all(&d);
 }
 
@@ -1377,5 +1390,36 @@ fn material_diff_holds_one_number_as_one_and_names_what_it_was_given() {
     assert!(text(&o).contains("is a pak: verify holds an addon's compiled materials to their sources"), "{}", text(&o));
     let o = magician(&d, &["material", "diff", &sa, "--against", "valvee"]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_file_or_folder_that_is_not_what_was_asked_for_is_named() {
+    // seen dogfooding: "io: failed to fill whole buffer" for an empty pak, an `os error 3` with no path from pack, and
+    // a mistyped --fairplay view refused only after the whole mesh report
+    let d = scratch("named");
+    let empty = d.join("empty.vpk");
+    std::fs::write(&empty, b"").unwrap();
+    let o = magician(&d, &["ls", &empty.to_string_lossy()]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("empty.vpk") && text(&o).contains("too short for a VPK's header"), "{}", text(&o));
+    let src = d.join("src").join("materials");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("x.txt"), b"x").unwrap();
+    let out = d.join("not-yet").join("pak50_dir.vpk");
+    let o = magician(&d, &["pack", &d.join("src").to_string_lossy(), &out.to_string_lossy()]);
+    assert!(out.is_file(), "pack makes the folder it writes into: {}", text(&o));
+    let o = magician(&d, &["pack", &d.join("nope").to_string_lossy(), &out.to_string_lossy()]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("nope: no such folder"), "{}", text(&o));
+    let pak = d.join("pak02_dir.vpk");
+    vpk::write(&pak, &[("models/x/x.vmdl_c".to_string(), b"not a model".to_vec())]).unwrap();
+    let p = pak.to_string_lossy().into_owned();
+    let g = fake_game(&d, &[]).to_string_lossy().into_owned();
+    let o = magician(&d, &["mesh", &p, "models/x/x.vmdl_c", "--fairplay", "sideways", "--no-png", "--game", &g]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("--fairplay sideways: no such view") && !text(&o).contains("LODs"), "{}", text(&o));
+    let o = magician(&d, &["mesh", &p, "models/x/x.vmdl_c", "--against", "vlave", "--no-png", "--game", &g]);
+    assert!(text(&o).contains("--against vlave: valve or none"), "{}", text(&o));
     let _ = std::fs::remove_dir_all(&d);
 }

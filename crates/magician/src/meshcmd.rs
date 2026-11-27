@@ -38,6 +38,21 @@ pub fn cmd_mesh(args: &[String], game_dir: &Path, reference: &Path, policy: &gra
     let flag = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).cloned();
     let withs: Vec<String> = args.windows(2).filter(|w| w[0] == "--with").map(|w| w[1].clone()).collect();
     let against = flag("--against").unwrap_or_else(|| "valve".into());
+    // Every option is read before the model is: a mistyped view or comparison is said before seconds of decoding.
+    if against != "valve" && against != "none" {
+        return Err(format!("--against {against}: valve or none"));
+    }
+    let fairplay = match flag("--fairplay") {
+        Some(name) => {
+            let view = views::view_named(&name).ok_or_else(|| format!("--fairplay {name}: no such view (front, side, back, top, below, left, or an oblique such as front-right-high)"))?;
+            let unit: f64 = match flag("--fairplay-unit") {
+                Some(u) => u.parse().ok().filter(|u: &f64| *u > 0.0 && u.is_finite()).ok_or_else(|| format!("--fairplay-unit {u}: not a positive number of units a pixel"))?,
+                None => 0.1,
+            };
+            Some((name, view, unit))
+        }
+        None => None,
+    };
     let mut paks = vec![vpk::Vpk::open(vp).map_err(|e| format!("{vp}: {e}"))?];
     for w in &withs {
         paks.push(vpk::Vpk::open(w).map_err(|e| format!("{w}: {e}"))?);
@@ -172,12 +187,7 @@ pub fn cmd_mesh(args: &[String], game_dir: &Path, reference: &Path, policy: &gra
         std::fs::write(&png, sheet.png()).map_err(|e| format!("{}: {e}", png.display()))?;
         outln!("\nx-ray sheet: {}  (grey both, orange ours adds, cyan ours loses, red back faces seen first)", png.display());
     }
-    if let Some(name) = flag("--fairplay") {
-        let view = views::view_named(&name).ok_or_else(|| format!("--fairplay {name}: no such view (front, side, back, top, below, left, or an oblique such as front-right-high)"))?;
-        let unit: f64 = match flag("--fairplay-unit") {
-            Some(u) => u.parse().ok().filter(|u: &f64| *u > 0.0 && u.is_finite()).ok_or_else(|| format!("--fairplay-unit {u}: not a positive number of units a pixel"))?,
-            None => 0.1,
-        };
+    if let Some((name, view, unit)) = fairplay {
         let out = flag("--out").map(PathBuf::from).unwrap_or_else(|| reference.join("work").join("mesh").join(path.rsplit('/').next().unwrap_or("model").trim_end_matches(".vmdl_c")));
         std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
         let lines = [fp.hitbox_warn_units, fp.hitbox_taste_units, fp.hitbox_egregious_units];

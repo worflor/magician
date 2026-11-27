@@ -101,21 +101,38 @@ pub fn drift(vpk: &str, files: usize, d: &crate::patchday::Drift, from: &str, to
 
 #[cfg(test)]
 pub fn rules() -> String {
-    rules_where(|_| true)
+    rules_with_record(|_| true, None)
+}
+
+/// Each rule's record on one build, as `rules` prints it: Valve's own content it fires on (`magician corpus`), and
+/// what the game said of its findings in witnessed passes (`magician witness`).
+pub struct RuleRecord<'a> {
+    pub build: &'a str,
+    pub corpus: &'a [(String, usize, usize, String)],
+    pub witness: &'a std::collections::BTreeMap<String, [usize; 4]>,
 }
 
 /// The catalogue as `magician.rules/1`, the rules `keep` takes by code. `fair_play` says the rule is judged on the
-/// fair-play axis rather than as a break (M062 for its hitboxes only, and M144, the check that could not run).
-pub fn rules_where(keep: impl Fn(&str) -> bool) -> String {
+/// fair-play axis rather than as a break (M062 for its hitboxes only, and M144, the check that could not run). With a
+/// record, `build` and per rule `corpus` (each calibration: fires, of, reading) and `witness`
+/// (confirmed, contradicted, not reached, a frame's or the files'), `[]` and `null` where the build has none.
+pub fn rules_with_record(keep: impl Fn(&str) -> bool, record: Option<&RuleRecord>) -> String {
     let items: Vec<String> = RULES
         .iter()
         .filter(|r| keep(r.code))
         .map(|r| {
             let fair = grade::rubric::FAIR_PLAY_RULES.contains(&r.code) || r.code == grade::rubric::UNCHECKED;
-            format!("{{\"code\":{},\"name\":{},\"severity\":{},\"fair_play\":{fair},\"in_game\":{}}}", s(r.code), s(r.name), s(severity(r.severity)), s(r.in_game))
+            let mut o = Obj::new().str("code", r.code).str("name", r.name).str("severity", severity(r.severity)).bool("fair_play", fair).str("in_game", r.in_game);
+            if let Some(rec) = record {
+                let corpus = arr(rec.corpus.iter().filter(|c| c.0 == r.code).map(|(_, fires, of, reading)| Obj::new().int("fires", *fires as i64).int("of", *of as i64).str("reading", reading).build()));
+                let witness = rec.witness.get(r.code).map(|[c, x, n, f]| Obj::new().int("confirmed", *c as i64).int("contradicted", *x as i64).int("not_reached", *n as i64).int("frame_or_files", *f as i64).build());
+                o = o.raw("corpus", corpus).raw("witness", witness.unwrap_or_else(|| "null".into()));
+            }
+            o.build()
         })
         .collect();
-    format!("{{\"schema\":\"magician.rules/1\",\"rules\":[{}]}}\n", items.join(","))
+    let build = record.map(|r| format!(",\"build\":{}", s(r.build))).unwrap_or_default();
+    format!("{{\"schema\":\"magician.rules/1\"{build},\"rules\":[{}]}}\n", items.join(","))
 }
 
 #[cfg(test)]

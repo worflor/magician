@@ -192,6 +192,10 @@ impl Vpk {
     pub fn open(dir_path: impl AsRef<Path>) -> Result<Vpk> {
         let dir_path = dir_path.as_ref().to_path_buf();
         let mut f = File::open(&dir_path)?;
+        let len = f.metadata()?.len();
+        if len < 12 {
+            return Err(Error::Format(format!("{len} bytes, too short for a VPK's header: not a pak (an empty or cut-off download?)")));
+        }
         let mut head = [0u8; 28];
         f.read_exact(&mut head[..12])?;
         let word = |i: usize| u32::from_le_bytes([head[i], head[i + 1], head[i + 2], head[i + 3]]);
@@ -203,6 +207,7 @@ impl Vpk {
         let tree_size = word(8) as usize;
         let header_len = match version {
             1 => 12,
+            2 if len < 28 => return Err(Error::Format(format!("{len} bytes, too short for a version 2 VPK's header: a cut-off file"))),
             2 => {
                 f.read_exact(&mut head[12..28])?;
                 28
@@ -272,6 +277,18 @@ impl Vpk {
             f.read_exact(&mut out[start..])?;
         }
         Ok(out)
+    }
+
+    /// Several entries' bytes, in the order given, read in the order they lie on disk (archive, then offset). On a
+    /// spinning disk the directory's order is a seek per file: a 608 MB pak of 1,835 files read in 40 s that way.
+    pub fn read_many(&self, entries: &[&Entry]) -> Vec<Result<Vec<u8>>> {
+        let mut order: Vec<usize> = (0..entries.len()).collect();
+        order.sort_by_key(|&i| (entries[i].archive_index, entries[i].offset));
+        let mut out: Vec<Option<Result<Vec<u8>>>> = (0..entries.len()).map(|_| None).collect();
+        for i in order {
+            out[i] = Some(self.read(entries[i]));
+        }
+        out.into_iter().map(|r| r.unwrap_or_else(|| Ok(Vec::new()))).collect()
     }
 
     /// Bytes `[start, start + len)` of a file, without reading the rest (clamped to the file's size).
@@ -435,6 +452,31 @@ mod tests {
     fn a_pak_past_two_gib_is_refused_not_wrapped() {
         assert!(fits_one_file(SINGLE_FILE_LIMIT).is_ok());
         assert!(fits_one_file(SINGLE_FILE_LIMIT + 1).unwrap_err().to_string().contains("2 GiB"));
+    }
+
+    #[test]
+    fn a_file_too_short_for_a_header_says_so_and_many_reads_come_back_in_the_order_asked() {
+        let dir = std::env::temp_dir().join(format!("magician-vpk-short-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // an empty download was "io: failed to fill whole buffer"
+        let empty = dir.join("empty.vpk");
+        std::fs::write(&empty, b"").unwrap();
+        assert!(Vpk::open(&empty).unwrap_err().to_string().contains("0 bytes, too short for a VPK's header"));
+        let p = dir.join("pak01_dir.vpk");
+        let files: Vec<(String, Vec<u8>)> = (0..20).map(|n| (format!("z/{:02}.vtex_c", 19 - n), vec![n as u8; 100 + n])).collect();
+        write(&p, &files).unwrap();
+        let mut cut = std::fs::read(&p).unwrap();
+        cut.truncate(20);
+        std::fs::write(dir.join("cut.vpk"), &cut).unwrap();
+        assert!(Vpk::open(dir.join("cut.vpk")).unwrap_err().to_string().contains("too short for a version 2 VPK's header"));
+        let v = Vpk::open(&p).unwrap();
+        let mut asked: Vec<&Entry> = v.entries.iter().collect();
+        asked.reverse();
+        let got = v.read_many(&asked);
+        for (e, data) in asked.iter().zip(got) {
+            assert_eq!(data.unwrap(), v.read(e).unwrap(), "{}", e.path);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

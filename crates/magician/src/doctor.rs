@@ -143,7 +143,10 @@ pub fn checks(args: &[String]) -> Vec<Check> {
         let state = match install::game_running() {
             Ok(true) => {
                 let holder = std::fs::read_to_string(paths::game_lock().path).ok().and_then(|t| install::lock_holder(&t));
-                format!("running{}", holder.map(|h| format!(", held by {h} (game lock)")).unwrap_or_else(|| ", nobody holds the game lock (someone is playing): install waits for it to close".into()))
+                format!(
+                    "running, {}: install and uninstall refuse until it closes, unless the caller holds the game lock",
+                    holder.map(|h| format!("held by {h} (game lock)")).unwrap_or_else(|| "nobody holds the game lock (someone is playing)".into())
+                )
             }
             Ok(false) => "not running".into(),
             Err(e) => format!("can't tell ({e}); install and uninstall will ask for --ignore-game"),

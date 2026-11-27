@@ -141,7 +141,7 @@ build and scene patches come from the mod.toml (its [mod] paks, else the paks be
 and what was used is said on stderr. Anything given explicitly wins. A hero is named any way: lash, Lash, hero_lash,
 \"Lady Geist\" or its model's path.
 
-Every command:
+Every other command:
   magician baseline [--game DIR] [--out FILE]   snapshot the installed build's file table (citadel + core) and, beside it,
                                                 rig.tsv (every skeleton's bones, every anim graph's control parameters)
                                                 and engine.tsv (size and sha256 of every executable, library and shader
@@ -204,15 +204,17 @@ Every command:
                                                 on the installed build: Valve's own content it fires on (`corpus`) and
                                                 what the game confirmed or contradicted (`witness`); a code or name
                                                 (`rules M062`, `rules floating-shell`) shows only that rule
-  magician footprint <hero> [--list]            everything a hero is made of, from the game's own data
+  magician footprint <hero> [--list]            everything a hero is made of, from the game's own data (needs the
+                                                Source 2 Viewer CLI; the first run on a build decompiles, about 30 s)
   magician grade <pak>... [--hero <hero> | --mod <mod.toml>] [--target BUILD] [--light | --findings FILE] [--allow FILE]...
                 [--addon-root DIR]... [--scene-root DIR]... [--gate] [--json] [--record-out FILE] [--baseline FILE]
                 [--users FILE]                  grade a hero mod (every pak it ships, together; the lower pak number wins
                                                 a shared path): what kind of mod it is and which of the hero's look,
                                                 effects and sound it makes its own, broken (lint errors), fair play
-                                                (ranked-safe, freeform, fair play not checked), freshness (stale(N): the builds a proof holds these paks on), rights and
-                                                the release gate, as a label (`Echo (look, some effects) · stale(6864)`) and,
-                                                with --json, the record (magician.grade/3; --record-out writes it to a file too);
+                                                (ranked-safe, freeform, fair play not checked), freshness (stale(N): the
+                                                builds a proof holds these paks on), rights and the release gate, as a
+                                                label (`Echo (look, some effects) · stale(6864)`) and, with --json, the
+                                                record (magician.grade/3; --record-out writes it to a file too);
                                                 lints deep unless --light (against --baseline, with the --users index,
                                                 as lint does), or judges --findings, a lint run lint wrote down (what
                                                 release does); UI scene map VPKs count when carried beside a pak or
@@ -284,15 +286,15 @@ Every command:
                                                 what changed under a mod since the build it was proven on (bones and graph
                                                 parameters too, when both builds have a rig.tsv); exit 1 broken, 4 re-prove
   magician patchday [--from <build>] [--capture] [--verify-engine] [--mod <mod.toml>]... [--json]
-                                                the patch-day check: baseline for the installed build (--capture writes it),
-                                                install state, every installed pak's drift grouped by mod and compared from
-                                                the last build a proof holds its installed bytes on (proofs.tsv; owners it installs
-                                                under other names in [mod] owners = [...]), `proven on N of M`, and per
-                                                era whether the engine changed too (`data only` / `engine too`, from
-                                                engine.tsv). --verify-engine measures the installed engine against the
-                                                build's sidecar: a hotfix within the build re-proves every installed mod.
-                                                Exit 1 broken, 4 re-prove,
-                                                0 clear. The mods: each --mod, else every mod under MAGICIAN_MODS (or
+                                                the patch-day check: baseline for the installed build (--capture writes
+                                                it), install state, every installed pak's drift grouped by mod and
+                                                compared from the last build a proof holds its installed bytes on
+                                                (proofs.tsv; owners it installs under other names in [mod] owners =
+                                                [...]), `proven on N of M`, and per era whether the engine changed too
+                                                (`data only` / `engine too`, from engine.tsv). --verify-engine measures
+                                                the installed engine against the build's sidecar: a hotfix within the
+                                                build re-proves every installed mod. Exit 1 broken, 4 re-prove, 0 clear.
+                                                The mods: each --mod, else every mod under MAGICIAN_MODS (or
                                                 `mods =`), else the nearest folder, from the working one upward, with
                                                 mod.toml files one or two levels below it
   magician prove <mod.toml> [--evidence DIR] [--build <build>] [--date YYYY-MM-DD] [--pak FILE]... [--json]
@@ -727,7 +729,16 @@ fn cmd_paths(args: &[String]) -> R {
         Ok(None) => {}
         Err(e) => row("wine", Err(e)),
     }
-    row("vrf", Ok(paths::vrf(flag(args, "--vrf"))));
+    // the viewer's default is a name to look up on PATH: say where it is, or that it is not there, as doctor does
+    let vrf = paths::vrf(flag(args, "--vrf"));
+    row(
+        "vrf",
+        if vrf.source == "PATH" {
+            paths::on_path(&vrf.path.to_string_lossy()).map(|path| paths::Found { path, source: "PATH".into() }).ok_or_else(|| "no Source2Viewer-CLI on PATH; pass --vrf FILE, set MAGICIAN_VRF, or add `vrf = ...` to the config file (only grade, footprint and index need it)".to_string())
+        } else {
+            Ok(vrf)
+        },
+    );
     row("game_lock", Ok(paths::game_lock()));
     match paths::mods() {
         Some(f) => say!("mods	{}	{}", f.path.display(), f.source),
@@ -1342,6 +1353,8 @@ fn lint_vpk(path: &Path, args: &[String]) -> R {
 pub(crate) fn lint_run(path: &Path, args: &[String]) -> Result<LintOut, Stop> {
     // The limits the run judges by: read first, so a policy that does not read stops the run before anything else.
     let policy = load_policy(args)?;
+    // the whole run, setup included: the total is what a caller waits for
+    let t0 = std::time::Instant::now();
     let mut setup: Vec<(&str, f64)> = Vec::new();
     let mut lap = std::time::Instant::now();
     let mut mark = |what: &'static str, setup: &mut Vec<(&str, f64)>| {
@@ -1358,7 +1371,7 @@ pub(crate) fn lint_run(path: &Path, args: &[String]) -> Result<LintOut, Stop> {
         },
         || -> Result<Vec<ModFile>, String> {
             let v = open(path)?;
-            ModFile::from_vpk(&v).map_err(|e| e.to_string())
+            ModFile::from_vpk(&v).map_err(|e| format!("{}: {e}", path.display()))
         },
     );
     let (base, gf) = game_side?;
@@ -1371,7 +1384,6 @@ pub(crate) fn lint_run(path: &Path, args: &[String]) -> Result<LintOut, Stop> {
     let shipped: std::collections::HashSet<String> = files.iter().map(|f| f.path.clone()).collect();
     mark("originals' references", &mut setup);
     let deep = args.iter().any(|a| a == "--deep");
-    let t0 = std::time::Instant::now();
     let mut f = lint::lint(&Input { vpk_name: name, files, base: Some(&base), built_against: then.as_ref(), original_refs: &originals, game: Some(&gf), deep, fair_play: &policy.fair_play });
     // Fair play is lenient unless the policy enforces it: its findings are warnings, so lint, build and install don't
     // stop on them alone.
@@ -1415,14 +1427,19 @@ fn original_refs(files: &[ModFile], args: &[String]) -> Result<std::collections:
         .iter()
         .filter_map(|d| vpk::Vpk::open_shared(game.join(d).join("pak01_dir.vpk")).ok())
         .collect();
+    // each replaced file's original from the first archive that has it, read per archive in the order they lie on disk
+    // (the game's archives are 26 GB, often on a spinning disk: 1,000 originals in path order took 25 s there)
+    let mut wanted: Vec<Vec<(&str, &vpk::Entry)>> = vec![Vec::new(); paks.len()];
     for f in files.iter().filter(|f| f.path.ends_with("_c")) {
-        for pak in &paks {
-            if let Some(e) = pak.find(&f.path) {
-                let data = pak.read(e).map_err(|e| e.to_string())?;
-                if let Ok(r) = resource::parse(&data) {
-                    out.insert(f.path.clone(), lint::ref_targets(&r));
-                }
-                break;
+        if let Some((i, e)) = paks.iter().enumerate().find_map(|(i, pak)| pak.find(&f.path).map(|e| (i, e))) {
+            wanted[i].push((f.path.as_str(), e));
+        }
+    }
+    for (pak, want) in paks.iter().zip(&wanted) {
+        let entries: Vec<&vpk::Entry> = want.iter().map(|(_, e)| *e).collect();
+        for ((path, _), data) in want.iter().zip(pak.read_many(&entries)) {
+            if let Ok(r) = resource::parse(&data.map_err(|e| e.to_string())?) {
+                out.insert(path.to_string(), lint::ref_targets(&r));
             }
         }
     }
@@ -1628,10 +1645,16 @@ fn cmd_pack(args: &[String]) -> R {
     let p = positional(args);
     let src = PathBuf::from(p.first().ok_or("pack <src_dir> <out.vpk>")?);
     let out = PathBuf::from(p.get(1).ok_or("pack <src_dir> <out.vpk>")?);
+    if !src.is_dir() {
+        return Err(Stop::Usage(format!("{}: no such folder (pack takes a folder laid out at the game's paths)", src.display())));
+    }
     let mut files = Vec::new();
-    walk(&src, &src, &mut files).map_err(|e| e.to_string())?;
+    walk(&src, &src, &mut files).map_err(|e| format!("{}: {e}", src.display()))?;
     files.sort_by(|a, b| a.0.cmp(&b.0));
-    vpk::write(&out, &files).map_err(|e| e.to_string())?;
+    if let Some(dir) = out.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    vpk::write(&out, &files).map_err(|e| format!("{}: {e}", out.display()))?;
     say!("packed {} files -> {}", files.len(), out.display());
     lint_vpk(&out, args)
 }
@@ -1727,7 +1750,7 @@ fn cmd_footprint(args: &[String]) -> R {
     let p = positional(args);
     let hero = hero_key(p.first().ok_or("footprint <hero>")?, args)?;
     let fp = grade::footprint::build(&grade_sources(args)?, &hero)?;
-    say!("{} ({}), tokens {:?}", fp.display, fp.hero_key, fp.tokens);
+    say!("{} ({}), the words its files carry: {}", fp.display, fp.hero_key, fp.tokens.join(", "));
     for (slot, ab) in &fp.abilities {
         say!("  slot {slot:<22} {ab}");
     }
@@ -2694,7 +2717,9 @@ fn load_eras(from: &str, to: &str) -> Result<Eras, String> {
     let load = |b: &str| {
         let p = default_baseline_path(b);
         if !p.is_file() {
-            return Err(format!("no baseline for build {b} at {}: capture it with the game on that build (`magician baseline`), or point --reference at the folder that holds it", p.display()));
+            let have = patchday::builds_on_record(&reference_root());
+            let have = if have.is_empty() { "it holds none yet".to_string() } else { format!("it holds {}", have.join(", ")) };
+            return Err(format!("no baseline for build {b} at {} ({have}): capture it with the game on that build (`magician baseline`), or point --reference at the folder that holds it", p.display()));
         }
         Baseline::load(&p)
     };
@@ -3052,16 +3077,17 @@ fn cmd_rules(_args: &[String]) -> R {
         }
     }
     let shown = |code: &str| only.is_empty() || only.contains(&code);
-    if json_mode() {
-        out!("{}", jsonout::rules_where(shown));
-        return Ok(ExitCode::SUCCESS);
-    }
     // each rule's record on the installed build, when there is one: Valve's own content it fires on, and what the game
     // said of its findings in witnessed passes
     let build = game_dir(_args).ok().and_then(|g| game_build(&g).ok());
     let read = |f: &str| build.as_ref().and_then(|b| std::fs::read_to_string(reference_root().join(b).join(f)).ok()).unwrap_or_default();
     let corpus = lint::corpus::read_calibrations(&read("corpus.tsv"));
     let record = build.as_ref().map(|b| witness::record(&read("witness.tsv"), b)).unwrap_or_default();
+    if json_mode() {
+        let rec = build.as_deref().map(|b| jsonout::RuleRecord { build: b, corpus: &corpus, witness: &record });
+        out!("{}", jsonout::rules_with_record(shown, rec.as_ref()));
+        return Ok(ExitCode::SUCCESS);
+    }
     for r in RULES.iter().filter(|r| shown(r.code)) {
         say!("{} {:<26} {:?}\n     {}", r.code, r.name, r.severity, r.in_game);
         for (_, fires, of, reading) in corpus.iter().filter(|c| c.0 == r.code) {
@@ -3070,6 +3096,18 @@ fn cmd_rules(_args: &[String]) -> R {
         if let Some([c, x, n, f]) = record.get(r.code) {
             say!("     witnessed in game ({}): {c} confirmed, {x} contradicted, {n} not reached, {f} for a frame or the files", build.as_deref().unwrap_or(""));
         }
+    }
+    // No record is not "never fires": say which is missing, and what writes it.
+    let missing: Vec<&str> = [(corpus.is_empty(), "`magician corpus` measures each rule on Valve's own content"), (record.is_empty(), "`magician witness` adds what the game said of a mod's findings")].iter().filter(|(m, _)| *m).map(|(_, w)| *w).collect();
+    if !missing.is_empty() {
+        say!(
+            "\n{}: {}.",
+            match &build {
+                Some(b) => format!("{} on record for build {b}", if missing.len() == 2 { "Nothing" } else if corpus.is_empty() { "No corpus" } else { "No witness" }),
+                None => "No record shown: the installed build could not be read".to_string(),
+            },
+            missing.join("; ")
+        );
     }
     if !only.is_empty() && !only.iter().any(|c| *c == "M144" || grade::rubric::FAIR_PLAY_RULES.contains(c)) {
         return Ok(ExitCode::SUCCESS);
