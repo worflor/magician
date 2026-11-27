@@ -213,6 +213,13 @@ impl Inference {
     pub fn clear(&self) -> bool {
         self.runner_up.as_ref().is_none_or(|(_, s)| self.score >= 2 * s)
     }
+
+    /// Whether the hero's files are too few a share of the mod to make it that hero's: under a quarter. A skin, a voice
+    /// pack or an animation set is nearly all its hero's files (68 of 70, 8 of 8 on community mods); a map whose
+    /// `ivy_leaf` material carries Ivy's word is 4 of 242, a performance pack of particles 616 of 9,362.
+    pub fn minor(&self) -> bool {
+        self.files * 4 < self.of
+    }
 }
 
 #[cfg(test)]
@@ -267,6 +274,12 @@ pub(crate) mod tests {
         assert!(!h.infer(mixed).unwrap().clear());
         assert!(h.infer(["materials/ui/generic.vtex_c"]).is_none());
         assert!(h.infer(std::iter::empty()).is_none());
+        // a map whose plant material carries a hero's word is not that hero's mod (a community map: 4 of 242 files)
+        let mut map: Vec<String> = (0..20).map(|n| format!("models/props_city/lamp_{n}.vmdl_c")).collect();
+        map.push("materials/models/props_nature/geist_leaf.vmat_c".into());
+        let i = h.infer(map.iter().map(String::as_str)).unwrap();
+        assert!(i.hero.key == "hero_ghost" && i.minor(), "{i:?}");
+        assert!(!h.infer(lash).unwrap().minor());
         assert_eq!(h.list[3].tokens(), vec!["magician".to_string()], "magician_v2 is the magician folder");
         assert!(i.others.is_empty());
     }

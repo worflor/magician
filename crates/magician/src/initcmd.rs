@@ -177,21 +177,77 @@ pub(crate) fn sort_paks(paks: &[PathBuf]) -> Result<(Vec<PathBuf>, Vec<(PathBuf,
         }
     }
     let kept: Vec<usize> = (0..paks.len()).filter(|i| !gone.contains(i)).collect();
-    let mut notes = Vec::new();
+    // Paks that ship the same paths with different bytes, grouped: two are one clash; three or more that all clash are
+    // the variants of a download (seven cuts of one music pak, a rabbit for every hero), of which a player installs one.
+    let mut group: Vec<usize> = (0..paks.len()).collect();
+    let root = |g: &Vec<usize>, mut i: usize| {
+        while g[i] != i {
+            i = g[i];
+        }
+        i
+    };
+    let mut pairs: Vec<(usize, usize, usize)> = Vec::new();
     for (x, &i) in kept.iter().enumerate() {
         for &j in &kept[x + 1..] {
             let o = overlap(&opened[i], &opened[j]);
             if o.differ > 0 {
-                notes.push(format!(
-                    "{} and {} both ship {} file(s) with different bytes; in game the lower pak number's copy loads (`magician grade` says which wins)",
-                    name(i),
-                    name(j),
-                    o.differ
-                ));
+                pairs.push((i, j, o.differ));
+                let (a, b) = (root(&group, i), root(&group, j));
+                group[b] = a;
             }
         }
     }
+    let mut notes = Vec::new();
+    let mut said: Vec<usize> = Vec::new();
+    for &i in &kept {
+        let r = root(&group, i);
+        if said.contains(&r) || !pairs.iter().any(|p| root(&group, p.0) == r) {
+            continue;
+        }
+        said.push(r);
+        let members: Vec<usize> = kept.iter().copied().filter(|&k| root(&group, k) == r).collect();
+        if members.len() == 2 {
+            let (a, b, n) = *pairs.iter().find(|p| root(&group, p.0) == r).unwrap_or(&(members[0], members[1], 0));
+            notes.push(format!("{} and {} both ship {n} file(s) with different bytes; {}", name(a), name(b), which_loads(&name(a), &name(b))));
+            continue;
+        }
+        // the paths two or more of them ship with different bytes
+        let mut shared: Vec<&str> = Vec::new();
+        for &(a, b, _) in pairs.iter().filter(|p| root(&group, p.0) == r) {
+            let theirs: std::collections::HashMap<&str, u32> = opened[a].entries.iter().map(|e| (e.path.as_str(), e.crc)).collect();
+            shared.extend(opened[b].entries.iter().filter(|e| theirs.get(e.path.as_str()).is_some_and(|c| *c != e.crc)).map(|e| e.path.as_str()));
+        }
+        shared.sort();
+        shared.dedup();
+        let shown: Vec<String> = members.iter().take(3).map(|&k| name(k)).collect();
+        notes.push(format!(
+            "{} paks ({}{}) ship {} of the same path(s) with different bytes: they look like variants of one another, of which a player installs one, and in game only one copy of each path loads. If they are, keep the one you mean in [mod] paks, or describe each on its own (`magician init <pak> --out <folder>`)",
+            members.len(),
+            shown.join(", "),
+            if members.len() > 3 { format!(" and {} more", members.len() - 3) } else { String::new() },
+            shared.len()
+        ));
+    }
     Ok((kept.iter().map(|&i| paks[i].clone()).collect(), left_out, notes))
+}
+
+/// The slot number a pak's name gives it (`pak02_dir.vpk`, `Skin__pak02_dir.vpk`: 2), if it gives one.
+fn slot_of(name: &str) -> Option<u32> {
+    let n = name.to_ascii_lowercase();
+    let at = n.rfind("pak")?;
+    let rest = &n[at + 3..];
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    (!digits.is_empty() && rest[digits.len()..].starts_with("_dir")).then(|| digits.parse().ok()).flatten()
+}
+
+/// Which of two paks' copies of a path the game loads: the one under the lower pak number, which the names may or
+/// may not decide.
+fn which_loads(a: &str, b: &str) -> String {
+    match (slot_of(a), slot_of(b)) {
+        (Some(x), Some(y)) if x != y => format!("in game the lower pak number's copy loads, {}'s (`magician grade` says which wins)", if x < y { a } else { b }),
+        (Some(x), Some(_)) => format!("both are named for slot pak{x:02}, so they can't both be installed as they are: likely two versions of one pak, of which a player installs one"),
+        _ => "in game the copy under the lower pak number loads, and the names give no number: which one depends on the slot each is installed under".to_string(),
+    }
 }
 
 /// `magician init [<pak>... | <archive>... | <addon dir>] [--out DIR] [--hero HERO] [--slug SLUG] [--name NAME] [--force]`.
@@ -322,6 +378,9 @@ pub fn cmd_init(args: &[String]) -> R {
         build::rel_files(a, a, &mut rels).map_err(|e| format!("{}: {e}", a.display()))?;
         files.extend(rels);
     }
+    // A path two variants both ship is one file of the mod, not two: counted once.
+    files.sort();
+    files.dedup();
     let folder = std::path::absolute(&out_dir).ok().and_then(|d| d.file_name().map(|n| n.to_string_lossy().into_owned())).unwrap_or_default();
     let mut draft = Draft {
         slug: flag(args, "--slug").map(|s| slug_of(&s)).unwrap_or_else(|| slug_of(&folder)),
@@ -347,13 +406,30 @@ pub fn cmd_init(args: &[String]) -> R {
             draft.hero = Some(clean(&h));
         }
         (None, Some(t)) => match t.infer(files.iter().map(String::as_str)) {
+            // a few files that carry a hero's word in a mod of something else (a map's `ivy_leaf` material) do not make
+            // it that hero's mod
+            Some(i) if i.minor() => {
+                let theirs: Vec<&String> = files.iter().filter(|f| t.infer([f.as_str()]).is_some_and(|x| x.hero.key == i.hero.key)).take(2).collect();
+                hero_note = format!(
+                    "none: only {} of {} files point at {} ({}{}), too few to make it that hero's mod, so {}; it is linted and checked, not graded (pass --hero only if it is for a hero)",
+                    i.files,
+                    i.of,
+                    i.hero.label(),
+                    theirs.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
+                    if i.files > theirs.len() { ", ..." } else { "" },
+                    checkcmd::what_it_is(&files)
+                );
+            }
             Some(i) if i.clear() => {
                 hero_note = describe(&i);
                 also = other_heroes(&i);
                 draft.model = Some(i.hero.model.clone()).filter(|m| files.iter().any(|f| f.trim_end_matches("_c") == m));
                 draft.hero = Some(i.hero.key.clone());
             }
-            Some(i) => hero_note = format!("not decided: {} (and {}): pass --hero", describe(&i), i.runner_up.map(|(k, _)| k).unwrap_or_default()),
+            Some(i) => {
+                let other = i.runner_up.as_ref().map(|(k, _)| t.resolve(k).map(|h| h.label()).unwrap_or_else(|_| k.clone())).unwrap_or_default();
+                hero_note = format!("not decided: {} (and {other}): pass --hero", describe(&i));
+            }
             None => hero_note = format!("none: no file is one of a hero's, so {}; it is linted and checked, not graded (pass --hero only if it is for a hero)", checkcmd::what_it_is(&files)),
         },
         (None, None) => hero_note = "not decided: the game's hero table could not be read (is Deadlock found? `magician doctor`); pass --hero".into(),
@@ -379,7 +455,7 @@ pub fn cmd_init(args: &[String]) -> R {
     for (p, shown) in paks.iter().zip(&draft.paks) {
         let sha = grade::sha256::file(p).map_err(|e| format!("{}: {e}", p.display()))?;
         let files = open(p).map(|v| v.entries.len()).unwrap_or(0);
-        say!("  pak    {shown}  {files} files, sha256 {sha}{}", origin.get(p).map(|o| format!(" ({o})")).unwrap_or_default());
+        say!("  pak    {shown}  {files} file{}, sha256 {sha}{}", if files == 1 { "" } else { "s" }, origin.get(p).map(|o| format!(" ({o})")).unwrap_or_default());
     }
     for l in &left_lines {
         say!("  left out {l}");
@@ -453,6 +529,31 @@ mod tests {
         assert_eq!(made, vec![into.join("Skin Full.vpk")]);
         std::fs::write(into.join("copy.vpk"), b"someone else's").unwrap();
         assert!(matches!(place(&twin, &into, &mut made), Err(Stop::Refused(_))));
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn variants_of_one_pak_are_said_once_and_the_pak_number_only_where_the_names_give_one() {
+        // a download of seven cuts of one pak (a community music mod): 21 pair notes before, each naming a lower pak
+        // number the names did not give
+        let d = std::env::temp_dir().join(format!("magician-initvariants-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let cuts: Vec<PathBuf> = (0..7).map(|n| d.join(format!("cut {n}__pak02_dir.vpk"))).collect();
+        for (n, c) in cuts.iter().enumerate() {
+            vpk::write(c, &[("soundevents/hero/x.vsndevts_c".to_string(), format!("cut {n}").into_bytes()), (format!("sounds/music/cut_{n}.vsnd_c"), b"m".to_vec())]).unwrap();
+        }
+        let (kept, left, notes) = sort_paks(&cuts).unwrap();
+        assert_eq!((kept.len(), left.len()), (7, 0));
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].starts_with("7 paks (cut 0__pak02_dir.vpk, cut 1__pak02_dir.vpk, cut 2__pak02_dir.vpk and 4 more) ship 1 of the same path(s) with different bytes: they look like variants"), "{notes:?}");
+        // two: the pair, and what decides which loads
+        let (_, _, notes) = sort_paks(&cuts[..2]).unwrap();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].contains("both are named for slot pak02, so they can't both be installed as they are"), "{notes:?}");
+        assert!(which_loads("pak03_dir.vpk", "Skin__pak10_dir.vpk").contains("pak03_dir.vpk's"));
+        assert!(which_loads("abe_rabbit.vpk", "pak03_dir.vpk").contains("the names give no number"));
+        assert_eq!((slot_of("Foo__pak02_dir.vpk"), slot_of("pak10_dir.vpk"), slot_of("pakage.vpk"), slot_of("rabbit.vpk")), (Some(2), Some(10), None, None));
         std::fs::remove_dir_all(&d).unwrap();
     }
 

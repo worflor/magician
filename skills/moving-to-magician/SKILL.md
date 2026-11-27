@@ -56,9 +56,10 @@ Read every line `init` prints:
 - **`from   <download>: ...; left in it: ...`**: what else was in the archive (a readme, a preview). It never belongs in the folder.
 - **`left out <pak>: all N of its files are in <other>, byte for byte, so it adds nothing`**: the download held an older part of the same mod (a particles pak that a later full release includes). Say so; nothing is lost.
 - **`note   <a> and <b> both ship N file(s) with different bytes`**: two paks disagree on a file, and only one loads. Tell the person; which they meant is theirs to say.
+- **`note   N paks (...) ship M of the same path(s) with different bytes: they look like variants of one another`**: a download of alternatives (one colour per pak, one cut of a music pak, one model per hero), of which a player installs one. Ask which they use, or describe each as its own mod with `init <pak> --out <folder>`.
 - **`hero   hero_lash (Lash): 644 of 644 files are its own`**: decided from the files. Good.
 - **`also   1 file(s) of hero_atlas (Abrams): soundevents/hero/abrams.vsndevts_c; the mod changes that hero too`**: the mod ships a file of another hero's. Usually a leftover of the author's; worth a sentence in the report, since installing the mod changes that hero as well.
-- **`hero   none: no file is one of a hero's, so a prop mod (models/...)`**, or an effects, sound, HUD, map or music mod: correct, and needs nothing. It is linted and checked like any other; it is `not graded`, which is a statement, not a failure.
+- **`hero   none: no file is one of a hero's, so a prop mod (models/...)`**, or an effects, sound, HUD, map or music mod, or **`hero   none: only 4 of 242 files point at hero_tengu (Ivy) (...), too few to make it that hero's mod`** (a map's `ivy_leaf` material): correct, and needs nothing. It is linted and checked like any other; it is `not graded`, which is a statement, not a failure.
 - **`hero   not decided: ... (and ...): pass --hero`**: split between heroes. `--hero <name>` settles it, only when the files or the person make it plain.
 
 `init` never writes over a `mod.toml` (exit 3) or over a different file of the same name; do not `--force` one you did not write. Pass `--slug` or `--name` if the folder name is poor. Leave `[rights] state = "unreviewed"`: whether the mod may be shipped is the person's call, and for someone else's mod it stays unreviewed.
