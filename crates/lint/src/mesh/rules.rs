@@ -46,6 +46,14 @@ pub const CROSS_RATE_VALVE: f64 = 52.5;
 /// own line; the median sits on the body (0.0003). On a hero of Lash's size (148) the line is 13.9 units, about 35
 /// cm. Attachments held in the hero's own frame (the root) are not judged by it: Valve's 789 sit up to 3.1 sizes away.
 pub const ATTACH_OFF_BODY_VALVE: f64 = 0.094;
+/// M062: the hero's clips leave a bone of its animation skeleton still while no frame turns it, against its parent and
+/// its reference pose, past this, or shifts or scales it past the next (`carry::Moved::still`). The clip format stores
+/// a turn in 15-bit steps (about 0.005 degrees) and a shift in 1/65,535 of its track's range (under a hundredth of a
+/// unit on a hero); of the 7,743 bones of Valve's 107 hero models that take their pose from an animation bone (6875),
+/// 2,154 turn not at all. What a move shows is judged by the fair-play pixel (`views::VIEW_UNIT`): a reparented bone
+/// moves as Valve's while what moves it apart from Valve's carries no point of it a pixel.
+pub const BONE_STILL_DEGREES: f64 = 0.05;
+pub const BONE_STILL_UNITS: f64 = 0.01;
 /// Coplanar overlap worth a flicker (SKIN-FLAWS A6: more than 1 cm^2).
 pub const ZFIGHT_AREA: f64 = 0.155;
 /// H1 policy (the author, 2026-11-19): "some overflow where it's tasteful, not 'ok that's a bit much lol'".

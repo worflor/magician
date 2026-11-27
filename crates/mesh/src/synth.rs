@@ -50,6 +50,10 @@ pub struct SynthModel {
     /// Attachments, written with the first mesh: name, the one bone it rides on (empty: the model's root transform)
     /// and its offset in that bone's frame (identity rotation).
     pub attachments: Vec<(String, String, [f32; 3])>,
+    /// The animation skeleton the model names (`m_vecNmSkeletonRefs`; empty: none) and its anim graphs
+    /// (`m_animGraph2Refs`): source paths, as a compiled model writes them.
+    pub nm_skeleton: String,
+    pub anim_graphs: Vec<String>,
 }
 
 fn s(x: &str) -> V {
@@ -271,10 +275,104 @@ pub fn model(m: &SynthModel) -> Vec<u8> {
         ),
     ];
     data.extend(groups);
+    if !m.nm_skeleton.is_empty() {
+        data.push(("m_vecNmSkeletonRefs", V::Array(vec![s(&m.nm_skeleton)])));
+        data.push(("m_animGraph2Refs", V::Array(m.anim_graphs.iter().map(|g| obj(vec![("m_sIdentifier", s("")), ("m_hGraph", s(g))])).collect())));
+    }
     let data = obj(data);
     blocks.push((*b"DATA", resource::kv3::encode(&data)));
     blocks.extend(m.extra_blocks.iter().cloned());
     synth_blocks(&blocks)
+}
+
+/// One bone of a synthetic animation skeleton: name, parent index (-1: a root), position relative to the parent and
+/// rotation (x, y, z, w) in the reference pose.
+pub type NmBone<'a> = (&'a str, i32, [f32; 3], [f32; 4]);
+
+/// A compiled animation skeleton (`.vnmskel_c`) with these bones.
+pub fn nm_skeleton(id: &str, bones: &[NmBone]) -> Vec<u8> {
+    let pose = bones.iter().map(|(_, _, p, q)| V::Array([p[0], p[1], p[2], 1.0, q[0], q[1], q[2], q[3]].iter().map(|&x| f(x as f64)).collect())).collect();
+    let data = obj(vec![
+        ("m_ID", s(id)),
+        ("m_boneIDs", V::Array(bones.iter().map(|b| s(b.0)).collect())),
+        ("m_parentIndices", V::Array(bones.iter().map(|b| i(b.1 as i64)).collect())),
+        ("m_parentSpaceReferencePose", V::Array(pose)),
+    ]);
+    resource::synth_with(&[], &[(*b"DATA", resource::kv3::encode(&data))])
+}
+
+/// A compiled anim graph whose references are `refs` (the clips it plays and the graphs it includes).
+pub fn nm_graph(refs: &[&str]) -> Vec<u8> {
+    resource::synth_with(refs, &[(*b"DATA", resource::kv3::encode(&obj(vec![("m_nodePaths", V::Array(vec![]))])))])
+}
+
+/// A quaternion in the clip format's three words: the three smaller components in 15 bits over ±1/√2, the index of the
+/// largest in the top bits of the first two words (`lint::carry` reads it).
+pub fn nm_quaternion(q: [f32; 4]) -> [u16; 3] {
+    let big = (0..4).max_by(|&a, &b| q[a].abs().total_cmp(&q[b].abs())).unwrap_or(3);
+    let sign = if q[big] < 0.0 { -1.0 } else { 1.0 };
+    let rest: Vec<f32> = (0..4).filter(|&k| k != big).map(|k| q[k] * sign).collect();
+    let lo = -std::f32::consts::FRAC_1_SQRT_2;
+    let w = |x: f32| (((x - lo) / std::f32::consts::SQRT_2 * 32767.0).round() as i64).clamp(0, 32767) as u16;
+    let (x0, x1, x2) = (w(rest[0]), w(rest[1]), w(rest[2]));
+    [x0 | (((big as u16 >> 1) & 1) << 15), x1 | ((big as u16 & 1) << 15), x2]
+}
+
+/// A compiled clip of `skeleton`: `frames[f][b]` is bone `b`'s rotation (x, y, z, w) and position relative to its
+/// parent in frame `f`. A track that is the same in every frame is written static, as the compiler does.
+pub fn nm_clip(skeleton: &str, frames: &[Vec<([f32; 4], [f32; 3])>], additive: bool) -> Vec<u8> {
+    let bones = frames.first().map_or(0, Vec::len);
+    let mut settings = Vec::new();
+    let mut moving = Vec::new();
+    for bi in 0..bones {
+        let (q0, p0) = frames[0][bi];
+        let rot_static = frames.iter().all(|f| f[bi].0 == q0);
+        let pos_static = frames.iter().all(|f| f[bi].1 == p0);
+        let lo: Vec<f32> = (0..3).map(|k| frames.iter().map(|f| f[bi].1[k]).fold(f32::INFINITY, f32::min)).collect();
+        let hi: Vec<f32> = (0..3).map(|k| frames.iter().map(|f| f[bi].1[k]).fold(f32::NEG_INFINITY, f32::max)).collect();
+        let range = |k: usize| {
+            let (start, len) = if pos_static { (p0[k], 0.1) } else { (lo[k], (hi[k] - lo[k]).max(1e-3)) };
+            obj(vec![("m_flRangeStart", f(start as f64)), ("m_flRangeLength", f(len as f64))])
+        };
+        settings.push(obj(vec![
+            ("m_translationRangeX", range(0)),
+            ("m_translationRangeY", range(1)),
+            ("m_translationRangeZ", range(2)),
+            ("m_scaleRange", obj(vec![("m_flRangeStart", f(1.0)), ("m_flRangeLength", f(0.1))])),
+            ("m_nTrackReadOffset", i(0)),
+            ("m_constantRotation", V::Array(q0.iter().map(|&x| f(x as f64)).collect())),
+            ("m_bIsRotationStatic", b(rot_static)),
+            ("m_bIsTranslationStatic", b(pos_static)),
+            ("m_bIsScaleStatic", b(true)),
+        ]));
+        moving.push((rot_static, pos_static, lo, hi));
+    }
+    let mut words: Vec<u16> = Vec::new();
+    let mut offsets = Vec::new();
+    for fr in frames {
+        offsets.push(i(words.len() as i64));
+        for (bi, (rot_static, pos_static, lo, hi)) in moving.iter().enumerate() {
+            if !rot_static {
+                words.extend(nm_quaternion(fr[bi].0));
+            }
+            if !pos_static {
+                for k in 0..3 {
+                    let len = (hi[k] - lo[k]).max(1e-3);
+                    words.push((((fr[bi].1[k] - lo[k]) / len * 65535.0).round() as i64).clamp(0, 65535) as u16);
+                }
+            }
+        }
+    }
+    let data = obj(vec![
+        ("m_skeleton", s(skeleton)),
+        ("m_nNumFrames", i(frames.len() as i64)),
+        ("m_flDuration", f(1.0)),
+        ("m_compressedPoseData", V::Blob(words.iter().flat_map(|w| w.to_le_bytes()).collect())),
+        ("m_trackCompressionSettings", V::Array(settings)),
+        ("m_compressedPoseOffsets", V::Array(offsets)),
+        ("m_bIsAdditive", b(additive)),
+    ]);
+    resource::synth_with(&[], &[(*b"DATA", resource::kv3::encode(&data))])
 }
 
 /// A resource whose block indices are exactly the order given (CTRL's block indices rely on it).

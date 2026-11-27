@@ -1471,3 +1471,241 @@ fn m062_a_hitbox_change_beside_a_cosmetic_move_is_still_an_error() {
     assert_eq!(deep::contract_severity("bone 'pelvis' missing"), Severity::Error);
     assert_eq!(deep::contract_severity("hitbox 'default/chest' changed: x (Valve's y)"), Severity::Error);
 }
+
+// ------------------------------------------------------------------------------- M062: lost and reparented bones
+
+const NM: &str = "models/heroes_wip/lash/lash.vnmskel";
+const GRAPH: &str = "animgraphs/animgraph2/hero/hero.vnmgraph+lash.vnmgraph";
+const CLIP: &str = "models/heroes_wip/lash/clips/idle.vnmclip";
+
+/// A bone: name, parent (empty: a root), position relative to the parent.
+type Bone = (&'static str, &'static str, P3);
+
+/// Valve's rig for the bone tests: the fixture hero's root, spine and head; a ponytail weighted below the head; a hip
+/// holding a hitbox, a bone holding an attachment and a ragdoll bone; a strap the animation skeleton lacks; and two
+/// that carry nothing, an end bone and an IK target.
+fn rig_bones() -> Vec<Bone> {
+    vec![
+        ("root", "", [0.0; 3]),
+        ("spine", "root", [0.0, 0.0, 30.0]),
+        ("head", "spine", [0.0, 0.0, 25.0]),
+        ("ponytail", "head", [-6.0, 0.0, 5.0]),
+        ("head_end", "head", [0.0, 0.0, 10.0]),
+        ("hip", "root", [0.0, 0.0, 10.0]),
+        ("idol_bone", "spine", [-10.0, 0.0, 10.0]),
+        ("rag", "spine", [10.0, 0.0, 0.0]),
+        ("strap", "spine", [0.0, 10.0, 0.0]),
+        ("ik_target", "root", [0.0, 20.0, 0.0]),
+    ]
+}
+
+/// The bones without `lost`; a bone whose parent is lost hangs from the lost bone's parent, where it was.
+fn lose(bones: &[Bone], lost: &[&str]) -> Vec<Bone> {
+    let find = |n: &str| bones.iter().find(|b| b.0 == n).copied();
+    bones
+        .iter()
+        .filter(|b| !lost.contains(&b.0))
+        .map(|&(n, mut p, mut at)| {
+            while lost.contains(&p) {
+                let up = find(p).unwrap();
+                at = [at[0] + up.2[0], at[1] + up.2[1], at[2] + up.2[2]];
+                p = up.1;
+            }
+            (n, p, at)
+        })
+        .collect()
+}
+
+/// The bones with `name` hung from `parent` at `at`.
+fn hang(bones: &[Bone], name: &'static str, parent: &'static str, at: P3) -> Vec<Bone> {
+    bones.iter().map(|&b| if b.0 == name { (name, parent, at) } else { b }).collect()
+}
+
+/// A model with this skeleton: the fixture body on the spine and head on the head, a 2-unit box on each bone of
+/// `boxes` (at that model-space point), the chest and hip hitboxes, the idol attachment, a ragdoll part on `rag`, and
+/// the animation the hero's files name. Hitboxes and attachments on a bone the skeleton lacks are left out.
+fn rigged(bones: &[Bone], boxes: &[(&str, P3)]) -> SynthModel {
+    let index = |n: &str| bones.iter().position(|b| b.0 == n);
+    let world = |i: usize| {
+        let mut at = [0.0f32; 3];
+        let mut k = Some(i);
+        while let Some(x) = k {
+            let b = bones[x];
+            at = [at[0] + b.2[0], at[1] + b.2[1], at[2] + b.2[2]];
+            k = index(b.1);
+        }
+        at
+    };
+    let mesh_bones: Vec<(String, P3)> = (0..bones.len()).map(|i| (bones[i].0.to_string(), world(i))).collect();
+    let joint = |n: &str| index(n).unwrap() as u8;
+    let mut draws = vec![boxd([-10.0, -10.0, 0.0], [10.0, 10.0, 60.0], BODY, joint("spine"))];
+    if index("head").is_some() {
+        draws.push(boxd([-4.0, -4.0, 70.0], [4.0, 4.0, 78.0], CLOTH, joint("head")));
+    }
+    for (b, c) in boxes {
+        if index(b).is_some() {
+            draws.push(boxd([c[0] - 1.0, c[1] - 1.0, c[2] - 1.0], [c[0] + 1.0, c[1] + 1.0, c[2] + 1.0], CLOTH, joint(b)));
+        }
+    }
+    let mut hitboxes = vec![("chest".to_string(), "root".to_string(), [0.0, 0.0, 10.0], [0.0, 0.0, 50.0], 14.0)];
+    if index("hip").is_some() {
+        hitboxes.push(("hip".into(), "hip".into(), [0.0, -5.0, 0.0], [0.0, 5.0, 0.0], 6.0));
+    }
+    let phys = resource::kv3::Value::Object(vec![("m_boneNames".into(), resource::kv3::Value::Array(vec![resource::kv3::Value::Str("rag".into())]))]);
+    SynthModel {
+        name: "models/heroes_wip/lash/lash.vmdl".into(),
+        meshes: vec![SynthMesh { name: "body".into(), lod_mask: 1, draws, bones: mesh_bones, no_uv: false }],
+        skeleton: bones.iter().map(|b| (b.0.to_string(), index(b.1).map_or(-1, |p| p as i32), b.2)).collect(),
+        hitboxes,
+        attachments: if index("idol_bone").is_some() { vec![("idol".into(), "idol_bone".into(), [0.0; 3])] } else { vec![] },
+        extra_blocks: vec![(*b"PHYS", resource::kv3::encode(&phys))],
+        nm_skeleton: NM.into(),
+        anim_graphs: vec![GRAPH.into()],
+        ..Default::default()
+    }
+}
+
+/// Valve's model for the bone tests.
+fn rig_valve() -> SynthModel {
+    rigged(&rig_bones(), &[("ponytail", [-6.0, 0.0, 60.0]), ("strap", [0.0, 10.0, 30.0])])
+}
+
+/// The hero's animation: its skeleton (every bone of `rig_bones` but the end bone and the strap, at the same
+/// reference pose) and one clip of two frames, the first at rest and the second with each bone of `moves` turned
+/// about x by its degrees and shifted by its offset.
+fn rig_anim(moves: &[(&str, f32, P3)]) -> HashMap<String, Vec<u8>> {
+    let bones: Vec<Bone> = rig_bones().into_iter().filter(|b| b.0 != "head_end" && b.0 != "strap").collect();
+    let index = |n: &str| bones.iter().position(|b| b.0 == n).map_or(-1, |i| i as i32);
+    let nm: Vec<::mesh::synth::NmBone> = bones.iter().map(|b| (b.0, index(b.1), b.2, [0.0, 0.0, 0.0, 1.0])).collect();
+    let rest: Vec<([f32; 4], P3)> = bones.iter().map(|b| ([0.0, 0.0, 0.0, 1.0], b.2)).collect();
+    let mut moved = rest.clone();
+    for (n, deg, by) in moves {
+        let i = index(n) as usize;
+        let h = deg.to_radians() / 2.0;
+        moved[i] = ([h.sin(), 0.0, 0.0, h.cos()], [rest[i].1[0] + by[0], rest[i].1[1] + by[1], rest[i].1[2] + by[2]]);
+    }
+    HashMap::from([
+        (format!("{NM}_c"), ::mesh::synth::nm_skeleton(NM, &nm)),
+        (format!("{GRAPH}_c"), ::mesh::synth::nm_graph(&[CLIP])),
+        (format!("{CLIP}_c"), ::mesh::synth::nm_clip(NM, &[rest, moved], false)),
+    ])
+}
+
+/// M062's bone findings of `ours` against `valve`, with the hero's animation moving as `moves` says.
+fn bone_findings(ours: &SynthModel, valve: &SynthModel, moves: &[(&str, f32, P3)]) -> Vec<(Severity, String)> {
+    let (o, v) = (::mesh::synth::model(ours), ::mesh::synth::model(valve));
+    let files = rig_anim(moves);
+    let read = |p: &str| files.get(p).cloned();
+    let breaches = deep::contract_breaches(&deep::contract(&o).unwrap(), &deep::contract(&v).unwrap());
+    crate::carry::judge(breaches, &o, &v, &read, &|_: &str| false).into_iter().filter(|m| m.starts_with("bone '")).map(|m| (deep::contract_severity(&m), m)).collect()
+}
+
+/// The one bone finding about `bone`.
+fn bone_finding(f: &[(Severity, String)], bone: &str) -> (Severity, String) {
+    let mine: Vec<_> = f.iter().filter(|(_, m)| m.starts_with(&format!("bone '{bone}'"))).cloned().collect();
+    assert_eq!(mine.len(), 1, "{f:#?}");
+    mine[0].clone()
+}
+
+#[test]
+fn m062_a_lost_bone_says_what_it_carried() {
+    let valve = rig_valve();
+    assert!(bone_findings(&valve, &valve, &[]).is_empty(), "Valve's own model against itself");
+    let lost = |names: &[&str], moves: &[(&str, f32, P3)]| bone_findings(&rigged(&lose(&rig_bones(), names), &[("ponytail", [-6.0, 0.0, 60.0])]), &valve, moves);
+    // an end bone nothing hangs on, which the animation does not have: a helper, a warning that says so
+    let (s, m) = bone_finding(&lost(&["head_end"], &[]), "head_end");
+    assert_eq!(s, Severity::Warn, "{m}");
+    assert!(m.starts_with("bone 'head_end' missing: Valve's model hangs nothing on it") && m.contains("its animation skeleton has no such bone") && m.ends_with(crate::carry::NOTHING_CHANGES), "{m}");
+    // an IK target the clips move 20 units, with nothing on it: still nothing a player sees
+    let (s, m) = bone_finding(&lost(&["ik_target"], &[("ik_target", 0.0, [0.0, 0.0, 20.0])]), "ik_target");
+    assert_eq!(s, Severity::Warn, "{m}");
+    assert!(m.contains("in its 1 animation clip it shifts 20.0 units"), "{m}");
+    // a bone Valve's mesh is weighted to, a hitbox's, an attachment's and a ragdoll part's stay errors, saying what
+    for (bone, what) in [("ponytail", "Valve's model hangs 24 vertices on it"), ("hip", "hitbox 'default/hip'"), ("idol_bone", "attachment 'idol'"), ("rag", "a ragdoll part")] {
+        let (s, m) = bone_finding(&lost(&[bone], &[]), bone);
+        assert_eq!(s, Severity::Error, "{m}");
+        assert!(m.contains(what), "{bone}: {m}");
+    }
+    // a lost bone is said with what was lost with it below; the end bone lost with it is still only a helper
+    let f = lost(&["head", "ponytail", "head_end"], &[]);
+    let (s, m) = bone_finding(&f, "head");
+    assert!(s == Severity::Error && m.contains("below it, lost with it, 'ponytail' (24 vertices)"), "{m}");
+    assert_eq!(bone_finding(&f, "head_end").0, Severity::Warn);
+    // the hitbox itself keeps its own finding and its full strength
+    let f = run_against_anim(&rigged(&lose(&rig_bones(), &["hip"]), &[("ponytail", [-6.0, 0.0, 60.0])]), &valve, &[]);
+    assert!(m062(&f).iter().any(|x| x.severity == Severity::Error && x.message.starts_with("hitbox 'default/hip' missing")), "{f:#?}");
+}
+
+#[test]
+fn m062_a_reparented_bone_breaks_only_where_it_moves_differently() {
+    let valve = rig_valve();
+    let boxes = [("ponytail", [-6.0, 0.0, 60.0]), ("strap", [0.0, 10.0, 30.0])];
+    let ours = |bones: Vec<Bone>| rigged(&bones, &boxes);
+    let one = |m: &SynthModel, moves: &[(&str, f32, P3)], bone: &str| bone_finding(&bone_findings(m, &valve, moves), bone);
+    // the ponytail hung from the spine where it was: the animation poses it by name, so it moves as Valve's
+    let (s, m) = one(&ours(hang(&rig_bones(), "ponytail", "spine", [-6.0, 0.0, 30.0])), &[("spine", 20.0, [0.0; 3])], "ponytail");
+    assert_eq!(s, Severity::Warn, "{m}");
+    assert!(m.starts_with("bone 'ponytail' reparented: 'spine', Valve's 'head'; at bind it sits 0.00 units") && m.contains("its animation poses it by name") && m.contains("the 24 vertices this model weights to it land within a fair-play pixel"), "{m}");
+    // bound a fair-play pixel (0.25 units) or more from Valve's bone, its vertices land out of place
+    let (s, m) = one(&ours(hang(&rig_bones(), "ponytail", "spine", [-6.0, 0.0, 30.3])), &[], "ponytail");
+    assert_eq!(s, Severity::Error, "{m}");
+    assert!(m.contains("at bind it sits 0.30 units and 0.0 degrees from Valve's") && m.contains("the 24 vertices this model weights to it were bound where it sits here, and land up to 0.3 units from there"), "{m}");
+    assert_eq!(one(&ours(hang(&rig_bones(), "ponytail", "spine", [-6.0, 0.0, 30.2])), &[], "ponytail").0, Severity::Warn, "under a pixel");
+    // an IK target the animation poses, 5 units off at bind with no vertex on it: nothing lands anywhere
+    let (s, m) = one(&ours(hang(&rig_bones(), "ik_target", "spine", [0.0, 20.0, -25.0])), &[], "ik_target");
+    assert!(s == Severity::Warn && m.contains("at bind it sits 5.00 units") && m.contains("this model weights no vertex to it"), "{m}");
+    // the strap, which the animation skeleton lacks, follows its parent: hung from the head where it was, it moves
+    // as Valve's while the head is still against the spine...
+    let strap = ours(hang(&rig_bones(), "strap", "head", [0.0, 10.0, -25.0]));
+    let (s, m) = one(&strap, &[("spine", 20.0, [0.0; 3])], "strap");
+    assert!(s == Severity::Warn && m.contains("it follows 'head' and Valve's 'spine', which move as one in its 1 animation clip"), "{m}");
+    // ...and apart once the head turns: 10 degrees at 27 units is 4.7 units
+    let (s, m) = one(&strap, &[("head", 10.0, [0.0; 3])], "strap");
+    assert_eq!(s, Severity::Error, "{m}");
+    assert!(m.contains("they move apart ('head' turns up to 10.0 degrees)") && m.contains("what this model hangs on it (24 vertices) moves up to 4.7 units"), "{m}");
+    // the line is one fair-play pixel at the strap: half a degree is 0.23 units there, six tenths 0.28
+    assert_eq!(one(&strap, &[("head", 0.5, [0.0; 3])], "strap").0, Severity::Warn);
+    assert_eq!(one(&strap, &[("head", 0.6, [0.0; 3])], "strap").0, Severity::Error);
+    // the end bone, which nothing of this model hangs on, hung from the spine: the head moves it apart, unseen
+    let (s, m) = one(&ours(hang(&rig_bones(), "head_end", "spine", [0.0, 0.0, 35.0])), &[("head", 10.0, [0.0; 3])], "head_end");
+    assert!(s == Severity::Warn && m.contains("this model hangs nothing on it or on a bone that follows it"), "{m}");
+    // a mod that ships the animation skeleton moves the bone its own way: not Valve's files to judge
+    let (o, v) = (::mesh::synth::model(&ours(hang(&rig_bones(), "ponytail", "spine", [-6.0, 0.0, 30.0]))), ::mesh::synth::model(&valve));
+    let files = rig_anim(&[]);
+    let breaches = deep::contract_breaches(&deep::contract(&o).unwrap(), &deep::contract(&v).unwrap());
+    let got = crate::carry::judge(breaches, &o, &v, &|p: &str| files.get(p).cloned(), &|p: &str| p == format!("{NM}_c"));
+    assert!(got.iter().any(|m| m.starts_with("bone 'ponytail'") && m.contains("ships its own animation skeleton") && deep::contract_severity(m) == Severity::Error), "{got:?}");
+    // with no clip of the skeleton to read, how the strap moves is not known: never a quiet "moves as one"
+    let o = ::mesh::synth::model(&strap);
+    let mut files = rig_anim(&[]);
+    files.remove(&format!("{CLIP}_c"));
+    let breaches = deep::contract_breaches(&deep::contract(&o).unwrap(), &deep::contract(&v).unwrap());
+    let got = crate::carry::judge(breaches, &o, &v, &|p: &str| files.get(p).cloned(), &|_: &str| false);
+    let m = got.iter().find(|m| m.starts_with("bone 'strap'")).unwrap();
+    assert!(m.contains("could not be measured: no clip of its animation skeleton was found") && deep::contract_severity(m) == Severity::Error, "{m}");
+}
+/// `run_against` with the hero's animation in the game.
+fn run_against_anim(ours: &SynthModel, valve: &SynthModel, moves: &[(&str, f32, P3)]) -> Vec<Finding> {
+    let mut g = game();
+    let mut fake = Fake::default();
+    fake.files.insert(MODEL.into(), ::mesh::synth::model(valve));
+    fake.files.insert(format!("{BODY}_c"), vmat_with(&["F_USE_STATUS_EFFECTS_PROXY", "F_USE_NPR_LIGHTING"], BODY_COLOR, None));
+    fake.files.insert(format!("{BODY_COLOR}_c"), flat(16, GREY));
+    fake.files.insert(format!("{CLOTH}_c"), hero_vmat());
+    fake.files.insert(format!("{CLOTH_COLOR}_c"), flat(16, GREY));
+    fake.files.extend(rig_anim(moves));
+    with_game(&mut g, &[MODEL, &format!("{BODY}_c"), &format!("{BODY_COLOR}_c"), &format!("{CLOTH}_c"), &format!("{CLOTH_COLOR}_c")]);
+    let files = vec![file(MODEL, ::mesh::synth::model(ours))];
+    lint(&Input { vpk_name: "pak03_dir.vpk".into(), files, base: Some(&g), built_against: None, original_refs: no_originals(), game: Some(&fake), deep: true, fair_play: &policy::DEFAULT })
+}
+
+#[test]
+fn m062_a_helper_bone_lost_in_a_whole_lint_is_a_warning() {
+    let valve = rig_valve();
+    assert!(m062(&run_against_anim(&valve, &valve, &[])).is_empty(), "Valve's own model against itself");
+    let f = run_against_anim(&rigged(&lose(&rig_bones(), &["head_end"]), &[("ponytail", [-6.0, 0.0, 60.0]), ("strap", [0.0, 10.0, 30.0])]), &valve, &[]);
+    let m = m062(&f);
+    assert!(m.len() == 1 && m[0].severity == Severity::Warn && m[0].message.starts_with("bone 'head_end' missing:"), "{f:#?}");
+    let f = run_against_anim(&rigged(&lose(&rig_bones(), &["ponytail"]), &[("strap", [0.0, 10.0, 30.0])]), &valve, &[]);
+    assert!(m062(&f).iter().any(|x| x.severity == Severity::Error && x.message.starts_with("bone 'ponytail' missing:")), "{f:#?}");
+}

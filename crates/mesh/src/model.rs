@@ -446,6 +446,23 @@ impl Model {
         (out, notes)
     }
 
+    /// Every draw call of every mesh, whatever its LOD or body-group choice: what any choice the game can show puts
+    /// on the model's bones. Errors are per draw and carried in `notes` of the returned tuple.
+    pub fn every_surface(&self) -> (Vec<Surface>, Vec<String>) {
+        let mut out = Vec::new();
+        let mut notes = Vec::new();
+        for mesh in &self.meshes {
+            let remap: Vec<u16> = mesh.bones.iter().map(|b| self.skeleton.index(&b.name).map(|i| i as u16).unwrap_or(u16::MAX)).collect();
+            for (di, d) in mesh.draws.iter().enumerate() {
+                match surface(mesh, di, d, &remap) {
+                    Ok(s) => out.push(s),
+                    Err(e) => notes.push(format!("{} draw {di} ({}): {e}", mesh.name, d.material)),
+                }
+            }
+        }
+        (out, notes)
+    }
+
     /// LOD count: highest set bit over all meshes' masks, plus one.
     pub fn lod_count(&self) -> u32 {
         let all = self.meshes.iter().fold(0u64, |a, m| a | m.lod_mask);

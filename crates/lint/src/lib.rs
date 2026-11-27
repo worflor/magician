@@ -9,6 +9,7 @@
 pub mod allow;
 pub mod baseline;
 pub mod cache;
+pub mod carry;
 pub mod cloth;
 pub mod corpus;
 pub mod deep;
@@ -54,7 +55,8 @@ pub struct Rule {
 /// check's lint fingerprint carries it, so a user is told to re-run lint. 2: the first published mods by others,
 /// witnessed in game (CHANGELOG, "judgement changed"). 3: the rules measured on Valve's 43 heroes (6871): M061, M063's
 /// reach keys, M109 to M112, M135. 4: M062 judges a moved attachment by where it now sits against the body (6875).
-pub const JUDGEMENT: u32 = 4;
+/// 5: M062 judges a lost or reparented bone by what hangs on it and how the hero's animation moves it (6875).
+pub const JUDGEMENT: u32 = 5;
 
 /// The rule catalogue: one home for codes, names and in-game consequences.
 pub const RULES: &[Rule] = &[
@@ -99,7 +101,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M013", name: "build-artifact", severity: Severity::Warn,
         in_game: "A build input or toolchain byproduct (a panorama image list, a nested VPK, a raw .kv3, a compiler cache) that the game never loads from an addon. It adds size, and a vdata among them is noted in the grade. magician build leaves these out." },
     Rule { code: "M062", name: "model-contract", severity: Severity::Error,
-        in_game: "A replaced model lost or reparented a bone of Valve's, lost an attachment, moved one too far, or changed or added a hitbox. A lost bone breaks animation, what the game spawns at a lost attachment goes to the origin, and a changed hitbox changes what bullets hit: a fair-play break. A moved attachment on a body bone that still sits near the body is a warning that says how far it moved: a skin with another body shape moves where its effects attach, and that is cosmetic. Near is within 9.4% of the model's size (the square root of its surface), just past the furthest any attachment sits off the body on Valve's 43 heroes (6873 and 6875). Further off, its effect visibly spawns away from the hero: an error. So is a moved attachment held in the hero's own frame (on the root bone, as Valve's camera poses, aim and zipline points are), and one whose place could not be measured." },
+        in_game: "A replaced model lost or reparented a bone of Valve's, lost an attachment, moved one too far, or changed or added a hitbox. A lost bone takes with it what Valve's model hangs on it and on the bones lost below it (vertices, a hitbox, an attachment, cloth, a ragdoll part): an error that says what. One Valve's model hangs nothing on (an end bone, an IK target, a helper) is a warning that says so. The hero's animation poses a bone by name, so a reparented bone its animation skeleton has moves as Valve's whatever its parent, and one it lacks follows its new parent: a reparent is an error only where what the mod hangs on the bone lands or moves a fair-play pixel or more from where Valve's would. What the game spawns at a lost attachment goes to the origin, and a changed hitbox changes what bullets hit: a fair-play break. A moved attachment on a body bone that still sits near the body is a warning that says how far it moved: a skin with another body shape moves where its effects attach, and that is cosmetic. Near is within 9.4% of the model's size (the square root of its surface), just past the furthest any attachment sits off the body on Valve's 43 heroes (6873 and 6875). Further off, its effect visibly spawns away from the hero: an error. So is a moved attachment held in the hero's own frame (on the root bone, as Valve's camera poses, aim and zipline points are), and one whose place could not be measured." },
     Rule { code: "M063", name: "sound-cue-reduced", severity: Severity::Error,
         in_game: "A replaced sound event or file plays quieter, shorter, over less distance, to fewer players, or not at all compared with Valve's. Enemies rely on those cues: hiding them is a fair-play break. A changed base is read through the game's own base events: one Valve's base inherits from differs only by what lies between, and only a level or a reach there is a finding (louder is M064). A voice line (sounds/vo/), its file or its event, is not judged by its length: Valve's own voices fail that test against each other on 46% of shared lines (`magician corpus`)." },
     Rule { code: "M064", name: "sound-louder", severity: Severity::Warn,
@@ -963,10 +965,22 @@ fn model_findings(input: &Input, f: &ModFile, by_path: &HashMap<&str, &ModFile>,
     }
     let valve = if replaces { game_read(p) } else { None };
     let mut out: Vec<(&'static str, String)> = Vec::new();
+    // every file of the mod a judgement reads, with what the mod had there, so the cache can tell when it changes
+    let deps: std::sync::Mutex<std::collections::BTreeMap<String, Fingerprint>> = Default::default();
     if let Some(valve) = &valve {
         match (deep::contract(&f.data), deep::contract(valve)) {
             (Some(a), Some(b)) => {
-                for m in deep::judge_breaches(deep::contract_breaches(&a, &b), &f.data, valve) {
+                // a bone is judged by what hangs on it, and reads the hero's animation from the game (whose identity
+                // is in the cache key); whether the mod ships the animation skeleton is part of the judgement, so it
+                // is recorded
+                let ships = |q: &str| {
+                    if let Ok(mut d) = deps.lock() {
+                        d.insert(q.to_string(), fp(q));
+                    }
+                    by_path.contains_key(q)
+                };
+                let breaches = carry::judge(deep::contract_breaches(&a, &b), &f.data, valve, &game_read, &ships);
+                for m in deep::judge_breaches(breaches, &f.data, valve) {
                     out.push(("M062", m));
                 }
             }
@@ -1000,7 +1014,6 @@ fn model_findings(input: &Input, f: &ModFile, by_path: &HashMap<&str, &ModFile>,
             out.push(("M100", m));
         }
     }
-    let deps: std::sync::Mutex<std::collections::BTreeMap<String, Fingerprint>> = Default::default();
     let ours_read = |q: &str| {
         if let Ok(mut d) = deps.lock() {
             d.insert(q.to_string(), fp(q));

@@ -49,6 +49,8 @@ fn model(raw: bool, cloth: bool) -> Vec<u8> {
             vec![]
         },
         attachments: vec![("head_fx".into(), "head".into(), [2.0, 0.0, 4.0]), ("aim".into(), "root".into(), [0.0, 0.0, 64.0]), ("shoot".into(), String::new(), [0.0, -15.0, 75.0])],
+        nm_skeleton: String::new(),
+        anim_graphs: vec![],
     };
     mesh::synth::model(&m)
 }

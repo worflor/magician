@@ -149,3 +149,49 @@ M062 was the only error on 6 of the 48 skins. 2 of those are now clean of errors
 Valve's own heroes against themselves are silent, as before: an unchanged attachment is no finding. Maid Lash, Lööps Viscous and two other finished skins keep Valve's attachments: no M062 finding before or after, and their `check` verdicts are unchanged.
 
 Tests: `m062_a_moved_attachment_on_the_body_is_a_warning_that_says_how_far` (4 units off is a warning with the distance, 20 is an error, the line holds within a few tenths), `m062_a_moved_attachment_in_the_hero_s_frame_and_a_missing_one_stay_errors`, and in `report.rs` a cosmetic move read back from a findings file as a warning. Lint judgement revision 4.
+
+## M062 and lost or reparented bones (6875)
+
+After moved attachments were calibrated, 46 of the 48 community skins still read broken, and 403 lost or reparented bones were the largest share of M062's errors. woflo's call (2026-11-27): a bone nothing hangs on can't break anything a player sees, a bone that carries something can, and the line between them comes from the game's files, not from a list of names.
+
+### What a bone carries
+
+`lint::carry` reads, for every bone of a model, what the model hangs on it: vertices weighted to it (every mesh, LOD and body-group choice), hitboxes, attachments, cloth control nodes (the FeModel's) and ragdoll parts (`PHYS`'s bones). The compiler marks the same uses on each bone (`m_nFlag`), so Valve's own files check the reading. On Valve's 107 hero models of 6875 (17,500 bones) the two agree on every bone for hitboxes (1,270), attachments (1,330), cloth (6,735) and ragdoll parts (1,420). Every one of the 13,071 bones that carry weighted vertices has the compiler's mesh mark; 1,539 more have that mark with no vertex weighted to them, because the mark means that a mesh lists the bone. One attachment needed a fix on the way: Valve writes a weight of 0 on some single-influence attachments, which still ride their bone. 2,810 of Valve's bones carry nothing, on them or below them: end bones, IK targets and offsets, aim helpers.
+
+### How the hero moves a bone
+
+The hero's animation is its animation skeleton (`m_vecNmSkeletonRefs`, a `.vnmskel`) and the clips its graphs play. `lint::carry` follows the model's graphs through their references to every clip of that skeleton (a hero's graphs reach 138 to 318; when they reach none, how the bone moves is said to be unknown, never still), decodes each clip's pose tracks and keeps, for each animation bone, the furthest any frame turns, shifts or scales it from its reference pose. The clip format is the one Source 2 Viewer reads (15-bit quaternions over plus or minus 1/sqrt 2, 16-bit translations over each track's range).
+
+A model bone takes the model-space pose of the animation bone of its name, case aside, and a model bone the animation skeleton lacks follows its model parent at its bind offset. Valve's files hold that: 25 of Valve's hero models have a hierarchy that is not their animation skeleton's (a `weaponHand_L` under `weapon` where the animation holds it under `root_motion`, a hose under `hand_R` where the animation holds it under `weapon_hand_R`, Kelvin's and Viscous's `pelvis` named `Pelvis` in the animation), and those heroes play. Source 2 Viewer retargets clips the same way. A model's bind is not its animation reference pose either: Viscous's fingers sit 11 units from theirs, so a bind is only ever compared with Valve's model's bind. Nobody has watched a reparented bone on a mod in game: UNVERIFIED.
+
+### The lines
+
+- A lost bone stays an error when Valve's model hangs something on it, or on a bone lost with it below it, and the finding says what. One that Valve's model hangs nothing on, with nothing lost below it, is a warning that says so and says how the clips move it.
+- A reparented bone is judged by what this model hangs on it and on the bones that follow it. One the animation skeleton has moves as Valve's whatever its parent, so only vertices bound to it at another place than Valve's bone can land elsewhere: an error when they land a fair-play pixel (0.25 units) or more away, counting the bind's turn at the furthest vertex. One the animation skeleton lacks follows its parent: an error when what hangs on it sits a pixel or more from Valve's at bind, or when its parent and Valve's move apart by a pixel at it in the clips. A pixel is the fair-play view's unit, the line M111 uses.
+- A mod that ships the animation skeleton itself moves its bones its own way, which Valve's files cannot judge: its reparented bones stay errors that say so.
+- A bone is still in the clips when no frame turns it more than 0.05 degrees or shifts or scales it more than 0.01: the clip format's own rounding. Of the 7,743 bones on Valve's heroes that take their pose from an animation bone, 2,154 turn not at all.
+
+Hitboxes keep their own comparison and full strength: a lost bone with a hitbox is an error, and the hitbox finding beside it is fair play as before.
+
+### Before and after
+
+The 75 community mods (121 paks) linted deep with no allowances on 6875.
+
+| | Before | After |
+|---|---|---|
+| Lost bones | 339 errors | 234 errors, 105 warnings |
+| Reparented bones | 64 errors | 46 errors, 18 warnings |
+| Skins broken | 46 of 48 | 44 of 48 |
+| Mods broken | 59 of 75 | 57 of 75 |
+
+The 105 lost-bone warnings are end bones (`*_end`, `ball_end_L`), aim helpers, offsets, IK targets and the like, which Valve's model weights no vertex to and hangs nothing on; the clips move 11 of them, and nothing moves with them. The 18 reparented warnings are IK targets and an owl's toes that sit where Valve's do and are posed by name, two bones a coat hangs from, a weapon pivot and two scapula helpers.
+
+What stays an error, and why:
+
+- 234 lost bones that Valve's model hangs something on: vertices on 157 (the hair, coat, scarf and frog chains of a skin that replaced them), cloth on 48 more, an attachment on 11, a ragdoll part on 6, and on 12 a bone lost below them that carries something. 116 of the 234 are bones the clips never move or the animation skeleton lacks; they are still errors under this round's line, because Valve's model hangs something on them.
+- 4 reparented bones that a skin moved 27 to 184 units with its vertices on them (the props of one hero's bench).
+- 42 reparented bones of two mods that ship their own animation skeleton.
+
+Two skins were broken by one bone alone: each lost `attachWorld`, on which Valve's model hangs the portrait camera's attachment, and each still names that bone in the attachment. They stay broken.
+
+Valve's own heroes against themselves are silent, as before: an unchanged skeleton has no lost or reparented bone. Tests: `m062_a_lost_bone_says_what_it_carried`, `m062_a_reparented_bone_breaks_only_where_it_moves_differently` (both sides of the pixel line, at bind and in motion), `m062_a_helper_bone_lost_in_a_whole_lint_is_a_warning`, and in `carry.rs` the clip reader. Lint judgement revision 5.

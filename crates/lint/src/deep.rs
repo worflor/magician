@@ -753,10 +753,13 @@ pub fn judge_breaches(breaches: Vec<String>, ours: &[u8], valve: &[u8]) -> Vec<S
         .collect()
 }
 
-/// The severity of a contract finding (M062): a cosmetic move of an attachment on the body is a warning; every other
-/// breach keeps the rule's own, an error.
+/// The severity of a contract finding (M062): a cosmetic move of an attachment on the body, and a lost or reparented
+/// bone whose loss or new parent changes nothing a player sees (`carry::judge`), are warnings; every other breach keeps the rule's own,
+/// an error.
 pub fn contract_severity(message: &str) -> crate::Severity {
-    if message.starts_with("attachment '") && message.contains(&format!("; {COSMETIC_MOVE}, ")) {
+    if (message.starts_with("attachment '") && message.contains(&format!("; {COSMETIC_MOVE}, ")))
+        || (message.starts_with("bone '") && message.ends_with(crate::carry::NOTHING_CHANGES))
+    {
         crate::Severity::Warn
     } else {
         crate::rule("M062").severity
