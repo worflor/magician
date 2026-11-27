@@ -89,6 +89,14 @@ fn m001_uppercase_path() {
     // with no game build to look in, it stays an error
     let f = run(vec![file("sounds/vo/lash/hello - Copy.vsnd_c", res(&[]))], None, None);
     assert_eq!(m001(&f).severity, Severity::Error);
+    // a font in a pak: Panorama reads fonts from disk through fontconfig, so its case changes nothing; a warning that
+    // says so and does not ask for a rename that would not help
+    let f = run(vec![file("panorama/fonts/Mine-Bold.ttf", b"font".to_vec())], Some(&g), None);
+    let x = m001(&f);
+    assert!(x.severity == Severity::Warn && x.message.starts_with(crate::FONT_IN_PAK) && x.message.contains("changes nothing"), "{x:?}");
+    // a capitalised file beside the fonts that the mod names is still looked up: an error
+    let f = run(vec![file(MODEL, res(&["panorama/fonts/Named.vtex"])), file("panorama/fonts/Named.vtex_c", res(&[]))], Some(&g), None);
+    assert_eq!(m001(&f).severity, Severity::Error, "{f:?}");
 }
 
 #[test]
@@ -1918,3 +1926,19 @@ fn attachment_names_are_what_a_key_that_says_attach_holds() {
     );
 }
 
+#[test]
+fn m030_in_a_file_the_game_never_reads_is_a_warning() {
+    let g = game();
+    // the model replaces Valve's, so the game reads it, and the material it draws with: a missing texture is an error
+    let mat = "models/heroes_wip/lash/materials/mine.vmat_c";
+    let f = run(vec![file(MODEL, res(&["models/heroes_wip/lash/materials/mine.vmat"])), file(mat, res(&["models/heroes_wip/lash/materials/gone_png_1.vtex"]))], Some(&g), None);
+    let m: Vec<&Finding> = f.iter().filter(|x| x.code == "M030").collect();
+    assert!(m.len() == 1 && m[0].severity == Severity::Error && m[0].path.as_deref() == Some(mat), "{m:?}");
+    // the same material named only by a model at a new path that nothing names: never read, a warning that says so
+    let f = run(vec![file("models/mine/old_copy.vmdl_c", res(&["models/heroes_wip/lash/materials/mine.vmat"])), file(mat, res(&["models/heroes_wip/lash/materials/gone_png_1.vtex"]))], Some(&g), None);
+    let m: Vec<&Finding> = f.iter().filter(|x| x.code == "M030").collect();
+    assert!(m.len() == 1 && m[0].severity == Severity::Warn && m[0].message.ends_with(crate::NEVER_READ), "{m:?}");
+    // a file the game reads directly keeps its error
+    let f = run(vec![file(MODEL, res(&["models/heroes_wip/lash/gone.vmat"]))], Some(&g), None);
+    assert!(f.iter().any(|x| x.code == "M030" && x.severity == Severity::Error), "{f:?}");
+}

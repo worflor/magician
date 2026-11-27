@@ -648,10 +648,10 @@ fn install_stops_on_fair_play_only_when_enforced_and_on_any_other_error_always()
     let game = fake_install(&d, "6864", b"valve clip");
     let citadel = game.join("citadel");
     // Valve's sound event, and a fair-play-only mod that plays it 7 dB quieter (M063: a weakened gameplay cue)
-    vpk::write(citadel.join("pak01_dir.vpk"), &[(CLIP.to_string(), b"valve clip".to_vec()), (EVTS.to_string(), events(3.0))]).unwrap();
+    vpk::write(citadel.join("pak01_dir.vpk"), &[(CLIP.to_string(), b"valve clip".to_vec()), (EVTS.to_string(), events(3.0)), ("materials/x/broken.vmat_c".to_string(), resource::synth(&[]))]).unwrap();
     let quiet = d.join("pak20_dir.vpk");
     vpk::write(&quiet, &[(EVTS.to_string(), events(-4.0))]).unwrap();
-    // and a mod whose only error is not fair play: a material naming a texture nobody ships
+    // and a mod whose only error is not fair play: a replaced material naming a texture nobody ships
     let broken = d.join("pak21_dir.vpk");
     vpk::write(&broken, &[("materials/x/broken.vmat_c".to_string(), resource::synth(&["materials/x/nowhere_color.vtex"]))]).unwrap();
     let strict = d.join("strict.toml");

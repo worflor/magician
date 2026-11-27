@@ -71,7 +71,7 @@ pub const JUDGEMENT: u32 = 9;
 /// The rule catalogue: one home for codes, names and in-game consequences.
 pub const RULES: &[Rule] = &[
     Rule { code: "M001", name: "path-case", severity: Severity::Error,
-        in_game: "Source 2 looks paths up in lowercase. A path with capitals that the game would look for (it replaces a game file, or the mod names it) is never found, so the original asset shows instead: an error. One nothing looks for (a leftover '- Copy', an exported folder) or one with a lowercase twin in the mod is never read whatever its case: a warning to remove it. Not said of a file the game never reads by kind (M012)." },
+        in_game: "Source 2 looks paths up in lowercase. A path with capitals that the game would look for (it replaces a game file, or the mod names it) is never found, so the original asset shows instead: an error. One nothing looks for (a leftover '- Copy', an exported folder) or one with a lowercase twin in the mod is never read whatever its case: a warning to remove it. So is a font under panorama/fonts/: Panorama finds fonts through fontconfig, which scans folders on disk (Valve ships all 82 of its fonts loose, none in a pak, and names them by family in stylesheets, never by file), so a font in a pak is not read at all (UNVERIFIED in game). Not said of a file the game never reads by kind (M012)." },
     Rule { code: "M002", name: "path-shape", severity: Severity::Error,
         in_game: "Backslashes, leading slashes or '..' in a VPK path never match an engine lookup; the file is dead weight." },
     Rule { code: "M010", name: "uncompiled-source", severity: Severity::Error,
@@ -85,7 +85,7 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M021", name: "not-a-resource", severity: Severity::Error,
         in_game: "A *_c file that isn't a valid compiled resource fails to load: error model, pink checkerboard, or silence." },
     Rule { code: "M030", name: "dangling-ref", severity: Severity::Error,
-        in_game: "This resource depends on a file that exists in neither the mod nor the game build: missing material (pink checkerboard), error model, or missing effect. A model's reference to an AnimGraph 1 graph (.vanmgrph) is a warning: Deadlock ships none and none of Valve's files names one (6880), and the hero animates from its AnimGraph 2 references, which M062 judges." },
+        in_game: "This resource depends on a file that exists in neither the mod nor the game build: missing material (pink checkerboard), error model, or missing effect. A file the game never reads (it replaces no game file, and no file the game reads names it) never asks for what it lacks: a warning that says so. A model's reference to an AnimGraph 1 graph (.vanmgrph) is a warning: Deadlock ships none and none of Valve's files names one (6880), and the hero animates from its AnimGraph 2 references, which M062 judges." },
     Rule { code: "M070", name: "ships-protected-file", severity: Severity::Error,
         in_game: "Skeletons (.vnmskel), anim graphs (.vnmgraph) and game data (.vdata) replace the hero's real files. A copy that still holds what Valve's file on this build has (the same bones in the same order, every control parameter the game sets, every entry) plays today and breaks at the next patch that changes Valve's file, which patch day and drift report: a warning that says so. A copy that already lacks some of it is out of date now (the hero animates wrongly, ignores what the game sets, or heroes and items go missing: UNVERIFIED in game): an error that names what. One at a path Valve does not ship replaces nothing: a warning. A model replacement keeps Valve's skeleton and graph." },
     Rule { code: "M071", name: "replaces-engine-default", severity: Severity::Error,
@@ -572,6 +572,8 @@ pub fn lint(input: &Input) -> Vec<Finding> {
 
     let mod_paths: HashSet<&str> = input.files.iter().map(|f| f.path.as_str()).collect();
     let mut referenced: HashSet<String> = HashSet::new();
+    // what each file of the mod names, for which of them the game reaches (M030 on a file it never reads)
+    let mut names: HashMap<&str, Vec<String>> = HashMap::new();
     // For M033: the first mod file that names each debug-marked target.
     let mut debug_referrer: HashMap<String, String> = HashMap::new();
     // M001: paths with capitals, judged after the loop
@@ -648,14 +650,18 @@ pub fn lint(input: &Input) -> Vec<Finding> {
                     // Panorama names what it draws in its own text: a stylesheet's `url("s2r://...")` and a script's
                     // or layout's `file://{images}/...`, which the compiler does not list as references.
                     if matches!(ext.as_str(), "vcss_c" | "vxml_c" | "vjs_c" | "vts_c") {
-                        referenced.extend(panorama_refs(&f.data));
+                        let named = panorama_refs(&f.data);
+                        names.entry(p).or_default().extend(named.iter().cloned());
+                        referenced.extend(named);
                     }
                     // A layout compiled into a `LaCo` block keeps its tree LZ4-compressed, so its scripts and styles
                     // (`panorama/scripts/x.vjs_c` under SCRIPTS) are read from the decoded tree, not the raw bytes.
                     if ext == "vxml_c" {
                         if let Some(Ok(tree)) = resource::kv3_block(&f.data, b"LaCo") {
                             for s in tree.strings() {
-                                referenced.extend(panorama_refs(s.as_bytes()));
+                                let named = panorama_refs(s.as_bytes());
+                                names.entry(p).or_default().extend(named.iter().cloned());
+                                referenced.extend(named);
                             }
                         }
                     }
@@ -691,6 +697,7 @@ pub fn lint(input: &Input) -> Vec<Finding> {
                             }
                         }
                         referenced.insert(target.clone());
+                        names.entry(p).or_default().push(target.clone());
                         if debug_marker(target).is_some() {
                             debug_referrer.entry(target.clone()).or_insert_with(|| p.to_string());
                         }
@@ -715,15 +722,46 @@ pub fn lint(input: &Input) -> Vec<Finding> {
         }
     }
 
+    // M030 on a file the game never reads: one that replaces no game file and that no file the game reads names, at any
+    // remove (a material only an unused model draws, an older copy of an event file). The game never opens it, so the
+    // file it lacks is never asked for. Valve's own build has such references too: Infernus's unused arm material names
+    // three textures 6880 does not ship.
+    if input.base.is_some() {
+        let mut read: HashSet<&str> = input.files.iter().map(|f| f.path.as_str()).filter(|p| input.base.is_some_and(|b| b.contains(p)) || p.starts_with("materials/default/")).collect();
+        let mut todo: Vec<&str> = read.iter().copied().collect();
+        while let Some(p) = todo.pop() {
+            for t in names.get(p).map(Vec::as_slice).unwrap_or(&[]) {
+                if let Some(q) = mod_paths.get(t.as_str()) {
+                    if read.insert(q) {
+                        todo.push(q);
+                    }
+                }
+            }
+        }
+        for x in out.iter_mut().filter(|x| x.code == "M030" && x.severity == Severity::Error) {
+            if x.path.as_deref().is_some_and(|p| !read.contains(p)) {
+                x.severity = Severity::Warn;
+                x.message.push_str(&format!("; {NEVER_READ}"));
+            }
+        }
+    }
+
     // M001: the game looks a path up in lowercase. A file with capitals the game would look for (it replaces a game
     // file, or the mod names it) is never found: an error. One nothing looks for (a leftover copy, a folder the export
     // left behind) is never read whatever its case, and a lowercase twin in the mod is what a lookup finds: a warning.
     for p in case_paths {
         let l = p.to_ascii_lowercase();
         let twin = mod_paths.contains(l.as_str());
-        // Panorama finds its fonts by their folder, not by a reference (Valve's are loose lowercase files beside the
-        // paks): a font is taken as looked for
-        let wanted = input.base.is_none_or(|b| b.contains(&l)) || referenced.contains(&l) || l.starts_with("panorama/fonts/");
+        let wanted = input.base.is_none_or(|b| b.contains(&l)) || referenced.contains(&l);
+        // Panorama finds its fonts through fontconfig, which scans the folders `panorama/fonts/fonts.conf` lists on
+        // disk (`../../citadel/panorama/fonts`, the system's font folders) for the file names its `fontpattern`s allow;
+        // stylesheets name a font by family, never by file. Valve ships every font loose beside the paks (82 on 6880,
+        // none in a pak) and none of its stylesheets or layouts names a font file. A font in a pak is not on disk, so
+        // fontconfig never sees it, whatever its case (UNVERIFIED in game).
+        if l.starts_with("panorama/fonts/") && !twin && !referenced.contains(&l) {
+            out.push(Finding { severity: Severity::Warn, ..finding("M001", Some(p), format!("{FONT_IN_PAK}; renaming it to '{l}' changes nothing")) });
+            continue;
+        }
         if twin {
             out.push(Finding { severity: Severity::Warn, ..finding("M001", Some(p), format!("a copy of '{l}', which the mod also ships: the game looks paths up in lowercase and finds that one, so this copy is never read and the player sees nothing of it; remove it")) });
         } else if !wanted {
@@ -773,6 +811,12 @@ pub fn lint(input: &Input) -> Vec<Finding> {
     out.sort_by(|a, b| b.severity.cmp(&a.severity).then(a.code.cmp(b.code)).then(a.path.cmp(&b.path)));
     out
 }
+
+/// Said of a font file shipped in a pak (M001 as a warning).
+pub const FONT_IN_PAK: &str = "a font in a pak, which Panorama does not read: it finds fonts through fontconfig, which scans the font folders its fonts.conf lists on disk (Valve ships every font loose in game/citadel/panorama/fonts, none in a pak) and names them by family in stylesheets, never by file, so a stylesheet asking for this font's family gets a fallback font (UNVERIFIED in game)";
+
+/// Said of a dangling reference in a file the game never reads (M030 as a warning).
+pub const NEVER_READ: &str = "but the game never reads this file: it replaces no game file, and no file the game reads names it, so the missing file is never asked for and the player sees nothing of it; remove the file, or name it from what the game reads";
 
 /// Whether two compiled textures draw the same picture: the same size and mip count, and every mip decodes to the same
 /// pixels. The compiler's default copies differ from Valve's in their header (2,232 bytes against 2,184), so bytes
