@@ -84,7 +84,7 @@ What to do with each, briefly (the full table is `docs/PATCH-DAY.md`, "What each
 | `RE-PROVE` | Loads; Valve changed something the mod replaces or uses | Needs an in-game pass. Headless: report as pending |
 | `bone 'a' is now 'b'`, `skeleton bones removed` | BROKEN: the mod's rig names a bone Valve renamed or dropped | Report the bone names; the rig must be rebuilt by the author |
 | `replaced files Valve removed`, `X is gone; n mod files point at it` | BROKEN: a path moved | Report; `magician ls <game pak> <prefix>` can find the new path |
-| `contract breach(es)` | BROKEN: a replaced model lost a bone, attachment or hitbox Valve's has (M062) | Report; never weaken the rule |
+| `contract breach(es)` | BROKEN: Valve changed the model between the builds and the mod's replacement no longer fits it (a bone something names, an attachment; M062). The mod's own long-standing choices are `contract_own`, which lint reports | Report; never weaken the rule |
 | `STALE` | Baseline differs from the game under the same build number | Let Steam finish; re-run. Never overwrite a baseline by hand |
 
 A pak whose owner no `mod.toml` claims (a voice pak, a showcase scene installed under its own name) is compared from the newest older baseline, and its line says so; a `mod.toml` claims such owners with `[mod] owners = [...]`.
