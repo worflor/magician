@@ -17,25 +17,26 @@ Two of the three full hero skins made with it: [Maid Lash](https://woflo.dev/dea
 
 ## What it does to a mod
 
-1. **Check every file the way the game will read it.** Each file in the mod is set beside Valve's at the same path in the build you have installed, and the report says what a player would see if it shipped: a pink checkerboard where a material is missing, a hero that breaks at the next patch because the mod ships Valve's skeleton, a hem you can see through from below. What Valve's own file already does is never blamed on the mod.
-2. **Fair play.** Some players don't mind what an enemy looks like as long as they know where to shoot. Others want a skin that changes nothing about how the hero reads in a fight. Magician compares the skin with the stock hero (its silhouette from every side, how far it reaches past the hitboxes, each ability's effect against Valve's) so those players can check before they install. If you make skins, the same numbers show how far a part goes past the limit and where, so you can pull it back in or keep it with a written reason.
+1. **Build the mod and pack it.** `magician build` compiles an addon's sources with the CSDK's compiler, packs what belongs in the mod into one VPK and lints it, working round the compiler's known quirks and naming anything it leaves out. Packing is deterministic: the same compiled files give the same pak, byte for byte, so a proof can name exact bytes.
+2. **Check every file the way the game will read it.** Each file in the mod is set beside Valve's at the same path in the build you have installed, and the report says what a player would see if it shipped: a pink checkerboard where a material is missing, a hero that breaks at the next patch because the mod ships Valve's skeleton, a hem you can see through from below. What Valve's own file already does is never blamed on the mod.
+3. **Fair play.** Some players don't mind what an enemy looks like as long as they know where to shoot. Others want a skin that changes nothing about how the hero reads in a fight. Magician compares the skin with the stock hero (its silhouette from every side, how far it reaches past the hitboxes, each ability's effect against Valve's) so those players can check before they install. If you make skins, the same numbers show how far a part goes past the limit and where, so you can pull it back in or keep it with a written reason.
 
    <p>
      <img src="site/img/sil-lash.png" alt="Maid Lash's silhouette over stock Lash, front and side: the skirt adds a bell at the hips" height="200">
      <img src="site/img/sil-viscous.png" alt="Lööps Viscous's silhouette over stock Viscous, front and side: almost unchanged" height="200">
    </p>
 
-3. **Look at it in the game.** A clean check is not the end. Magician launches the real game, plays the mod's own scenarios, and cuts each take into a contact sheet for a person, or an agent that reads images, to look at. This is what the look caught under Maid Lash's petticoat, before and after the fix:
+4. **Look at it in the game.** A clean check is not the end. Magician launches the real game, plays the mod's own scenarios, and cuts each take into a contact sheet for a person, or an agent that reads images, to look at. This is what the look caught under Maid Lash's petticoat, before and after the fix:
 
    <p>
      <img src="site/img/hem-before.jpg" alt="Before: flaps of skin stand off both thighs under the petticoat" width="49%">
      <img src="site/img/hem-after.jpg" alt="After: the stockings sit clean under the petticoat" width="49%">
    </p>
 
-4. **Record the proof.** Once the frames have been looked at, Magician records it: this game build, these exact bytes. Rebuild the mod and it starts unproven again, so nothing ships on an old proof.
-5. **Survive the patch.** When Valve ships an update, one offline command says what changed under every installed mod: still fine, needs a look in game, or broken, and why.
+5. **Record the proof.** Once the frames have been looked at, Magician records it: this game build, these exact bytes. Rebuild the mod and it starts unproven again, so nothing ships on an old proof.
+6. **Survive the patch.** When Valve ships an update, one offline command says what changed under every installed mod: still fine, needs a look in game, or broken, and why.
 
-`magician check` in a mod's folder runs all five and gives one verdict.
+`magician check` in a mod's folder gives one verdict on the built paks: their check and fair play, their proof, and what the last patch changed under them.
 
 ## Getting started
 
@@ -193,9 +194,9 @@ Every exit code has one meaning:
 
 The reason for 1, 2 and 3 follows `magician:` on stderr. `--help` (or `-h`) after any command prints its usage and does nothing else, and `--version` names the toolchain and commit. An option the command does not take is a usage error before anything runs, whether it is a typo or another command's option: `install --dry-run` is refused, naming `sign` and `update`, which take it. So is an option without its value, and a single-valued option given twice.
 
-`--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release`, `rules`, `update` and `install --status` prints one JSON document on stdout and no human text. Each starts with a `schema` string (`magician.check/1`, `magician.grade/3`, `magician.patchday/1`, ...) so a reader can tell what it holds. A command that stops (exit 1, 2 or 3 with a reason) prints the reason as that one document, `{"schema":"magician.error/1","command":...,"exit":2,"kind":"usage","error":...}`, so stdout always parses. Also machine-readable: `lint --json-out FILE`, `mesh --json-out FILE`, `grade --record-out FILE`, `paths` and `policy` (tab-separated), and `lint --findings-out FILE` (a lint run that `grade --findings` judges without linting again). Results are deterministic: `pack` writes byte-identical VPKs from identical input, lint findings come out in a fixed order, a grade record is byte-for-byte the same for the same paks, build, policy and toolchain, and the findings cache only ever returns what a fresh run would compute.
+`--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release`, `rules`, `update`, `install --status`, `csdk` and `material` prints one JSON document on stdout and no human text. Each starts with a `schema` string (`magician.check/1`, `magician.grade/3`, `magician.patchday/1`, ...) so a reader can tell what it holds. A command that stops (exit 1, 2 or 3 with a reason) prints the reason as that one document, `{"schema":"magician.error/1","command":...,"exit":2,"kind":"usage","error":...}`, so stdout always parses. Also machine-readable: `lint --json-out FILE`, `mesh --json-out FILE`, `grade --record-out FILE`, `paths` and `policy` (tab-separated), and `lint --findings-out FILE` (a lint run that `grade --findings` judges without linting again). Results are deterministic: `pack` writes byte-identical VPKs from identical input, lint findings come out in a fixed order, a grade record is byte-for-byte the same for the same paks, build, policy and toolchain, and the findings cache only ever returns what a fresh run would compute.
 
-For agents there is an MCP server, [mcp/](mcp/README.md): seventeen tools that return JSON, the commands' own documents where they have one. Installing, uninstalling and launching the game are deliberately not among them; those stay CLI calls that something has to choose to make.
+For agents there is an MCP server, [mcp/](mcp/README.md): nineteen tools that return JSON, the commands' own documents where they have one. Installing, uninstalling and launching the game are deliberately not among them; those stay CLI calls that something has to choose to make.
 
 An agent that drives the CLI itself can load a skill, in the Agent Skills format. [using-magician](skills/using-magician/SKILL.md) has the loops, the safety rules and how to report. [moving-to-magician](skills/moving-to-magician/SKILL.md) is for mods made without Magician: point an agent at a pak, a folder of mods or the game's addons folder and it brings each one under Magician as the same bytes, gets its verdict, and says what still needs a person.
 

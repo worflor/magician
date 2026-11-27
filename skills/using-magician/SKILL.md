@@ -1,11 +1,11 @@
 ---
 name: using-magician
-description: Drive Magician, the headless toolchain for Deadlock (Valve, Source 2) mods, to validate, build, release, install, patch-check, re-prove, grade, bundle or start a mod. Use when a task mentions Deadlock mods, VPKs or paks, lint rules (M001-M149), a new Deadlock build or patch day, drift, proving a mod on a build, grading an overhaul, hero-page scenes, release bundles or a mod source, whether a person is pairing with you or the whole prompt is something like "validate the lash skins for the newest Deadlock release". Covers what Magician is for, the safe order of operations, exit codes, and how to report.
+description: Drive Magician, the headless toolchain for Deadlock (Valve, Source 2) mods, to validate, build, release, install, patch-check, re-prove, grade, bundle or start a mod. Use when a task mentions Deadlock mods, VPKs or paks, lint rules (M001-M160), a new Deadlock build or patch day, drift, proving a mod on a build, grading an overhaul, hero-page scenes, release bundles or a mod source, whether a person is pairing with you or the whole prompt is something like "validate the lash skins for the newest Deadlock release". Covers what Magician is for, the safe order of operations, exit codes, and how to report.
 ---
 
 # Using Magician
 
-Magician treats a Deadlock mod as a program and each game build as a compiler target. It builds mods reproducibly, lints them against the installed build (81 rules, each with its in-game consequence), works out what a new build changed under a mod, grades a hero mod (what it makes its own, identity, fair play, freshness, release gate) as one reproducible record, drives the retail game to film a mod, records which bytes were proven on which build, and installs or rolls back paks through a ledger. Every command is deterministic and its exit code means something, so you can act on results without a person watching.
+Magician treats a Deadlock mod as a program and each game build as a compiler target. It builds mods reproducibly, lints them against the installed build (88 rules, each with its in-game consequence; `magician rules` lists them), works out what a new build changed under a mod, grades a hero mod (what it makes its own, identity, fair play, freshness, release gate) as one reproducible record, drives the retail game to film a mod, records which bytes were proven on which build, and installs or rolls back paks through a ledger. Every command is deterministic and its exit code means something, so you can act on results without a person watching.
 
 **Good for:** checking a mod against the installed build; patch day (did Valve's update break anything, and what must be re-filmed); the in-game pass that re-proves a mod; building and releasing from an addon's sources; installing and removing paks safely; starting a mod folder for a hero; shipping hero-page scenes without Valve's bytes; packaging releases and a mod source for Deadlock Mod Manager.
 
@@ -55,7 +55,7 @@ The installed build number is `ClientVersion` in `<game>/citadel/steam.inf`; eve
 
 A session has a few of its own, and they are the session's alone (`magician session`, `reprove`; 5 from `update --check` is not one of them): 9 (the seat or the game is no longer this session's: nothing was done), 8 (a frozen hero), 7 (the hero never loaded), 6 (the demo ended before the film did), 5 (a game this session did not start is running).
 
-`--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release`, `rules`, `update`, `install --status` and `reprove` prints one JSON document (with a `schema` string) and nothing else; prefer it to reading text. Progress lines and colour appear only on a terminal, never in what you read.
+`--json` on `check`, `doctor`, `lint`, `grade`, `drift`, `patchday`, `prove`, `release`, `rules`, `update`, `install --status`, `csdk`, `material` and `reprove` prints one JSON document (with a `schema` string) and nothing else; prefer it to reading text. Progress lines and colour appear only on a terminal, never in what you read.
 
 ## The loops
 
