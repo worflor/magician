@@ -217,10 +217,10 @@ From Divine's [errors when making mods](https://wiki.divineskins.gg/en/docs/dead
 | Health bar at the feet: `CitadelUnitStatusSettings_t` an array | yes: M062 (landed after this note) | |
 | Missing hero sounds: `TaggedSoundSettings_t` (the community pages say `CitadelTaggedSoundSettings_t`) or feet nodes lost | yes: M062, as fair play, since footsteps are a cue (landed after this note) | |
 | Camera settings or hitboxes changed | yes: M062 and M129 for hitboxes, M062 for `CitadelCameraSettings_t` (fair play, landed after this note) | |
-| Solid red mesh, blank slot from a `.001` material | not as such | name draw calls whose material is empty or the error material |
+| Solid red mesh, blank slot from a `.001` material | yes: M153 names a draw call with no material, the error material or a bare slot name that is no material (landed after this note) | |
 | New material on the wrong shader (Material Editor default) | partly: M131 and M132 fire on the missing flags | say the shader is the cause |
 | NPR lighting or status proxy off | yes: M132, M131 | |
-| Translucent, self-illum, outline off (Divine's Avoid list) | partly: albedo M136 and M137, alpha M138 and M139, silhouette M124 | a material-flag fair-play rule against Valve's hero materials, as Divine's table does by hand |
+| Translucent, self-illum, outline off (Divine's Avoid list) | yes: M152, fair play, a feature on the Avoid list that no material of Valve's model at the path uses (landed after this note); albedo M136 and M137, alpha M138 and M139, silhouette M124 | |
 | Odd texture sizes | yes: M073, M135, M147 | |
 | Bad weights, more than four influences, weapon not parented | yes: M116, M117, M119, M111 | |
 | Cloth or ragdoll lost after a decompile | yes: M142 for distance fields, M160 for cloth and ragdoll parts (landed after this note) | |
@@ -257,7 +257,7 @@ Ranked by how much pain each answers (section 2) against its effort. Effort: sma
 
 ### What landed
 
-Items 1, 2, 3, 5, 6, 8, 9 and 10 landed after this note, measured on 6877 against Valve's files, the 75 community mods and two finished skins; the record is [rule-calibration-6871.md](rule-calibration-6871.md), "The hero model contract and its neighbours (6877)". Items 4 and 7 are another piece of work.
+Items 1, 2, 3, 5, 6, 8, 9 and 10 landed after this note, measured on 6877 against Valve's files, the 75 community mods and two finished skins; the record is [rule-calibration-6871.md](rule-calibration-6871.md), "The hero model contract and its neighbours (6877)". Item 4 and the rest of item 7 landed on 6880, measured on 144 community mods; the record is the same file's "Judgement round on 6880".
 
 - 1: M062 compares the animation skeleton and AnimGraph 2 references, the unit-status block, the tagged-sound sets, the camera settings and every other game-data block with Valve's model at the same path (`crates/lint/src/gamedata.rs`). Tagged sounds turned out to be fair play: `heroes.vdata` names none, so a model without them has silent footsteps. The collision fields were left alone, because `heroes.vdata` sets its own.
 - 2: the camera attachments are held to 1e-4 of Valve's numbers. Which ones comes from the model's `AttachmentCameraData` and from the hero-frame attachments the client library names, not from a list of names.
@@ -267,5 +267,7 @@ Items 1, 2, 3, 5, 6, 8, 9 and 10 landed after this note, measured on 6877 agains
 - 8: M084, from the list of particles nothing names that `magician index` now writes.
 - 9: `install --status` lists the paths installed paks share and which one the game reads; `doctor` reads `gameinfo.gi` against the stock backup.
 - 10: M092.
+- 4: M170 says which compiler built each kind of file, from the versions in its edit info against the game's own files of that kind, and names CSDK 12 where its outdated AnimGraph 2 output is the known cause; M062's A-pose findings name CSDK 12's missing AnimGraph 2 references, as its unit-status finding already named the list. `build` names the kit it compiles with, as before. Which number each kit writes is not read from the kits here.
+- 7: M151 says the shader (before this round), M153 the empty or error-material draw call, M152 the Avoid list as fair play.
 
 What not to take on: Hammer lightmaps (`SH2_lum`), a particle editor preview, or an AnimGraph editor. Hero skins are lit by the game, and the hero-page scene uses dynamic lights ([engine.md](../reference/engine.md#the-hero-page)); the editors are GUI work outside Magician's non-goals ([PDD](../PDD.md#non-goals)). Magician's answer to "the editor doesn't look like the game" is the in-game pass, which every community guide already ends with by hand.

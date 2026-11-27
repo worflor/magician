@@ -283,3 +283,86 @@ A mod about one hero is a mod that replaces that hero's model; the users index s
 ### What stays UNVERIFIED
 
 Nothing in this round was seen in game: silent footsteps without tagged sounds, the health bar's place with an older unit status, which missing layout ids crash the HUD, whether a stereo or 48 kHz replacement plays wrong, what a lost ragdoll part does on death, and the matchmaking refusal for a restricted section. Lint judgement revision 6.
+
+## Judgement round on 6880
+
+The game moved to 6880 before this round started, and every number below is 6880's. How it was measured:
+
+- **The community corpus:** 144 mods, 143 of them with paks (one holds only a source note), 285 paks, linted deep with no allowances, read as data only. 83 of the 143 replace a hero model and are counted as skins.
+- **Valve against itself:** Haze, Lash, Viscous and Geist's model folders, Haze's ability particles, `scripts/heroes.vdata` and `scripts/abilities.vdata`, Haze's hero graph and the base hero graph, 555 of Valve's files packed unchanged into one pak and linted deep. Before this round it read 6 errors, all M070 on Valve's own skeletons, graphs and vdata; it now reads none.
+- **woflo's skins:** Maid Lash (`pak10`) and Lööps Viscous (`pak20`) from the install: 0 errors before and after (47 and 31 warnings, unchanged), and no finding of the rules this round added.
+- Valve's files were measured with a throwaway reader over the build's own paks (not committed); what each rule reads at lint time is in the code.
+
+| Corpus, deep, no allowances | Before (6880, judgement 6) | After (judgement 7) |
+|---|---|---|
+| Errors | 4,881 | 4,244 |
+| Warnings | 77,886 | 78,784 |
+| Mods broken | 105 of 143 | 87 of 143 |
+| Skins broken | 78 of 83 | 66 of 83 |
+
+What breaks the 66 skins still broken: M062 on 47 (alone on 22), M030 on 42 (alone on 17), M070 on 5, M083 on 5, M153 on 2, one each M071, M010 and M143. Of M062's errors, 623 are lost attachments, which this round did not judge again.
+
+### Lost bones, judged by who outside the model names them
+
+A full skin brings its own mesh, cloth and ragdoll, so what Valve's model hung on a bone is not in the mod, and the last round's line (an error when Valve's model hangs something on the bone) kept every rebuilt hair chain and coat an error. What can still break is something that looks the bone up by name. `magician index` now writes `bone_users.tsv`: every string an anim graph, clip, particle or vdata holds under a key that says bone (a bone mask's id left out), and every bone name of Valve's hero models and their animation skeletons that the client library holds.
+
+What the index found:
+
+- Only the anim graphs name bones: `m_boneID` (256 uses), `m_effectorBoneID` (249), `m_followTargetBone` (184), `m_bone` (180), `m_endEffectorBoneID` (68), 53 names in all (IK targets, follow targets, root motion, the head for look-at). Particles, vdata and clips name attachments (`m_attachmentName`, `m_strAttachmentName`, `m_attachmentPoint0`) and hitbox sets, never a bone.
+- A graph poses the animation skeleton, not the model. 25 of Valve's 65 hero models with an animation skeleton lack bones their own graphs name (`weaponHand_L` and `weaponHand_R` on most, the leg IK targets on one, `Pelvis` on the owl, a turret and a hand), and those heroes play; 383 animation-skeleton bones are absent from Valve's models. A graph naming a lost bone is said and never an error.
+- The client library holds 28 of the bone names (`head`, `root`, `body`, `weapon`, `muzzle_fx`, `palm_l` and others, several of them attachment names too). Valve's hero models carry every one of them they are named on, but one effect model's `muzzle_fx`, which is an attachment there. What the code looks up by each name is not known: UNVERIFIED.
+
+The line: a lost bone is an error when the model itself still names it (an attachment riding it, a hitbox, a physics part, a cloth node, a mesh's bone list: a reference to a bone the skeleton no longer has), or when the client code holds its name and the model has no attachment of that name for the lookup to find; the message names which. Otherwise it is a warning that says what Valve's model hung on it. No index, or one written without the client library, leaves it an error that says so. Hitboxes keep their own comparison, fair play as before.
+
+| The 319 lost-bone errors of the baseline, by what Valve's model hung on the bone | Now an error | Now a warning |
+|---|---|---|
+| vertices | 4 | 183 |
+| cloth | 0 | 50 |
+| an attachment | 17 | 46 |
+| a ragdoll part | 0 | 6 |
+| only a bone lost below it | 0 | 13 |
+| All | 21 | 298 |
+
+The 21 errors: 18 where the mod's own model still names the bone, 17 of them the portrait camera's attachments still riding a lost `attachWorld`, and one a bag's attachment and hitbox on a lost `bag_main`; 3 where the client code holds the name (`root` and `base` on an ability's prop with no animation skeleton, `body` on a hero model). A sample of the warnings: `hair_0` on a rebuilt hero, where Valve's model hung 679 vertices and cloth, now the mod's own; `owl_ball_L`, where Valve's hung nothing; `attachWorld` on a skin that dropped the portrait camera's attachment with it, which the lost attachment's own finding keeps an error. Tests: `m062_a_lost_bone_is_judged_by_who_still_names_it`, `m062_a_helper_bone_lost_in_a_whole_lint_is_a_warning`, `bone_users_read_back_only_in_their_own_format`, and in `gamefiles.rs` `the_bone_users_are_the_names_graphs_and_the_code_hold`.
+
+Nobody has seen a lost bone the code names, or an attachment riding a lost bone, in game: UNVERIFIED.
+
+### Five error rules
+
+| Rule | Before | After | What decided it |
+|---|---|---|---|
+| M030, an AnimGraph 1 graph (`.vanmgrph`) | 153 errors, 29 mods | 153 warnings | No build ships an AnimGraph 1 graph and none of Valve's files names one. The hero animates from the model's AnimGraph 2 references, which M062 judges. Every other M030 (3,046, sounds most of them) stays an error. |
+| M137 albedo-absolute | 57 errors, 38 mods (6 skins broken by it alone) | 57 warnings | A look: the game draws the colours it is given. 12 of Valve's 78 hero models with hitboxes are past the line on their own art (Mirage 18.2% black, Haze 12.4% black, Geist 64% white). |
+| M070 ships-protected-file | 110 errors, 33 mods | 6 errors, 104 warnings | Judged against Valve's file at the same path. Errors: 5 animation skeletons that lack Valve's bones (`attachWorld`, `weapon_hand_R`) and one `generic_data.vdata` that lacks 14 of Valve's entries. Warnings: 59 at paths Valve does not ship (the CSDK's `image_compiler.vdata` most of them), and 45 copies that hold everything Valve's file has, which play until a patch changes Valve's file. A key that starts with `_` (`_include`) is the file's own bookkeeping. |
+| M001 path-case | 14 errors, 6 mods | 2 errors, 12 warnings | Nothing names the 12 (`- Copy` files, an exported folder, a renamed old event file, a loose image) and they replace no game file, so the game never looks them up. The 2 errors are fonts under `panorama/fonts/`, which Panorama finds by folder (UNVERIFIED either way). |
+| M139 alpha-coverage-gameplay | 15 errors, 7 mods | 15 warnings | A look, as M138 at 8 m is. No material on Valve's 78 hero models is past it at 4 m, so it still says something Valve's art does not do. |
+
+Tests: `m001_uppercase_path`, `m030_an_animgraph_1_reference_is_a_warning`, `m070_ships_protected_file` (both sides of every kind), and the severity checks in `m136_m137_albedo` and `m138_m139_alpha_coverage`.
+
+### Which compiler built each file (survey item 4)
+
+A compiled file's `RED2` names each compiler with a version it raises when its output changes (`resource::compilers`). On 6880 every one of Valve's files of a kind carries one version: models 3, clips 21, graphs 27, animation skeletons 14, particles 2, layouts 16, styles 11, sound events 11, vdata 2, materials 25. Maid Lash and Lööps Viscous, built with `bin/win64_nm`, carry the same.
+
+M170 (a note) says, per kind and version, how many of a mod's files another version built and names the known kit cause: 107 notes on 57 mods.
+
+| Kind | Versions in the corpus (the game's) | Notes |
+|---|---|---|
+| clips | 10, 14 (21) | 6 |
+| graphs | 20 (27) | 2 |
+| animation skeletons | 10 (14) | 7 |
+| layouts | 13, 14 (16) | 23 |
+| styles | 9 (11) | 33 |
+| sound events | 9, 10 (11) | 17 |
+| vdata | 1 (2) | 19 |
+
+Clips, graphs and skeletons of an older version name CSDK 12, whose AnimGraph 2 output the community pages call outdated; M062's A-pose findings now name CSDK 12's missing AnimGraph 2 references, as its unit-status finding named the list. Which number each kit writes was not read from the kits, and whether the game reads an older version as it was made is UNVERIFIED. `build` names the kit it compiles with, as before. Test: `m170_names_the_compiler_that_built_a_file`, and in `resource` `compilers_are_read_from_the_edit_info`.
+
+### Materials by cause (the rest of survey item 7)
+
+**M153 draw-error-material (error).** A LOD0 draw call with no material, the engine's error material, or a bare name with no folder that is no material in the mod or the game. On Valve's 12,429 draw calls of the citadel pak's models: none empty; 22 on `materials/error.vmat` or `materials/dev/default.vmat`, every one on an effect model a particle draws with its own material or a development prop, none on a hero model. A draw Valve's model at the same path makes is not said. On the corpus, 2 sites, `nada.vmat` and a bare `calico_clawball_bomb.vmat`, on mods already broken by other rules: it breaks none newly. Test: `m153_a_draw_with_no_material`.
+
+**M152 material-flag-fair-play (fair play, never allowable).** Divine Skins' material reference marks 8 features Avoid for hero skins ("changes how easy a hero is to see"): F_TRANSLUCENT, F_ADDITIVE_BLEND, F_ADVANCED_TRANSLUCENCY, F_SELF_ILLUM, F_UNLIT, F_OVERRIDE_BLOOM_AMOUNT, F_OVERRIDE_NPR_OUTLINE, F_DISABLE_NPR_OUTLINE. Valve uses every one of them: of its 772 `pbr.vfx` hero materials (4,561 materials in the citadel pak), 346 glow, 101 are translucent, 59 additive, 50 drop the outline, 33 set their bloom, 22 use advanced translucency, 16 are unlit and 3 set their outline. So the rule says a feature only when a new material on a target switches it on and no material of Valve's model at that path does. Valve against itself is silent by construction. On the corpus: 259 findings on 41 mods (self-illumination 107 on 12, outline off 87 on 18, outline thickness 27 on 10, translucency 19 on 12, bloom 8 on 5, unlit 4 on 3, additive 4 on 2, advanced translucency 3 on 3). Every one of the 41 was already freeform by another fair-play rule, so no label changed, and it breaks nothing. Test: `m152_a_material_flag_on_the_avoid_list`.
+
+### What stays UNVERIFIED
+
+Nothing here was seen in game (another lane holds the seat): what the client code looks up by a bone's name, where an attachment riding a lost bone ends up, whether an older compiler version plays as made, the error material on a bare-named draw, how Panorama finds a font, and how a copy of an older skeleton, graph or vdata fails. Lint judgement revision 7.
