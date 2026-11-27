@@ -97,3 +97,55 @@ False positives the corpus showed, each fixed with a test that fails without the
 The two gameplay modifications. One is a set of skin reworks filed in that category; it trips the most of any mod in the corpus (141 errors: 69 shipped skeletons, graphs and data files, 50 model-contract breaks, 20 particle classes in the wrong list; 16 reduced sound cues, one silhouette, one hitbox envelope). The other raises the field-of-view slider's cap to 150 through the settings page and a script. Magician says nothing about it: no rule reads what a Panorama script does to the game's settings. That is an open question, not a decision either way. Settings changes such as a field-of-view cap are not judged yet, and whether they should be is undecided (woflo, 2026-11-26: it may be revisited later); STATUS lists it under loose ends.
 
 After these fixes, the three skins: Maid Lash 50 to 51 warnings (M081 now measures the whip sparks at radius 22 where Valve's are 12, which it read as Valve's size before: worth a look), Lööps Viscous 70 unchanged, the third skin 20 to 11.
+
+## M062 and moved attachments (6875)
+
+On the community corpus every skin read broken, and M062 was the most common reason: attachments a skin had moved to fit another body shape, and bones it had lost. woflo's call (2026-11-27): a lost bone, a lost attachment and any hitbox change stay errors, since they break animation or touch fair play; a moved attachment is a warning that says how far it moved, unless the move is extreme. The question for the record was where extreme begins, measured on Valve's own heroes rather than chosen.
+
+### How it was measured
+
+`lint::reach` places every attachment of a model at bind: each influence's offset carried into model space by its bone's bind transform. Off the body is the distance to the nearer of the skinned LOD0 surface and the nearest bone. The model's size is the square root of that surface's area, the measure M109 and M110 already judge by, so a large hero and a small one are held to the same proportion. The game build moved from 6873 to 6875 while this was measured; the numbers below are the same on both.
+
+Valve's root bone is turned 120 degrees about (1, 1, 1) at bind, and the attachments on it only make sense unturned: Haze's aim sits 63.9 units up, the standing camera pivot 86.2 and the zipline hook 107. Turned, all three would lie on the ground in front of him. The root's attachments are placed in the hero's own frame. This is read from Valve's numbers, not seen in game: UNVERIFIED.
+
+### Gameplay positions and effect points
+
+The brief allowed a separate line for attachments the game uses to position gameplay, but only if the game's own files say which those are. The model files carry no such flag: an attachment has its influences, offsets, rotations, `m_bInfluenceRootTransform` and `m_bIgnoreRotation`, nothing more. The game's scripts name attachments by what they do with them (`m_strEffectsAttachName`, `m_strAttachmentName`, `m_strShootAttachment`, `m_sHealthBarAttachment`, `m_strHoldAttachment`), but none of those marks one attachment as positioning and another as cosmetic, and a list of names would be a guess.
+
+What the model file does say is how each attachment is held. Of the 2,173 attachments on Valve's 43 playable heroes, 1,384 ride a body bone and 789 sit on the root bone or the root transform, in the hero's own frame. The two groups are nothing alike:
+
+| | Attachments | Furthest off the body, in units of the hero's size | Median |
+|---|---|---|---|
+| On a body bone | 1,384 | 0.0931 (McGinnis's turret_carry_mid_fx, 18.2 units off a size of 195.2) | 0.0003 |
+| In the hero's own frame | 789 | 3.14 (Viper's portrait camera, 373 units away) | |
+
+The ones in the hero's frame are the camera poses (`near_`, `far_`, `gunaim_`, the pivots, the portrait camera), the aim point, the zipline hook and the test shooting points. They sit far from the body by design and are where the game positions things, so no distance from the body can judge them. Body attachments are effect points: palms, muzzles, the idol and carry points on the back. One line serves every body attachment, and a changed attachment in the hero's own frame stays an error.
+
+The line is 0.094 of the model's size: McGinnis's turret carry point rounded up, as M109 and M110 round their heroes, so no Valve attachment is past it. On a hero of Lash's size (148) it is 13.9 units, about 35 cm. `magician corpus` measures every body attachment against it on each build; none is past it on 6873 or 6875.
+
+### Fair play
+
+The only part of M062 that is fair play is the hitbox comparison (`rubric::is_fair_play`: M062 when the finding is about a hitbox). It is untouched: the same signatures, the same rounding step, the same severity, never allowable. Tests: `m062_a_hitbox_change_beside_a_cosmetic_move_is_still_an_error`, with the existing `m062_model_contract` and `m062_a_float32_step_across_a_rounding_line_is_not_a_change`.
+
+### Before and after
+
+The 75 community mods (121 paks) linted deep with no allowances on 6875, before and after.
+
+| | Before | After |
+|---|---|---|
+| Changed attachments | 214 errors | 108 warnings, 106 errors |
+| Lost attachments | 81 errors | 81 errors |
+| Lost or reparented bones | 403 errors | 403 errors |
+| Hitboxes changed, added or lost | 120 (fair play, lenient) | 120 |
+| Skins broken | 48 of 48 | 46 of 48 |
+| Mods broken | 61 of 75 | 59 of 75 |
+
+The 108 warnings are on 46 mods. Half of them moved 3.1 units or less; the furthest any sits off its body is 10.6 units, under that model's line. The largest move is 116 units: a muzzle point moved along a body that holds its weapon elsewhere, still on the body.
+
+None of the 106 errors is past the line. All of them are in the hero's own frame: 86 are Valve's attachments turned by an exporter's Y-up/Z-up swap (the finding says so), 15 moved (zipline hooks 100 to 218 units, one skin's camera poses 3 to 46 units, an overhead bar moved off the head onto the root, a test shooting point 15 units), and 5 turned in place.
+
+M062 was the only error on 6 of the 48 skins. 2 of those are now clean of errors; the other 4 lost or reparented bones, which stay errors. The other 42 skins are broken by M030 (references to files the build no longer ships), M070, M137 and the rest, as before.
+
+Valve's own heroes against themselves are silent, as before: an unchanged attachment is no finding. Maid Lash, Lööps Viscous and two other finished skins keep Valve's attachments: no M062 finding before or after, and their `check` verdicts are unchanged.
+
+Tests: `m062_a_moved_attachment_on_the_body_is_a_warning_that_says_how_far` (4 units off is a warning with the distance, 20 is an error, the line holds within a few tenths), `m062_a_moved_attachment_in_the_hero_s_frame_and_a_missing_one_stay_errors`, and in `report.rs` a cosmetic move read back from a findings file as a warning. Lint judgement revision 4.
