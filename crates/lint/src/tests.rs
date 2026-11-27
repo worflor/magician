@@ -123,6 +123,15 @@ fn m030_an_animgraph_1_reference_is_a_warning() {
     let m: Vec<&Finding> = f.iter().filter(|x| x.code == "M030").collect();
     assert!(m.iter().any(|x| x.severity == Severity::Warn && x.message.contains("AnimGraph 1") && x.message.contains("lash.vanmgrph_c")), "{m:?}");
     assert!(m.iter().any(|x| x.severity == Severity::Error && x.message == "needs 'models/heroes_wip/lash/gone.vmat_c'"), "a missing material stays an error: {m:?}");
+    // an AnimGraph 1 include model the model names in m_refAnimIncludeModels: a warning; the same model referenced
+    // for anything else stays an error
+    let backup = "models/heroes_wip/lash/lash_backup.vmdl";
+    let data = Value::Object(vec![("m_refAnimIncludeModels".into(), Value::Array(vec![Value::Str(backup.into())]))]);
+    let f = run(vec![file(MODEL, res_kv(&[backup], &[(b"DATA", data)]))], Some(&g), None);
+    let m: Vec<&Finding> = f.iter().filter(|x| x.code == "M030").collect();
+    assert!(m.len() == 1 && m[0].severity == Severity::Warn && m[0].message.contains("AnimGraph 1 include model"), "{m:?}");
+    let f = run(vec![file(MODEL, res(&[backup]))], Some(&g), None);
+    assert!(f.iter().any(|x| x.code == "M030" && x.severity == Severity::Error), "{f:?}");
 }
 
 #[test]

@@ -680,12 +680,19 @@ pub fn lint(input: &Input) -> Vec<Finding> {
                             inherited_strings = deep::vsnd_refs(&kv);
                         }
                     }
+                    // a model's AnimGraph 1 include models (`m_refAnimIncludeModels`), which lend it their sequences
+                    let includes: Vec<String> = if ext == "vmdl_c" { anim_include_models(&f.data) } else { Vec::new() };
                     for target in &mine {
                         let in_mod = mod_paths.contains(target.as_str());
                         let in_game = input.base.is_none_or(|b| b.contains(target));
                         let inherited = original.is_some_and(|o| o.contains(target)) || inherited_strings.contains(target);
                         if !in_mod && !in_game && !inherited {
-                            if target.ends_with(".vanmgrph_c") {
+                            if includes.contains(target) {
+                                out.push(Finding {
+                                    severity: Severity::Warn,
+                                    ..finding("M030", Some(p), format!("needs '{target}', an AnimGraph 1 include model (m_refAnimIncludeModels) that lends the model its sequences: no model of Valve's names one (6880), and the hero animates from its AnimGraph 2 references, which M062 judges, so the player sees nothing of this; the game may log the missing file (UNVERIFIED); to be rid of it, take the include model out of the model document and recompile"))
+                                });
+                            } else if target.ends_with(".vanmgrph_c") {
                                 // AnimGraph 1: no build ships one and none of Valve's files names one (6880); the hero
                                 // animates from the model's AnimGraph 2 references, which M062 judges
                                 out.push(Finding {
@@ -810,6 +817,15 @@ pub fn lint(input: &Input) -> Vec<Finding> {
 
     out.sort_by(|a, b| b.severity.cmp(&a.severity).then(a.code.cmp(b.code)).then(a.path.cmp(&b.path)));
     out
+}
+
+/// The models a compiled model includes for their AnimGraph 1 sequences (`m_refAnimIncludeModels`), as compiled paths.
+fn anim_include_models(model: &[u8]) -> Vec<String> {
+    let Some(Ok(d)) = resource::kv3_block(model, b"DATA") else { return Vec::new() };
+    d.get("m_refAnimIncludeModels").map(resource::kv3::Value::as_array).unwrap_or(&[]).iter().filter_map(resource::kv3::Value::as_str).map(|p| {
+        let p = p.to_ascii_lowercase().replace('\\', "/");
+        if p.ends_with("_c") { p } else { format!("{p}_c") }
+    }).collect()
 }
 
 /// Said of a font file shipped in a pak (M001 as a warning).
