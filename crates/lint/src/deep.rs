@@ -724,6 +724,8 @@ pub fn judge_breaches(breaches: Vec<String>, ours: &[u8], valve: &[u8]) -> Vec<S
     }
     let (o, v) = (reach::read(ours), reach::read(valve));
     let pct = |x: f64| format!("{:.1}%", 100.0 * x);
+    // under a twentieth of a unit (about a millimetre) the attachment is at Valve's place: it only turned
+    let moved = |by: f64| if by < 0.05 { "turned in place".to_string() } else { format!("moved {by:.1} units") };
     breaches
         .into_iter()
         .map(|m| {
@@ -732,15 +734,18 @@ pub fn judge_breaches(breaches: Vec<String>, ours: &[u8], valve: &[u8]) -> Vec<S
             let (sigs, tail) = rest.split_once("; ").map_or((rest.as_str(), String::new()), |(s, t)| (s, format!("; {t}")));
             match reach::judge(&n, &o, &v, rate) {
                 Move::Cosmetic { by, off, line } => format!(
-                    "attachment '{n}' moved {by:.1} units, {off:.1} off the body: {sigs}; {COSMETIC_MOVE}, within {line:.1} units of the body ({} of the model's size, past which Valve keeps no attachment on any hero's body){tail}",
+                    "attachment '{n}' {}, {off:.1} off the body: {sigs}; {COSMETIC_MOVE}, within {line:.1} units of the body ({} of the model's size, past which Valve keeps no attachment on any hero's body){tail}",
+                    moved(by),
                     pct(rate)
                 ),
                 Move::OffBody { by, off, line } => format!(
-                    "attachment '{n}' moved {by:.1} units, {off:.1} off the body: {sigs}; past {line:.1} units off the body ({} of the model's size, further than Valve keeps any attachment on any hero's body): what the game spawns there shows away from the hero{tail}",
+                    "attachment '{n}' {}, {off:.1} off the body: {sigs}; past {line:.1} units off the body ({} of the model's size, further than Valve keeps any attachment on any hero's body): what the game spawns there shows away from the hero{tail}",
+                    moved(by),
                     pct(rate)
                 ),
                 Move::HeroFrame { by } => format!(
-                    "attachment '{n}' changed: {sigs}; it moved {by:.1} units in the hero's own frame (it rides the root, not the body: the frame Valve places its camera poses, aim and zipline points in){tail}"
+                    "attachment '{n}' changed: {sigs}; it {} in the hero's own frame (it rides the root, not the body: the frame Valve places its camera poses, aim and zipline points in){tail}",
+                    moved(by)
                 ),
                 Move::Unmeasured(why) => format!("attachment '{n}' changed: {sigs}; where it sits against the body could not be measured ({why}){tail}"),
             }

@@ -1424,6 +1424,11 @@ fn m062_a_moved_attachment_on_the_body_is_a_warning_that_says_how_far() {
     assert_eq!(e.len(), 1, "{far:#?}");
     assert_eq!(e[0].severity, Severity::Error);
     assert!(e[0].message.starts_with("attachment 'idol' moved 20.0 units, 20.0 off the body:") && e[0].message.contains("past 7.0 units off the body"), "{}", e[0].message);
+    // at Valve's place with only its rotation changed, it turned in place: a cosmetic change too
+    let bytes = ::mesh::synth::model(&valve);
+    let turned = deep::judge_breaches(vec!["attachment 'idol' changed: on spine at -10.00,0.00,20.00 rot 0.71,0.00,0.00,0.71 (Valve's on spine at -10.00,0.00,20.00 rot 0.00,0.00,0.00,1.00)".into()], &bytes, &bytes);
+    assert!(turned[0].starts_with("attachment 'idol' turned in place, 0.0 off the body: on spine"), "{turned:?}");
+    assert_eq!(deep::contract_severity(&turned[0]), Severity::Warn);
     // just inside and just outside the line
     assert_eq!(m062(&run_against(&attached(&[("idol", "spine", [-16.9, 0.0, 20.0])]), &valve))[0].severity, Severity::Warn);
     assert_eq!(m062(&run_against(&attached(&[("idol", "spine", [-17.2, 0.0, 20.0])]), &valve))[0].severity, Severity::Error);
