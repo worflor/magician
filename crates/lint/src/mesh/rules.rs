@@ -46,6 +46,16 @@ pub const CROSS_RATE_VALVE: f64 = 52.5;
 /// own line; the median sits on the body (0.0003). On a hero of Lash's size (148) the line is 13.9 units, about 35
 /// cm. Attachments held in the hero's own frame (the root) are not judged by it: Valve's 789 sit up to 3.1 sizes away.
 pub const ATTACH_OFF_BODY_VALVE: f64 = 0.094;
+/// M062: how far a camera attachment the game names (its model's `AttachmentCameraData`, or one in the hero's own frame
+/// the client code names) may differ from Valve's in any number it is written with (a position in units, a rotation's
+/// component). Valve's own copies of its 521 camera attachments on the 66 models that list any are bit-identical (6875); the
+/// community mods that kept Valve's camera attachments through a Source 2 Viewer decompile and a recompile differ by at
+/// most 6.1e-5 (62 sites), and every one that moved one moved it a unit or more. A pivot written -89.972 degrees for
+/// Valve's -90 (an older viewer's rounding) is 1.7e-4 in its rotation, which the 0.01 of the printed contract passes.
+pub const CAMERA_ATTACH_STEP: f64 = 1e-4;
+/// M062: the step within which two numbers of a model's game data are the same (its offsets and camera settings are
+/// written to two decimals at most).
+pub const GAMEDATA_STEP: f64 = 0.01;
 /// M062: the hero's clips leave a bone of its animation skeleton still while no frame turns it, against its parent and
 /// its reference pose, past this, or shifts or scales it past the next (`carry::Moved::still`). The clip format stores
 /// a turn in 15-bit steps (about 0.005 degrees) and a shift in 1/65,535 of its track's range (under a hundredth of a

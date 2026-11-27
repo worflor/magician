@@ -14,9 +14,12 @@ pub mod cloth;
 pub mod corpus;
 pub mod deep;
 pub mod distfield;
+pub mod gamedata;
+pub mod layout;
 pub mod matconst;
 pub mod matparams;
 pub mod pbrcombo;
+pub mod physdrop;
 pub mod policy;
 pub mod reach;
 pub mod report;
@@ -57,7 +60,9 @@ pub struct Rule {
 /// witnessed in game (CHANGELOG, "judgement changed"). 3: the rules measured on Valve's 43 heroes (6871): M061, M063's
 /// reach keys, M109 to M112, M135. 4: M062 judges a moved attachment by where it now sits against the body (6875).
 /// 5: M062 judges a lost or reparented bone by what hangs on it and how the hero's animation moves it (6875).
-pub const JUDGEMENT: u32 = 5;
+/// 6: M062 reads the model's animation references and game data, and holds the game's camera attachments to Valve's
+/// numbers (6877).
+pub const JUDGEMENT: u32 = 6;
 
 /// The rule catalogue: one home for codes, names and in-game consequences.
 pub const RULES: &[Rule] = &[
@@ -93,6 +98,8 @@ pub const RULES: &[Rule] = &[
         in_game: "Valve changed the original of a file you replace since you built against it. Your copy may now be missing fixes, attachments or new animations." },
     Rule { code: "M041", name: "drift-original-removed", severity: Severity::Error,
         in_game: "The file you replace no longer exists in this build (moved or renamed), so your replacement does nothing." },
+    Rule { code: "M042", name: "layout-id-missing", severity: Severity::Error,
+        in_game: "A replaced Panorama layout lacks an element id that Valve's layout at the same path has on this build: the mod's copy is of an older layout, and it masks Valve's new one. The game's code finds panels by id, so an id its client code names (read from the installed client library) is an error: the HUD stops at launch ('Unable to find child'), or that part of it stays blank (which, per id, is UNVERIFIED). An id the code does not name is a warning: Valve's scripts may still look it up. Rebuild the layout from Valve's current file and apply the mod's change to it again." },
     Rule { code: "M050", name: "vpk-name", severity: Severity::Warn,
         in_game: "Addon VPKs are mounted as pakNN_dir.vpk (NN = 01..99, lowest wins). Other names are skipped by the addons search path and by mod managers' load-order logic." },
     Rule { code: "M051", name: "vpk-chunked", severity: Severity::Warn,
@@ -102,11 +109,13 @@ pub const RULES: &[Rule] = &[
     Rule { code: "M013", name: "build-artifact", severity: Severity::Warn,
         in_game: "A build input or toolchain byproduct (a panorama image list, a nested VPK, a raw .kv3, a compiler cache) that the game never loads from an addon. It adds size, and a vdata among them is noted in the grade. magician build leaves these out." },
     Rule { code: "M062", name: "model-contract", severity: Severity::Error,
-        in_game: "A replaced model lost or reparented a bone of Valve's, lost an attachment, moved one too far, or changed or added a hitbox. A lost bone takes with it what Valve's model hangs on it and on the bones lost below it (vertices, a hitbox, an attachment, cloth, a ragdoll part): an error that says what. One Valve's model hangs nothing on (an end bone, an IK target, a helper) is a warning that says so. The hero's animation poses a bone by name, so a reparented bone its animation skeleton has moves as Valve's whatever its parent, and one it lacks follows its new parent: a reparent is an error only where what the mod hangs on the bone lands or moves a fair-play pixel or more from where Valve's would. What the game spawns at a lost attachment goes to the origin, and a changed hitbox changes what bullets hit: a fair-play break. A moved attachment on a body bone that still sits near the body is a warning that says how far it moved: a skin with another body shape moves where its effects attach, and that is cosmetic. Near is within 9.4% of the model's size (the square root of its surface), just past the furthest any attachment sits off the body on Valve's 43 heroes (6873 and 6875). Further off, its effect visibly spawns away from the hero: an error. So is a moved attachment held in the hero's own frame (on the root bone, as Valve's camera poses, aim and zipline points are), and one whose place could not be measured." },
+        in_game: "A replaced model lost or reparented a bone of Valve's, lost an attachment, moved one too far, or changed or added a hitbox. A lost bone takes with it what Valve's model hangs on it and on the bones lost below it (vertices, a hitbox, an attachment, cloth, a ragdoll part): an error that says what. One Valve's model hangs nothing on (an end bone, an IK target, a helper) is a warning that says so. The hero's animation poses a bone by name, so a reparented bone its animation skeleton has moves as Valve's whatever its parent, and one it lacks follows its new parent: a reparent is an error only where what the mod hangs on the bone lands or moves a fair-play pixel or more from where Valve's would. What the game spawns at a lost attachment goes to the origin, and a changed hitbox changes what bullets hit: a fair-play break. A moved attachment on a body bone that still sits near the body is a warning that says how far it moved: a skin with another body shape moves where its effects attach, and that is cosmetic. Near is within 9.4% of the model's size (the square root of its surface), just past the furthest any attachment sits off the body on Valve's 43 heroes (6873 and 6875). Further off, its effect visibly spawns away from the hero: an error. So is a moved attachment held in the hero's own frame (on the root bone, as Valve's camera poses, aim and zipline points are), and one whose place could not be measured. The camera attachments the game names (the model's AttachmentCameraData, and the pivots the client code names in the hero's frame) are held to 1e-4 of Valve's numbers: Valve's copies are bit-identical, a Source 2 Viewer round trip leaves 6.1e-5 at most, and an older viewer's -89.972 for -90 centres the camera. The contract also covers what Deadlock reads from the model beyond its skeleton: a missing or other animation skeleton or AnimGraph 2 reference (the A-pose), a unit-status block that is missing or a list (a CSDK 12 compile: the health bar at the feet): errors. A tagged-sound set Valve's model plays from and ours lacks silences the footsteps enemies listen for, and camera settings other than Valve's change what a player sees around the hero: both fair play, never allowable. A health bar placed elsewhere than Valve's, or another game-data block Valve's model has and ours lacks, is a warning that says what falls back to the game's defaults." },
     Rule { code: "M063", name: "sound-cue-reduced", severity: Severity::Error,
         in_game: "A replaced sound event or file plays quieter, shorter, over less distance, to fewer players, or not at all compared with Valve's. Enemies rely on those cues: hiding them is a fair-play break. A changed base is read through the game's own base events: one Valve's base inherits from differs only by what lies between, and only a level or a reach there is a finding (louder is M064). A voice line (sounds/vo/), its file or its event, is not judged by its length: Valve's own voices fail that test against each other on 46% of shared lines (`magician corpus`)." },
     Rule { code: "M064", name: "sound-louder", severity: Severity::Warn,
         in_game: "A replaced sound plays louder, longer or carries further than Valve's. Not an advantage, but it pushes the hero over the game's mix and masks other players' cues." },
+    Rule { code: "M065", name: "sound-format-parity", severity: Severity::Warn,
+        in_game: "A replaced sound file has another sample rate or channel count than Valve's file at the same path (most of Valve's are mono, 44,100 Hz), said with both lengths and the pitch and volume the game's event plays it at. Modders report replaced sounds that come out sped up, much quieter or distorted, and some hero events raise the pitch; the cause is not settled (UNVERIFIED), so this is a warning to listen in game, not a fault. Encode it as Valve's is." },
     Rule { code: "M072", name: "light-cookie-texture", severity: Severity::Error,
         in_game: "A light cookie (gobo) the engine can't add to its light texture set, so the light renders without its pattern. The set takes BGRA8888 only ('Unable to AddTextureToSet(...): wrong format DXT1 - expected BGRA8888!') and copies a 512x512 mip ('... has no mip levels of size 512x512'). Valve's 15 cookies are all 512x512 BGRA8888: set m_outputFormat \"BGRA8888\" and author at 512." },
     Rule { code: "M073", name: "texture-not-pow2", severity: Severity::Warn,
@@ -117,8 +126,12 @@ pub const RULES: &[Rule] = &[
         in_game: "A replaced particle tree has more lights than Valve's, brighter or longer-range lights, a colour with more luminous output, or shadows switched on. Lights wash out the area around the hero and the people in it (Maid Lash's gobo at 2.7x)." },
     Rule { code: "M083", name: "particle-class-list", severity: Severity::Error,
         in_game: "A particle function sits in a list whose registry doesn't have its class: the game logs 'Function \"...\" not found while loading particle system'. A constraint (C_OP_WorldTraceConstraint) in m_Operators crashed the game outright: an access violation executing a null pointer in particles.dll the first time the effect played. Valve's 133 uses of that class all sit in m_Constraints." },
+    Rule { code: "M084", name: "particle-unreached", severity: Severity::Warn,
+        in_game: "A replaced particle that nothing in the game names: no hero, ability or item data, no model, clip, map, layout or other particle references it, the client code does not name it, and nothing in the mod does. The game never plays it, so the change does not show (a recolour of an unused file, found today with `dumpparticlelist` in a match). Valve ships thousands of such particles, many of them effects of older versions of abilities: 3,758 of 18,043 on 6877. The list is built by `magician index` with the users index; a particle the code builds a name for at run time cannot be seen here (UNVERIFIED)." },
     Rule { code: "M090", name: "shared-file", severity: Severity::Warn,
         in_game: "The game file this replaces is used by more than one hero, ability or item (Lash's Ground Strike icon is also Majestic Leap's). Replacing it changes all of them for everyone who installs the mod." },
+    Rule { code: "M092", name: "other-hero-file", severity: Severity::Warn,
+        in_game: "A mod that replaces one hero's model also replaces a file only another hero uses (read from the build's users index): everyone who installs it sees the other hero changed, though the mod is not about them. A template's sample image left in the addon changes another hero's icons this way. Files shared by several heroes are M090's." },
     Rule { code: "M091", name: "shared-file-unchecked", severity: Severity::Info,
         in_game: "Deep lint had no users index for this build (or one from an older Magician), so the files this mod replaces were not checked for other heroes, abilities or items that use them (M090). A shared file it replaces changes those too; unchecked is not clean. `magician index` builds the index, once per build." },
     // The mesh family (M100-M140, M145-M147): compiled models decoded natively, measured with the geometry kernel,
@@ -209,6 +222,8 @@ pub const RULES: &[Rule] = &[
         in_game: "Crunchy fabric: a cloth group that rings for many swings at or above the body's own rhythm (the compiled goal, damping and gravity judged as a damped oscillator at the solver's step) flutters like paper-thin silk the moment the hero moves, however heavy the mesh looks, and with no collision radius or shape on its layers it passes through the body. A group with no damper at all (vertex attraction 0, what a goal-0 joint compiles to) keeps the whole of its swing every step and never settles, however slowly it sways. Valve's own numbers are not blamed unless the mod hangs a bigger mesh on them." },
     Rule { code: "M142", name: "distance-field-dropped", severity: Severity::Warn,
         in_game: "Valve's model carries distance fields (one voxel grid per bone, the ambient occlusion the body casts on itself and the world) and ours has none or fewer: the model loses that occlusion and its contact shadowing, silently (a model built from a Source 2 Viewer decompile always drops them). Fair-play neutral: accept it with a reason in magician.allow." },
+    Rule { code: "M160", name: "physics-dropped", severity: Severity::Warn,
+        in_game: "Valve's model simulates cloth and ours has none, or Valve's carries physics parts (a hero's ragdoll, a prop's body) that ours lacks: the pieces Valve's cloth swings hang stiff, and when the model dies, falls or breaks the lost parts are not simulated (UNVERIFIED in game). A model built from a Source 2 Viewer decompile has no cloth, and its ragdoll joints are lost the same way; the compile says nothing. A skin's own cloth with other node counts is its design (M141 judges how it moves); only cloth gone altogether is said. Fair-play neutral: accept it with a reason in magician.allow." },
     Rule { code: "M143", name: "pbr-combo-invalid", severity: Severity::Error,
         in_game: "A pbr material whose static combo breaks the shader's own rules (F_SHEEN with F_DETAIL, F_GLASS, F_CLOAK, F_TRANSLUCENT, F_UNLIT; F_DETAIL with F_UNLIT; the status proxy without NPR, unlit or self-illum or with F_CLOAK; front-face normals without alpha test and backfaces): the compiler exits 0 and keeps the flags but silently drops the inputs of one feature (F_SHEEN + F_DETAIL loses g_tDetail), and the game has no such shader variant, so the material renders without it." },
     Rule { code: "M144", name: "fair-play-unchecked", severity: Severity::Warn,
@@ -244,10 +259,10 @@ pub const SEEN: &[&str] = &["on the hero", "effects, sound", "other heroes", "fr
 pub fn seen(code: &str) -> &'static str {
     let n: u32 = code.strip_prefix('M').and_then(|x| x.parse().ok()).unwrap_or(0);
     match n {
-        33 | 61..=64 | 72 | 81..=83 | 134 => "effects, sound",
-        90 | 91 => "other heroes",
+        33 | 61..=65 | 72 | 81..=84 | 134 => "effects, sound",
+        90..=92 => "other heroes",
         120 | 122 | 123 | 127 | 128 | 146 => "frame cost",
-        1 | 2 | 10 | 20 | 21 | 30 | 32 | 40 | 41 | 50..=52 | 70 | 71 => "loading",
+        1 | 2 | 10 | 20 | 21 | 30 | 32 | 40..=42 | 50..=52 | 70 | 71 => "loading",
         11..=13 | 31 | 60 | 100 | 144 => "the pak",
         _ => "on the hero",
     }
@@ -299,6 +314,18 @@ pub trait Game: Sync {
     /// What the game files are, for keys of cached results: changes whenever the installed game does.
     fn identity(&self) -> String {
         String::new()
+    }
+    /// The names the game's client code holds as strings (every NUL-terminated run of printable ASCII in the client
+    /// library): which attachments, panel ids and particles the game asks for by name. `None` when it can't be read:
+    /// then only the game's data says which those are.
+    fn code_names(&self) -> Option<&HashSet<String>> {
+        None
+    }
+    /// The particles nothing in the game names: no compiled file references them, no vdata, layout or map names them,
+    /// and the client code does not (`magician index` writes them beside the users index). `None` when there is no such
+    /// list for the build: then M084 can't run.
+    fn unreached_particles(&self) -> Option<&HashSet<String>> {
+        None
     }
 }
 
@@ -511,7 +538,10 @@ pub fn lint(input: &Input) -> Vec<Finding> {
                         }
                     }
                     if let Some(orig) = original {
-                        for t in orig {
+                        // a model's own animation skeleton and graphs are M062's (`gamedata::judge`), which reads them
+                        // from Valve's model whenever the game is there
+                        let contract_judges = |t: &str| ext == "vmdl_c" && input.game.is_some() && (t.ends_with(".vnmgraph_c") || t.ends_with(".vnmskel_c"));
+                        for t in orig.iter().filter(|t| !contract_judges(t)) {
                             // Dropping a reference Valve itself couldn't resolve costs nothing.
                             let resolvable = input.base.is_none_or(|b| b.contains(t)) || mod_paths.contains(t.as_str());
                             if resolvable && plays(p, t) && !mine.contains(t) {
@@ -749,6 +779,23 @@ fn deep_rules(input: &Input, referenced: &HashSet<String>, out: &mut Vec<Finding
     let mut cookie_seen: HashSet<String> = HashSet::new();
     // every event the game's sound-event files define, read once and only when a replaced event changed its base
     let game_events: std::cell::OnceCell<HashMap<String, Value>> = std::cell::OnceCell::new();
+    let all_events = || {
+        game_events.get_or_init(|| {
+            let mut m: HashMap<String, Value> = HashMap::new();
+            let mut files: Vec<&String> = input.base.map(|b| b.files.keys().filter(|k| k.starts_with("soundevents/") && k.ends_with(".vsndevts_c")).collect()).unwrap_or_default();
+            files.sort();
+            for path in files {
+                if let Some(Value::Object(evs)) = valve_kv(path) {
+                    for (k, v) in evs {
+                        m.entry(k).or_insert(v);
+                    }
+                }
+            }
+            m
+        })
+    };
+    // which of the game's events play each sound file, read once and only for a replaced sound encoded unlike Valve's
+    let players: std::cell::OnceCell<HashMap<String, Vec<(String, Option<f64>, Option<f64>)>>> = std::cell::OnceCell::new();
 
     // The model rules (contract and the mesh family) are the expensive part: each model's verdict is
     // computed (or read from the findings cache) up front, the models side by side, and the file loop below
@@ -805,6 +852,10 @@ fn deep_rules(input: &Input, referenced: &HashSet<String>, out: &mut Vec<Finding
                 if !replaces(p) {
                     continue;
                 }
+                // M084: a replaced particle nothing in the game, and nothing in the mod, names
+                if !referenced.contains(p) && input.game.and_then(|g| g.unreached_particles()).is_some_and(|u| u.contains(p)) {
+                    out.push(finding("M084", Some(p), "nothing in the game names this particle (no hero, ability or item data, no model, clip, map, layout or other particle, and not the client code), and nothing in the mod does: the game never plays it, so the change does not show; find the effect you meant with `dumpparticlelist` in a match, or with `magician refs` on the effect that plays".into()));
+                }
                 let Some(vk) = valve_kv(p) else {
                     if input.game.is_some() {
                         out.push(finding("M144", Some(p), "Valve's original at this path did not decode, so the particle's energy and lights were not compared (M081, M082)".into()));
@@ -834,22 +885,7 @@ fn deep_rules(input: &Input, referenced: &HashSet<String>, out: &mut Vec<Finding
                     }
                     continue;
                 };
-                let events = |n: &str| -> Option<Value> {
-                    let all = game_events.get_or_init(|| {
-                        let mut m: HashMap<String, Value> = HashMap::new();
-                        let mut files: Vec<&String> = input.base.map(|b| b.files.keys().filter(|k| k.starts_with("soundevents/") && k.ends_with(".vsndevts_c")).collect()).unwrap_or_default();
-                        files.sort();
-                        for path in files {
-                            if let Some(Value::Object(evs)) = valve_kv(path) {
-                                for (k, v) in evs {
-                                    m.entry(k).or_insert(v);
-                                }
-                            }
-                        }
-                        m
-                    });
-                    all.get(n).cloned()
-                };
+                let events = |n: &str| -> Option<Value> { all_events().get(n).cloned() };
                 let (less, more) = deep::sound_events(&kv, &vk, fp, &events);
                 less.into_iter().for_each(|m| out.push(finding("M063", Some(p), m)));
                 more.into_iter().for_each(|m| out.push(finding("M064", Some(p), m)));
@@ -866,6 +902,39 @@ fn deep_rules(input: &Input, referenced: &HashSet<String>, out: &mut Vec<Finding
                 let (less, more) = deep::vsnd_compare(&kv, &vk, fp, p.starts_with("sounds/vo/"));
                 less.into_iter().for_each(|m| out.push(finding("M063", Some(p), m)));
                 more.into_iter().for_each(|m| out.push(finding("M064", Some(p), m)));
+                // M065: another sample rate or channel count than Valve's, said with how the game's events play it
+                if deep::vsnd_format(&kv).zip(deep::vsnd_format(&vk)).is_some_and(|(a, b)| a.0 != b.0 || a.1 != b.1) {
+                    let index = players.get_or_init(|| {
+                        let mut m: HashMap<String, Vec<(String, Option<f64>, Option<f64>)>> = HashMap::new();
+                        for (name, e) in all_events() {
+                            for f in deep::vsnd_refs(e) {
+                                m.entry(f).or_default().push((name.clone(), e.get("pitch").and_then(Value::as_f64), e.get("volume").and_then(Value::as_f64)));
+                            }
+                        }
+                        m.values_mut().for_each(|v| v.sort_by(|a, b| a.0.cmp(&b.0)));
+                        m
+                    });
+                    if let Some(m) = deep::vsnd_format_parity(&kv, &vk, index.get(p).map(Vec::as_slice).unwrap_or(&[])) {
+                        out.push(finding("M065", Some(p), m));
+                    }
+                }
+            }
+            "vxml_c" if replaces(p) => {
+                let code = input.game.and_then(|g| g.code_names());
+                let Some((named, rest)) = game_read(p).and_then(|v| layout::missing(&f.data, &v, code)) else { continue };
+                let list = |v: &[String]| {
+                    let shown: Vec<&str> = v.iter().take(12).map(String::as_str).collect();
+                    if v.len() > 12 { format!("{} and {} more", shown.join(", "), v.len() - 12) } else { shown.join(", ") }
+                };
+                if !named.is_empty() {
+                    out.push(finding("M042", Some(p), format!("lacks {} element id(s) that Valve's layout on this build has and the game's client code asks for by name ({}): the game looks for them and cannot find them, so the HUD stops at launch ('Unable to find child') or that part of it stays blank (which, per id, is UNVERIFIED); rebuild the layout from Valve's current file and apply the mod's change to it again", named.len(), list(&named))));
+                }
+                if !rest.is_empty() {
+                    out.push(Finding {
+                        severity: Severity::Warn,
+                        ..finding("M042", Some(p), format!("lacks {} element id(s) that Valve's layout on this build has ({}): {}, but Valve's scripts may look them up, and those parts of the HUD then stop updating; rebuild the layout from Valve's current file and apply the mod's change to it again", rest.len(), list(&rest), if code.is_some() { "the game's client code does not name them, so the game should still start" } else { "the game's client library could not be read, so whether its code asks for them is not known" }))
+                    });
+                }
             }
             "vmat_c" => {
                 for m in pbrcombo::problems(&f.data) {
@@ -945,18 +1014,30 @@ fn deep_rules(input: &Input, referenced: &HashSet<String>, out: &mut Vec<Finding
                 out.push(finding("M091", None, format!("the {n} file(s) this mod replaces were not checked for other users (M090): {why}")));
             }
         }
+        let users_of = |p: &str| {
+            let mut u = g.users(p);
+            u.sort();
+            u.dedup();
+            u
+        };
+        // the heroes this mod is about: those whose model it replaces, read from the users index
+        let only_hero = |p: &str| Some(users_of(p)).filter(|u| u.len() == 1 && u[0].starts_with("hero_")).and_then(|mut u| u.pop());
+        let heroes: std::collections::BTreeSet<String> = input.files.iter().filter(|f| replaces(&f.path) && f.path.ends_with(".vmdl_c")).filter_map(|f| only_hero(&f.path)).collect();
         for f in &input.files {
             let p = f.path.as_str();
             if !replaces(p) {
                 continue;
             }
-            let mut users = g.users(p);
-            users.sort();
-            users.dedup();
+            let users = users_of(p);
             if users.len() >= 2 {
                 let shown: Vec<&str> = users.iter().take(8).map(String::as_str).collect();
                 let more = if users.len() > 8 { format!(" and {} more", users.len() - 8) } else { String::new() };
                 out.push(finding("M090", Some(p), format!("used by {} owners: {}{more}", users.len(), shown.join(", "))));
+            }
+            // M092: a file only another hero uses, in a mod about this one
+            if let Some(h) = only_hero(p).filter(|h| !heroes.is_empty() && !heroes.contains(h)) {
+                let ours: Vec<&str> = heroes.iter().map(String::as_str).collect();
+                out.push(finding("M092", Some(p), format!("used only by {h} in the game, and this mod replaces the model of {}: installing it changes {h} for everyone, which the mod is not about (a template's sample image left in the addon does this); remove it, unless the mod means to change {h} too", ours.join(", "))));
             }
         }
     }
@@ -1005,9 +1086,18 @@ fn model_findings(input: &Input, f: &ModFile, by_path: &HashMap<&str, &ModFile>,
                     by_path.contains_key(q)
                 };
                 let breaches = carry::judge(deep::contract_breaches(&a, &b), &f.data, valve, &game_read, &ships);
+                // the camera attachments the game names, held to Valve's numbers far tighter than the printed
+                // signature; one the contract already called changed or missing is not said twice
+                let cams = gamedata::camera_attachments(valve, &b, input.game.and_then(|g| g.code_names()));
+                let reported = |n: &str| breaches.iter().any(|m| m.starts_with(&format!("attachment '{n}' ")));
+                let cam = gamedata::camera_breaches(&f.data, valve, &cams, &reported);
                 for m in deep::judge_breaches(breaches, &f.data, valve) {
                     out.push(("M062", m));
                 }
+                out.extend(cam.into_iter().map(|m| ("M062", m)));
+                // the animation references and the game data blocks Deadlock reads from the model
+                let has = |n: &str| a.attachments.iter().any(|(k, _)| k == n);
+                out.extend(gamedata::judge(&f.data, valve, &has).into_iter().map(|m| ("M062", m)));
             }
             (a, _) => {
                 let whose = if a.is_none() { "the model's" } else { "Valve's model's" };
@@ -1038,6 +1128,8 @@ fn model_findings(input: &Input, f: &ModFile, by_path: &HashMap<&str, &ModFile>,
         if let Some(m) = distfield::unreadable(&f.data) {
             out.push(("M100", m));
         }
+        // M160: Valve's cloth or ragdoll parts that ours dropped
+        out.extend(physdrop::judge(&f.data, valve).into_iter().map(|m| ("M160", m)));
     }
     let ours_read = |q: &str| {
         if let Ok(mut d) = deps.lock() {

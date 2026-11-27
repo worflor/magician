@@ -35,6 +35,35 @@ pub struct GameFiles {
     pub identity: String,
     /// The addon content trees the mod was compiled from, for M032.
     pub addon_sources: Option<HashSet<String>>,
+    /// The game folder, and the names its client library holds, read the first time a rule asks (`code_names`).
+    pub game: std::path::PathBuf,
+    pub code: std::sync::OnceLock<Option<HashSet<String>>>,
+    /// The particles nothing in the game names, from beside the users index (M084).
+    pub unreached: Option<HashSet<String>>,
+}
+
+/// The client library of the game, where Deadlock's own code is: the Windows build's, else the Linux build's.
+pub fn client_library(game: &Path) -> Option<std::path::PathBuf> {
+    [game.join("citadel").join("bin").join("win64").join("client.dll"), game.join("citadel").join("bin").join("linuxsteamrt64").join("libclient.so")].into_iter().find(|p| p.is_file())
+}
+
+/// Every NUL-terminated run of 2 to 200 printable ASCII bytes in a library: the names its code asks for (an attachment,
+/// a panel id, a particle path), among every other string it holds.
+pub fn code_strings(bytes: &[u8]) -> HashSet<String> {
+    let mut out = HashSet::new();
+    let mut start = 0;
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == 0 {
+            let run = &bytes[start..i];
+            if (2..=200).contains(&run.len()) && run.iter().all(|c| (0x20..0x7f).contains(c)) {
+                out.insert(String::from_utf8_lossy(run).into_owned());
+            }
+            start = i + 1;
+        } else if !(0x20..0x7f).contains(&b) {
+            start = i + 1;
+        }
+    }
+    out
 }
 
 impl GameFiles {
@@ -70,7 +99,7 @@ impl GameFiles {
             })
             .collect::<Vec<_>>()
             .join(",");
-        GameFiles { paks, users, index_missing, particle_classes: None, material_params: None, identity, addon_sources: None }
+        GameFiles { paks, users, index_missing, particle_classes: None, material_params: None, identity, addon_sources: None, game: game.to_path_buf(), code: std::sync::OnceLock::new(), unreached: index.and_then(read_unreached) }
     }
 }
 
@@ -100,6 +129,12 @@ impl lint::Game for GameFiles {
     }
     fn identity(&self) -> String {
         self.identity.clone()
+    }
+    fn unreached_particles(&self) -> Option<&HashSet<String>> {
+        self.unreached.as_ref()
+    }
+    fn code_names(&self) -> Option<&HashSet<String>> {
+        self.code.get_or_init(|| client_library(&self.game).and_then(|p| std::fs::read(p).ok()).map(|b| code_strings(&b))).as_ref()
     }
 }
 
@@ -226,6 +261,8 @@ pub struct IndexStats {
     pub edges: usize,
     pub owners: usize,
     pub targets: usize,
+    /// Particles nothing in the game names (M084).
+    pub unreached: usize,
 }
 
 /// Build the users index for the installed build: reverse references over every compiled file, owners from
@@ -450,7 +487,72 @@ pub fn build_index(game: &Path, out: &Path, build: &str, src: &grade::footprint:
     text.push_str(&lines.join("\n"));
     text.push('\n');
     std::fs::write(out, text).map_err(|e| format!("{}: {e}", out.display()))?;
-    Ok(IndexStats { files: todo.len(), edges, owners: owner_set.len(), targets: lines.len() })
+
+    // The particles nothing in the game names, for M084: no reference from any compiled file (a model, a clip, another
+    // particle), no string of any vdata (`direct`), of a Panorama layout or of a map's entities and world, and not the
+    // client code. Valve ships thousands of them (3,758 of 18,043 on 6877), many of them effects of old versions of abilities.
+    let mut named: HashSet<String> = HashSet::new();
+    let strings_of = |d: &[u8], into: &mut HashSet<String>| {
+        if let Ok(r) = resource::parse(d) {
+            into.extend(lint::ref_targets(&r).into_iter().filter(|t| t.ends_with(".vpcf_c")));
+            for b in &r.blocks {
+                let bytes = resource::block_bytes(d, b);
+                if let Some(v) = resource::kv3::is_kv3(bytes).then(|| resource::kv3::decode(bytes).ok()).flatten() {
+                    into.extend(v.strings().into_iter().map(str::to_ascii_lowercase).filter(|s| s.ends_with(".vpcf")).map(|s| compiled(&s)));
+                }
+            }
+        }
+    };
+    // every vdata, whoever owns what it names: an ability of a hero the users index leaves out still names its effects
+    for (_, x) in heroes.members().iter().chain(abilities.members()) {
+        named.extend(named_files(x).into_iter().filter(|f| f.ends_with(".vpcf_c")));
+    }
+    let mut layouts: Vec<&vpk::Entry> = pak.entries.iter().filter(|e| e.path.ends_with(".vxml_c") || (e.path.ends_with(".vdata_c") && e.path != "scripts/heroes.vdata_c" && e.path != "scripts/abilities.vdata_c")).collect();
+    layouts.sort_by_key(|e| (e.archive_index, e.offset));
+    for e in layouts {
+        if let Ok(d) = pak.read(e) {
+            strings_of(&d, &mut named);
+        }
+    }
+    let mut maps: Vec<std::path::PathBuf> = std::fs::read_dir(game.join("citadel").join("maps")).map(|d| d.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "vpk")).collect()).unwrap_or_default();
+    maps.sort();
+    for m in maps {
+        let Ok(v) = vpk::Vpk::open(&m) else { continue };
+        let mut todo: Vec<&vpk::Entry> = v.entries.iter().filter(|e| e.path.ends_with(".vents_c") || e.path.ends_with(".vmap_c")).collect();
+        todo.sort_by_key(|e| (e.archive_index, e.offset));
+        for e in todo {
+            if let Ok(d) = v.read(e) {
+                strings_of(&d, &mut named);
+            }
+        }
+    }
+    let code = client_library(game).and_then(|p| std::fs::read(p).ok()).map(|b| code_strings(&b)).unwrap_or_default();
+    let mut unreached: Vec<&str> = pak
+        .entries
+        .iter()
+        .map(|e| e.path.as_str())
+        .filter(|p| p.ends_with(".vpcf_c") && !rev.contains_key(*p) && !direct.contains_key(*p) && !named.contains(*p))
+        .filter(|p| !code.contains(*p) && !code.contains(p.trim_end_matches("_c")))
+        .collect();
+    unreached.sort_unstable();
+    let mut text = format!("# magician unreached particles build={build} particles={}\n", unreached.len());
+    text.push_str(&unreached.join("\n"));
+    text.push('\n');
+    let up = unreached_path(out);
+    std::fs::write(&up, text).map_err(|e| format!("{}: {e}", up.display()))?;
+    Ok(IndexStats { files: todo.len(), edges, owners: owner_set.len(), targets: lines.len(), unreached: unreached.len() })
+}
+
+/// Where the particles nothing names are kept: beside the users index they were built with.
+pub fn unreached_path(index: &Path) -> std::path::PathBuf {
+    index.with_file_name("particles_unreached.tsv")
+}
+
+/// The particles nothing in the game names, from the file `magician index` writes beside the users index: `None` when
+/// it is not there.
+pub fn read_unreached(index: &Path) -> Option<HashSet<String>> {
+    let text = std::fs::read_to_string(unreached_path(index)).ok()?;
+    text.starts_with("# magician unreached particles ").then(|| text.lines().filter(|l| !l.starts_with('#') && !l.is_empty()).map(str::to_string).collect())
 }
 
 #[cfg(test)]
@@ -463,6 +565,14 @@ mod tests {
         assert_eq!(owner_by_token("sounds/vo/lash/lash_kill_wraith_01.vsnd_c", &t).map(String::as_str), Some("hero_lash"));
         assert_eq!(owner_by_token("particles/abilities/wraith/x.vpcf_c", &t).map(String::as_str), Some("hero_wraith"));
         assert_eq!(owner_by_token("particles/generic/splash.vpcf_c", &t), None, "whole words only");
+    }
+
+    #[test]
+    fn the_client_code_names_are_its_nul_terminated_strings() {
+        let lib = b"\x00standing_pivot\x00\x7f\x01x\x00GameTime\x00\x00a\x00\xffmuzzle\x00";
+        let s = code_strings(lib);
+        assert!(s.contains("standing_pivot") && s.contains("GameTime") && s.contains("muzzle"), "{s:?}");
+        assert!(!s.contains("a") && !s.contains("x"), "one byte is no name: {s:?}");
     }
 
     #[test]

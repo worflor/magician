@@ -489,6 +489,44 @@ pub fn vsnd_compare(ours: &Value, valve: &Value, fp: &crate::policy::FairPlay, v
     (less, more)
 }
 
+/// What a `.vsnd_c` CTRL block says the sound is: sample rate, channels, length in seconds.
+pub fn vsnd_format(ctrl: &Value) -> Option<(f64, f64, f64)> {
+    let s = ctrl.get("m_vSound")?;
+    let f = |k: &str| s.get(k).and_then(Value::as_f64);
+    Some((f("m_nRate")?, f("m_nChannels")?, f("m_flDuration").unwrap_or(0.0)))
+}
+
+/// M065: a replaced sound file whose sample rate or channel count differs from Valve's at the same path, with both
+/// lengths and how `events` (the game's events that play it: name, pitch, volume) play it. The community reports
+/// replaced sounds that come out sped up, quiet or distorted, and names no settled cause; Valve's own file is the
+/// format the event was tuned with, so the difference is said and a pass in game decides (`witness`).
+pub fn vsnd_format_parity(ours: &Value, valve: &Value, events: &[(String, Option<f64>, Option<f64>)]) -> Option<String> {
+    let ((or, oc, od), (vr, vc, vd)) = (vsnd_format(ours)?, vsnd_format(valve)?);
+    let mut diff = Vec::new();
+    if or != vr {
+        diff.push(format!("{} Hz, Valve's {} Hz", or, vr));
+    }
+    if oc != vc {
+        let ch = |n: f64| if n == 1.0 { "mono".to_string() } else if n == 2.0 { "stereo".to_string() } else { format!("{n} channels") };
+        diff.push(format!("{}, Valve's {}", ch(oc), ch(vc)));
+    }
+    if diff.is_empty() {
+        return None;
+    }
+    let played = match events.split_first() {
+        None => "no event of the game names it".to_string(),
+        Some(((name, pitch, volume), more)) => {
+            let n = |x: &Option<f64>| x.map_or("not set".to_string(), |v| format!("{v}"));
+            let others = if more.is_empty() { String::new() } else { format!(" (and {} more event(s))", more.len()) };
+            format!("the game plays it from {name} at pitch {}, volume {}{others}", n(pitch), n(volume))
+        }
+    };
+    Some(format!(
+        "{}; {od:.2} s long, Valve's {vd:.2} s; {played}: a sound encoded unlike Valve's can play sped up, quiet or distorted in game (reported by modders, cause not settled: UNVERIFIED); encode it as Valve's is, or hear it in game",
+        diff.join(", ")
+    ))
+}
+
 // ------------------------------------------------------------------------------------------ models
 // (quaternion canonical form is tested in tests.rs: m062_quaternion_sign_is_not_a_change)
 
@@ -754,11 +792,12 @@ pub fn judge_breaches(breaches: Vec<String>, ours: &[u8], valve: &[u8]) -> Vec<S
 }
 
 /// The severity of a contract finding (M062): a cosmetic move of an attachment on the body, and a lost or reparented
-/// bone whose loss or new parent changes nothing a player sees (`carry::judge`), are warnings; every other breach keeps the rule's own,
-/// an error.
+/// bone whose loss or new parent changes nothing a player sees (`carry::judge`), and a game-data difference the model
+/// still plays with (`gamedata::STILL_PLAYS`), are warnings; every other breach keeps the rule's own, an error.
 pub fn contract_severity(message: &str) -> crate::Severity {
     if (message.starts_with("attachment '") && message.contains(&format!("; {COSMETIC_MOVE}, ")))
         || (message.starts_with("bone '") && message.ends_with(crate::carry::NOTHING_CHANGES))
+        || (message.starts_with("game data: ") && message.ends_with(crate::gamedata::STILL_PLAYS))
     {
         crate::Severity::Warn
     } else {

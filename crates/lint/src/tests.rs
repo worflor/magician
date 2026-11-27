@@ -44,12 +44,12 @@ fn clean() -> Vec<ModFile> {
 /// Codes every fixture below proves. Checked against RULES so a rule can't be added without one.
 const PROVEN: &[&str] = &[
     "M001", "M002", "M010", "M011", "M012", "M020", "M021", "M030", "M031", "M040", "M041", "M050", "M061", "M070", "M071", "M051", "M052", "M060",
-    "M013", "M032", "M033", "M062", "M063", "M064", "M072", "M073", "M081", "M082", "M083", "M090", "M091",
+    "M013", "M032", "M033", "M042", "M062", "M063", "M064", "M065", "M072", "M073", "M081", "M082", "M083", "M084", "M090", "M091", "M092",
     // the mesh family: fixtures in mesh_fixtures.rs
     "M100", "M101", "M102", "M103", "M104", "M105", "M106", "M107", "M108", "M109", "M110", "M111", "M112", "M113",
     "M114", "M115", "M116", "M117", "M118", "M119", "M120", "M121", "M122", "M123", "M124", "M125", "M126", "M127",
     "M128", "M129", "M130", "M131", "M132", "M133", "M134", "M135", "M136", "M137", "M138", "M139", "M140",
-    "M141", "M142", "M143", "M144", "M145", "M146", "M147", "M148", "M149", "M150", "M151",
+    "M141", "M142", "M143", "M144", "M145", "M146", "M147", "M148", "M149", "M150", "M151", "M160",
 ];
 
 #[path = "mesh_fixtures.rs"]
@@ -367,6 +367,10 @@ struct Fake {
     sources: Option<std::collections::HashSet<String>>,
     /// Set: the game has no users index to read (`users_unchecked`).
     no_index: Option<String>,
+    /// The names the game's client code holds (`code_names`).
+    code: Option<std::collections::HashSet<String>>,
+    /// The particles nothing in the game names (`unreached_particles`).
+    unreached: Option<std::collections::HashSet<String>>,
 }
 impl Game for Fake {
     fn read(&self, path: &str) -> Option<Vec<u8>> {
@@ -386,6 +390,12 @@ impl Game for Fake {
     }
     fn users_unchecked(&self) -> Option<String> {
         self.no_index.clone()
+    }
+    fn code_names(&self) -> Option<&std::collections::HashSet<String>> {
+        self.code.as_ref()
+    }
+    fn unreached_particles(&self) -> Option<&std::collections::HashSet<String>> {
+        self.unreached.as_ref()
     }
 }
 
@@ -910,6 +920,213 @@ fn m062_compiler_cloth_nodes_are_not_contract() {
     assert!(f.iter().any(|x| x.code == "M062" && x.message.contains("bone 'pelvis' missing")), "{f:?}");
 }
 
+/// Valve's game data for the hero fixture, as Haze's model writes it on 6875 (shortened): the unit status on the
+/// `healthbar` attachment, one tagged-sound set, the camera, the camera poses and a bone constraint list.
+const GAMEDATA: &str = r#"<!-- kv3 encoding:text:version{e21c7f3c-8a33-41c5-9977-a76d3a32aa0d} format:vmdlkeys4:version{9f5c1002-f19f-470c-bd42-c3c26c063d33} -->
+{
+    CitadelUnitStatusSettings_t = { m_vUnitStatusOffset = [ 10.0, 0.0, 0.0 ] m_vHealthbarOffset = [ 0.0, 0.0, 0.0 ] m_vDamageNumbersOffset = [ 0.0, 15.0, 82.0 ] m_vStatusEffectsOffset = [ 0.0, 0.0, 0.0 ] m_strUnitStatusAttachmentName = "healthbar" }
+    TaggedSoundSettings_t = { m_taggedSounds = [ resource:"scripts/tagged_sounds/haze_anim_sounds.vdata" ] }
+    CitadelCameraSettings_t = { m_flCameraSideOffset = -34.0 m_flCameraBackOffset = 103.0 m_flCameraHeightStanding = 86.0 }
+    AttachmentCameraData = [ { camera_name = "" attachment_name = "near_00" screen_width = 1920 screen_height = 1080 fov = 90 } ]
+    BoneConstraintList = [ ]
+}"#;
+
+/// A hero model with game data `gd` (none when empty), animation skeleton `skel`, graphs `graphs` (identifier, path),
+/// and two attachments on the root: the camera pose `near_00` turned `near_deg` about z, and `standing_pivot` turned
+/// `pivot_deg`, and a `healthbar` on the head.
+fn hero(gd: &str, skel: &[&str], graphs: &[(&str, &str)], near_deg: f64, pivot_deg: f64) -> Vec<u8> {
+    use resource::kv3::Value as V;
+    let s = |x: &str| V::Str(x.to_string());
+    let mut data = vec![
+        ("m_name".to_string(), s("x")),
+        ("m_modelSkeleton".to_string(), V::Object(vec![("m_boneName".into(), V::Array(vec![s("root_motion"), s("pelvis"), s("head")])), ("m_nParent".into(), V::Array(vec![V::Int(-1), V::Int(0), V::Int(1)]))])),
+        ("m_vecNmSkeletonRefs".to_string(), V::Array(skel.iter().map(|x| s(x)).collect())),
+        ("m_animGraph2Refs".to_string(), V::Array(graphs.iter().map(|(i, g)| V::Object(vec![("m_sIdentifier".into(), s(i)), ("m_hGraph".into(), s(g))])).collect())),
+    ];
+    if !gd.is_empty() {
+        data.push(("m_modelInfo".to_string(), V::Object(vec![("m_keyValueText".into(), s(gd))])));
+    }
+    let q = |deg: f64| {
+        let h = deg.to_radians() / 2.0;
+        format!("[ 0.0, 0.0, {}, {} ]", h.sin(), h.cos())
+    };
+    let att = |name: &str, bone: &str, at: &str, rot: &str| format!(r#"{{ key = "{name}" value = {{ m_name = "{name}" m_influenceNames = [ "{bone}", "", "" ] m_vInfluenceOffsets = [ {at}, [ 0, 0, 0 ], [ 0, 0, 0 ] ] m_vInfluenceRotations = [ {rot}, [ 0, 0, 0, 1 ], [ 0, 0, 0, 1 ] ] m_nInfluences = 1 }} }}"#);
+    let mesh = kv(&format!(
+        r#"{{ _class = "CRenderMesh" m_attachments = [ {}, {}, {} ] }}"#,
+        att("near_00", "root_motion", "[ -16.1, -16.1, 86.25 ]", &q(near_deg)),
+        att("standing_pivot", "root_motion", "[ 0.0, 0.0, 86.2 ]", &q(pivot_deg)),
+        att("healthbar", "head", "[ 0.0, 0.0, 10.0 ]", "[ 0, 0, 0, 1 ]"),
+    ));
+    res_kv(&[], &[(b"DATA", V::Object(data)), (b"MDAT", mesh)])
+}
+
+const HERO_SKEL: &str = "models/heroes_staging/haze/haze.vnmskel";
+const HERO_GRAPHS: &[(&str, &str)] = &[("", "animgraphs/animgraph2/hero/hero.vnmgraph+haze.vnmgraph"), ("ui", "animgraphs/animgraph2/hero/hero_ui.vnmgraph+haze.vnmgraph")];
+
+/// The M062 findings of a hero fixture against Valve's (the full one), with `code` as the client's names.
+fn hero_findings(ours: Vec<u8>, code: Option<&[&str]>) -> Vec<Finding> {
+    let mut g = game();
+    with(&mut g, &[MODEL]);
+    let mut fake = Fake::default();
+    fake.files.insert(MODEL.into(), hero(GAMEDATA, &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0));
+    fake.code = code.map(|c| c.iter().map(|s| s.to_string()).collect());
+    run_game(vec![file(MODEL, ours)], &g, &fake).into_iter().filter(|x| x.code == "M062").collect()
+}
+
+#[test]
+fn m062_reads_the_hero_s_game_data_against_valve_s() {
+    // Valve's own model against itself: nothing
+    assert!(hero_findings(hero(GAMEDATA, &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0), Some(&["standing_pivot"])).is_empty());
+    // the same data written by another compile (other order, integers for floats, an identifier in capitals, keys
+    // Valve's has not): the same contract
+    let reworded = GAMEDATA.replace("m_flCameraSideOffset = -34.0 m_flCameraBackOffset = 103.0", "m_flCameraBackOffset = 103 m_flCameraSideOffset = -34 m_vCameraParrotOffset = [ -10, -10, 10 ]");
+    let caps: Vec<(&str, &str)> = vec![HERO_GRAPHS[0], ("UI", HERO_GRAPHS[1].1)];
+    assert!(hero_findings(hero(&reworded, &[HERO_SKEL], &caps, 90.0, 90.0), None).is_empty(), "{:?}", hero_findings(hero(&reworded, &[HERO_SKEL], &caps, 90.0, 90.0), None));
+
+    // a CSDK 12 compile: the unit status written as a list. The health bar at the feet: an error
+    let list = GAMEDATA.replace("CitadelUnitStatusSettings_t = {", "CitadelUnitStatusSettings_t = [ {").replace("\"healthbar\" }", "\"healthbar\" } ]");
+    let f = hero_findings(hero(&list, &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0), None);
+    assert!(f.len() == 1 && f[0].message.contains("is a list") && f[0].message.contains("feet") && f[0].severity == Severity::Error, "{f:?}");
+    // the tagged sounds gone: footsteps silent, a hidden cue (fair play: `rubric::is_fair_play` reads "tagged sounds")
+    let silent = GAMEDATA.replace(r#"TaggedSoundSettings_t = { m_taggedSounds = [ resource:"scripts/tagged_sounds/haze_anim_sounds.vdata" ] }"#, "");
+    let f = hero_findings(hero(&silent, &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0), None);
+    assert!(f.len() == 1 && f[0].message.starts_with("tagged sounds: ") && f[0].message.contains("footsteps") && f[0].message.contains("haze_anim_sounds.vdata") && f[0].severity == Severity::Error, "{f:?}");
+    // an older build's unit status: no attachment, the bar 95 units over the origin. It plays, placed otherwise: a warning
+    let old = GAMEDATA.replace("m_vUnitStatusOffset = [ 10.0, 0.0, 0.0 ]", "m_vUnitStatusOffset = [ 0.0, 0.0, 95.0 ]").replace(r#"m_strUnitStatusAttachmentName = "healthbar""#, "");
+    let f = hero_findings(hero(&old, &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0), None);
+    assert!(f.len() == 1 && f.iter().all(|x| x.severity == Severity::Warn && x.message.ends_with(gamedata::STILL_PLAYS)), "{f:?}");
+    assert!(f.iter().any(|x| x.message.contains("does not follow the unit when it crouches")) && f.iter().any(|x| x.message.contains("m_vUnitStatusOffset [0, 0, 95] (Valve's [10, 0, 0])")), "{f:?}");
+    // the bar on an attachment the model does not have: at the origin, an error
+    let gone = GAMEDATA.replace(r#""healthbar""#, r#""overhead""#);
+    let f = hero_findings(hero(&gone, &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0), None);
+    assert!(f.iter().any(|x| x.message.contains("'overhead', which the model does not have") && x.severity == Severity::Error), "{f:?}");
+    // a camera further back: fair play (`rubric::is_fair_play` reads "camera settings")
+    let far = GAMEDATA.replace("m_flCameraBackOffset = 103.0", "m_flCameraBackOffset = 125.0");
+    let f = hero_findings(hero(&far, &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0), None);
+    assert!(f.len() == 1 && f[0].message.starts_with("camera settings: m_flCameraBackOffset 125 (Valve's 103)"), "{f:?}");
+    // another block Valve's model has and ours lacks: a warning that names what falls back
+    let f = hero_findings(hero(&GAMEDATA.replace("BoneConstraintList = [ ]", ""), &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0), None);
+    assert!(f.len() == 1 && f[0].severity == Severity::Warn && f[0].message.contains("helper bones"), "{f:?}");
+    // no game data at all: every block of Valve's is said
+    let f = hero_findings(hero("", &[HERO_SKEL], HERO_GRAPHS, 90.0, 90.0), None);
+    assert_eq!(f.len(), 5, "{f:?}");
+
+    // the A-pose: no animation skeleton, or the match graph gone
+    let f = hero_findings(hero(GAMEDATA, &[], HERO_GRAPHS, 90.0, 90.0), None);
+    assert!(f.len() == 1 && f[0].message.contains("A-pose") && f[0].severity == Severity::Error, "{f:?}");
+    let f = hero_findings(hero(GAMEDATA, &[HERO_SKEL], &HERO_GRAPHS[1..], 90.0, 90.0), None);
+    assert!(f.len() == 1 && f[0].message.contains("does not animate in a match"), "{f:?}");
+    let f = hero_findings(hero(GAMEDATA, &[HERO_SKEL], &HERO_GRAPHS[..1], 90.0, 90.0), None);
+    assert!(f.len() == 1 && f[0].message.contains("hero page"), "{f:?}");
+}
+
+#[test]
+fn m062_holds_the_camera_attachments_the_game_names_to_valve_s_numbers() {
+    // A Source 2 Viewer older than 20.0 wrote a pivot of -90 degrees as -89.972 (1.7e-4 in the rotation), which the
+    // printed contract's 0.01 passes: the camera pose is off, an error
+    let f = hero_findings(hero(GAMEDATA, &[HERO_SKEL], HERO_GRAPHS, 89.972, 90.0), None);
+    assert!(f.len() == 1 && f[0].message.starts_with("attachment 'near_00' (a camera pose") && f[0].message.contains("turned 0.028 degrees") && f[0].severity == Severity::Error, "{f:?}");
+    // what a round trip of Valve's numbers leaves (6.1e-5 on the community corpus) is not a change
+    assert!(hero_findings(hero(GAMEDATA, &[HERO_SKEL], HERO_GRAPHS, 90.007, 90.0), None).is_empty());
+    // a pivot in the hero's frame the client code names is held as tightly; one the code does not name keeps the
+    // contract's own step
+    let f = hero_findings(hero(GAMEDATA, &[HERO_SKEL], HERO_GRAPHS, 90.0, 89.972), Some(&["standing_pivot"]));
+    assert!(f.len() == 1 && f[0].message.contains("'standing_pivot' (held in the hero's own frame and named by the game's client code)"), "{f:?}");
+    assert!(hero_findings(hero(GAMEDATA, &[HERO_SKEL], HERO_GRAPHS, 90.0, 89.972), None).is_empty());
+    // turned further, the contract itself says it changed, once
+    let f = hero_findings(hero(GAMEDATA, &[HERO_SKEL], HERO_GRAPHS, 80.0, 90.0), Some(&["standing_pivot"]));
+    assert!(f.len() == 1 && f[0].message.starts_with("attachment 'near_00' changed"), "{f:?}");
+}
+
+/// A compiled Panorama layout whose panels carry `ids`, as the layout compiler writes its tree (a LaCo block).
+fn layout(ids: &[&str]) -> Vec<u8> {
+    let panels: Vec<String> = ids
+        .iter()
+        .map(|id| format!(r#"{{ eType = "PANEL" name = "Panel" child = {{ eType = "PANEL_ATTRIBUTE" name = "id" child = {{ eType = "PANEL_ATTRIBUTE_VALUE" name = "{id}" }} }} }}"#))
+        .collect();
+    let tree = kv(&format!(r#"{{ m_AST = {{ m_pRoot = {{ eType = "ROOT" vecChildren = [ {{ eType = "PANEL" name = "Panel" vecChildren = [ {} ] }} ] }} }} }}"#, panels.join(", ")));
+    resource::synth_with(&[], &[(*b"LaCo", resource::kv3::encode(&tree))])
+}
+
+#[test]
+fn m042_a_replaced_layout_lacks_an_id_valve_s_current_one_has() {
+    // Real shape (a HUD mod made before a patch, 6877): the top bar's copy lacks GameTime, which the client code asks
+    // for by name, and ScoreCounter, which it does not name
+    const HUD: &str = "panorama/layout/citadel_hud_top_bar.vxml_c";
+    let mut g = game();
+    with(&mut g, &[HUD]);
+    let mut fake = Fake::default();
+    fake.files.insert(HUD.into(), layout(&["TopBar", "GameTime", "ScoreCounter"]));
+    fake.code = Some(["GameTime".to_string(), "TopBar".to_string()].into());
+    let f = run_game(vec![file(HUD, layout(&["TopBar", "MyClock"]))], &g, &fake);
+    let m042: Vec<&Finding> = f.iter().filter(|x| x.code == "M042").collect();
+    assert_eq!(m042.len(), 2, "{f:?}");
+    let err = m042.iter().find(|x| x.severity == Severity::Error).expect("the id the code names");
+    assert!(err.message.contains("(GameTime)") && err.message.contains("Unable to find child") && !err.message.contains("ScoreCounter"), "{}", err.message);
+    let warn = m042.iter().find(|x| x.severity == Severity::Warn).expect("the id it does not");
+    assert!(warn.message.contains("(ScoreCounter)") && warn.message.contains("does not name them"), "{}", warn.message);
+    // every id of Valve's kept, ids of the mod's own added: nothing
+    assert!(run_game(vec![file(HUD, layout(&["TopBar", "GameTime", "ScoreCounter", "MyClock"]))], &g, &fake).iter().all(|x| x.code != "M042"));
+    // Valve's layout against itself: nothing
+    assert!(run_game(vec![file(HUD, layout(&["TopBar", "GameTime", "ScoreCounter"]))], &g, &fake).iter().all(|x| x.code != "M042"));
+    // with no client library to read, nothing is an error, and the warning says why
+    fake.code = None;
+    let f = run_game(vec![file(HUD, layout(&["TopBar"]))], &g, &fake);
+    assert!(f.iter().filter(|x| x.code == "M042").all(|x| x.severity == Severity::Warn && x.message.contains("could not be read")), "{f:?}");
+    // an older compile keeps the XML text in DATA: its ids are read too
+    let old = resource::synth_with(&[], &[(*b"DATA", br#"<root><Panel id="TopBar"><Label id="GameTime" /></Panel></root>"#.to_vec())]);
+    assert_eq!(layout::ids(&old), Some(BTreeSet::from(["TopBar".to_string(), "GameTime".to_string()])));
+}
+
+/// A compiled sound with the CTRL block the sound compiler writes: rate, channels, length.
+fn vsnd(rate: u32, channels: u32, seconds: f64) -> Vec<u8> {
+    resource::synth_with(&[], &[(*b"CTRL", resource::kv3::encode(&kv(&format!("{{ _class = \"CVoiceContainerDefault\" m_vSound = {{ m_nRate = {rate} m_nFormat = \"MP3\" m_nChannels = {channels} m_flDuration = {seconds} }} }}"))))])
+}
+
+#[test]
+fn m065_a_replaced_sound_encoded_unlike_valve_s() {
+    // Real shape (a voice pack, 6877): Valve's line mono at 44,100 Hz, the mod's stereo at 48,000; the event that plays
+    // it raises the pitch
+    const SND: &str = "sounds/vo/haze/haze_select_01.vsnd_c";
+    const EV: &str = "soundevents/vo/haze.vsndevts_c";
+    let mut g = game();
+    with(&mut g, &[SND, EV]);
+    let mut fake = Fake::default();
+    fake.files.insert(SND.into(), vsnd(44100, 1, 2.5));
+    fake.files.insert(EV.into(), res_kv(&[], &[(b"DATA", kv(r#"{ Haze.Select = { pitch = 1.1 volume = 0.8 vsnd_files = [ "sounds/vo/haze/haze_select_01.vsnd" ] } }"#))]));
+    let f = run_game(vec![file(SND, vsnd(48000, 2, 2.5))], &g, &fake);
+    let m: Vec<&Finding> = f.iter().filter(|x| x.code == "M065").collect();
+    assert!(m.len() == 1 && m[0].severity == Severity::Warn, "{f:?}");
+    assert!(m[0].message.starts_with("48000 Hz, Valve's 44100 Hz, stereo, Valve's mono; 2.50 s long, Valve's 2.50 s; the game plays it from Haze.Select at pitch 1.1, volume 0.8"), "{}", m[0].message);
+    // Valve's format, another take: nothing (its length is M063's and M064's)
+    assert!(run_game(vec![file(SND, vsnd(44100, 1, 2.5))], &g, &fake).iter().all(|x| x.code != "M065"));
+}
+
+/// A model with only a PHYS block: a ragdoll of `parts` and, when `nodes` is not 0, a cloth of that many nodes.
+fn physics(parts: &[&str], nodes: usize) -> Vec<u8> {
+    let names: Vec<String> = parts.iter().map(|p| format!("\"{p}\"")).collect();
+    let cloth = if nodes > 0 { format!("m_pFeModel = {{ m_CtrlName = [ {} ] m_nNodeCount = {nodes} m_nStaticNodes = 0 }}", (0..nodes).map(|i| format!("\"cloth_{i}\"")).collect::<Vec<_>>().join(", ")) } else { String::new() };
+    res_kv(&[], &[(b"DATA", kv(r#"{ m_name = "x" }"#)), (b"PHYS", kv(&format!("{{ m_boneNames = [ {} ] {cloth} }}", names.join(", "))))])
+}
+
+#[test]
+fn m160_valve_s_cloth_or_ragdoll_dropped() {
+    // Real shapes (community skins, 6877): a decompiled hero with no cloth where Valve's has 252 nodes; a ragdoll one
+    // part short
+    let mut g = game();
+    with(&mut g, &[MODEL]);
+    let mut fake = Fake::default();
+    fake.files.insert(MODEL.into(), physics(&["pelvis", "spine_1", "head"], 3));
+    let f = run_game(vec![file(MODEL, physics(&["pelvis", "head"], 0))], &g, &fake);
+    let m: Vec<&Finding> = f.iter().filter(|x| x.code == "M160").collect();
+    assert_eq!(m.len(), 2, "{f:?}");
+    assert!(m.iter().any(|x| x.message.contains("simulates cloth (3 nodes) and ours has none")), "{m:?}");
+    assert!(m.iter().any(|x| x.message.contains("physics of 3 parts (its ragdoll, or a prop's body) and ours lacks 1 of them (spine_1)")), "{m:?}");
+    // Valve's own physics, and a skin's own cloth of another size: nothing
+    assert!(run_game(vec![file(MODEL, physics(&["pelvis", "spine_1", "head"], 3))], &g, &fake).iter().all(|x| x.code != "M160"));
+    assert!(run_game(vec![file(MODEL, physics(&["pelvis", "spine_1", "head", "tail"], 40))], &g, &fake).iter().all(|x| x.code != "M160"));
+}
+
 const GOBO: &str = "materials/maid_lash/fx/lace_gobo.vtex";
 const LIGHT: &str = "particles/abilities/lash/final_strike_impact_light.vpcf_c";
 
@@ -1039,6 +1256,49 @@ fn m090_shared_file() {
     assert!(f[0].message.contains("upgrade_rocket_booster"));
     fake.users.insert(icon.into(), vec!["hero_lash".into()]);
     assert!(run_game(files, &g, &fake).is_empty(), "one owner: the hero's own file");
+}
+
+#[test]
+fn m092_a_hero_mod_replaces_another_hero_s_file() {
+    // Real case (the community's error pages): a template's sample image left in a skin's addon changes another
+    // hero's icon. Here a Lash skin carries Haze's card.
+    let card = "panorama/images/heroes/haze_card_psd.vtex_c";
+    let mut g = game();
+    with(&mut g, &[card]);
+    let mut fake = Fake::default();
+    fake.users.insert(MODEL.into(), vec!["hero_lash".into()]);
+    fake.users.insert(card.into(), vec!["hero_haze".into()]);
+    fake.users.insert(TEX.into(), vec!["hero_lash".into()]);
+    let skin = |extra: &str| vec![file(MODEL, res(&[])), file(TEX, tex(128, 128, 28)), file(extra, tex(128, 128, 28))];
+    let f = run_game(skin(card), &g, &fake);
+    let m: Vec<&Finding> = f.iter().filter(|x| x.code == "M092").collect();
+    assert!(m.len() == 1 && m[0].path.as_deref() == Some(card) && m[0].message.contains("used only by hero_haze") && m[0].message.contains("model of hero_lash"), "{f:?}");
+    // the hero's own files, and a mod that replaces no hero's model (a UI pack of every hero's cards), say nothing
+    assert!(run_game(skin(TEX), &g, &fake).iter().all(|x| x.code != "M092"));
+    assert!(run_game(vec![file(card, tex(128, 128, 28)), file(TEX, tex(128, 128, 28))], &g, &fake).iter().all(|x| x.code != "M092"));
+}
+
+#[test]
+fn m084_a_replaced_particle_nothing_plays() {
+    // Real shape (6877): Valve ships 3,758 particles nothing names, and skins recolour some of them
+    let old = "particles/abilities/lash/lash_ultimate_locked_aura.vpcf_c";
+    let mut g = game();
+    with(&mut g, &[old]);
+    let mut fake = Fake { files: valve_pcf(old), ..Default::default() };
+    fake.unreached = Some([old.to_string()].into());
+    let f = run_game(vec![file(old, pcf(&[]))], &g, &fake);
+    assert!(f.iter().any(|x| x.code == "M084" && x.message.contains("never plays it") && x.severity == Severity::Warn), "{f:?}");
+    // the mod's own particle names it: it plays
+    let parent = "particles/abilities/lash/lash_flog.vpcf_c";
+    with(&mut g, &[parent]);
+    fake.files.extend(valve_pcf(parent));
+    let f = run_game(vec![file(old, pcf(&[])), file(parent, pcf(&["particles/abilities/lash/lash_ultimate_locked_aura.vpcf"]))], &g, &fake);
+    assert!(f.iter().all(|x| x.code != "M084"), "{f:?}");
+    // a particle the game names, and a build with no list: nothing
+    fake.unreached = Some(std::collections::HashSet::new());
+    assert!(run_game(vec![file(old, pcf(&[]))], &g, &fake).iter().all(|x| x.code != "M084"));
+    fake.unreached = None;
+    assert!(run_game(vec![file(old, pcf(&[]))], &g, &fake).iter().all(|x| x.code != "M084"));
 }
 
 #[test]

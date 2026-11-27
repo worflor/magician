@@ -147,8 +147,9 @@ pub const VALVE_MESH_SHARE: f64 = 0.98;
 
 // ---------------------------------------------------------------------------------------------------- compliance
 
-/// The fair-play rules: what they find sets compliance, never the description. M062 counts only for hitboxes (a lost
-/// bone or attachment is the mod not working: a lint error, so `broken`).
+/// The fair-play rules: what they find sets compliance, never the description. M062 counts only for hitboxes, the
+/// model's camera settings (what a player can see around the hero) and its tagged sounds (footsteps enemies listen
+/// for); a lost bone or attachment is the mod not working: a lint error, so `broken`.
 pub const FAIR_PLAY_RULES: &[&str] = &["M062", "M063", "M081", "M082", "M124", "M129", "M130", "M131", "M140"];
 /// Never allowable: anything that makes an enemy harder to read, or removes or weakens a gameplay cue. A finding of
 /// one of these fails fair play whatever an allowance says.
@@ -159,9 +160,9 @@ pub const ADVISORY: &[&str] = &["M081", "M130"];
 /// The rule that says a fair-play check could not run: it makes fair play unknown, and no allowance changes that.
 pub const UNCHECKED: &str = "M144";
 
-/// Whether a finding is a fair-play finding (M062 only for hitboxes).
+/// Whether a finding is a fair-play finding (M062 only for hitboxes, camera settings and tagged sounds).
 pub fn is_fair_play(code: &str, message: &str) -> bool {
-    FAIR_PLAY_RULES.contains(&code) && (code != "M062" || message.starts_with("hitbox"))
+    FAIR_PLAY_RULES.contains(&code) && (code != "M062" || ["hitbox", "camera settings", "tagged sounds"].iter().any(|k| message.starts_with(k)))
 }
 
 /// Whether a finding belongs to the compliance axis at all (fair play, or a fair-play check that could not run). Such
@@ -802,6 +803,9 @@ mod tests {
     fn which_findings_are_fair_play() {
         assert!(is_fair_play("M129", "x") && is_fair_play("M140", "x") && is_fair_play("M062", "hitbox 'default/head' changed"));
         assert!(!is_fair_play("M062", "bone 'pelvis' missing"), "a lost bone is the mod not working");
+        assert!(is_fair_play("M062", "camera settings: m_flCameraBackOffset 125 (Valve's 111): the third-person camera sits elsewhere"), "what a player sees around the hero");
+        assert!(is_fair_play("M062", "tagged sounds: TaggedSoundSettings_t missing"), "silent footsteps are a hidden cue");
+        assert!(!is_fair_play("M062", "game data: CitadelUnitStatusSettings_t is a list"), "a health bar at the feet is the mod not working");
         assert!(!is_fair_play("M061", "x") && is_compliance("M144", "x"));
     }
 
