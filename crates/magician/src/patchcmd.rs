@@ -522,7 +522,8 @@ pub fn cmd_patchday(args: &[String]) -> R {
 /// ledger holds for the mod's owners, as installed now (owner, name, crc, sha256), or the files `--pak` names (a
 /// release copy proven earlier), and the session folder the pass was written into. The build is also added to
 /// `[proven] builds`, the summary a person reads. Refused, with nothing written, when the mod has no installed file,
-/// or what is installed is not what the install ledger says it installed.
+/// what is installed is not what the install ledger says it installed, or these bytes were proven on an earlier build
+/// and their drift from it to this one is broken (only new bytes fix a break; `proven_before`).
 pub fn cmd_prove(args: &[String]) -> R {
     let usage = "prove <mod.toml> [--build <build>] [--date YYYY-MM-DD] [--evidence DIR] [--pak FILE]...";
     let p = positional(args);
@@ -540,6 +541,8 @@ pub fn cmd_prove(args: &[String]) -> R {
         None => mark::scheme::date_text(mark::scheme::today()),
     };
     let named = flags(args, "--pak");
+    // the paks among the files, where they are, for the drift a proof must answer to (below)
+    let mut pak_paths: Vec<PathBuf> = Vec::new();
     let files: Vec<proofs::FileId> = if named.is_empty() {
         let g = game.as_ref().map_err(|e| Stop::Usage(format!("{e}; pass --pak FILE to prove files that are not installed")))?;
         let owners = ctx.owners();
@@ -552,15 +555,43 @@ pub fn cmd_prove(args: &[String]) -> R {
                 g.display()
             )));
         }
+        let addons = install::Paths { citadel: g.join("citadel") }.addons();
+        pak_paths.extend(files.iter().filter(|f| install::is_pak_name(&f.file)).map(|f| addons.join(crate::build::native(&f.file))));
         files
     } else {
         let mut v = Vec::new();
         for n in &named {
             let path = Path::new(n);
             v.push(proofs::named(path, &ctx.owner_for(path, game.as_deref().ok())).map_err(|e| Stop::Usage(format!("--pak {e}")))?);
+            pak_paths.push(path.to_path_buf());
         }
         v
     };
+    // A proof answers a re-prove, never a break. If these bytes were proven on an earlier build and their drift from
+    // it to this one is broken (a bone they use renamed, a replaced original removed, a contract lost), no look in
+    // game makes the bytes right, and recording one would make the next drift start past the break: refused.
+    let mut ledger = proofs::Ledger::for_toml(&ctx.toml)?;
+    let mut drift_json: Option<String> = None;
+    let mut drift_note: Option<String> = None;
+    if let Some(from) = proven_before(&ledger.bound(&proofs::shas(&files)), &build).cloned() {
+        let here = installed.as_deref() == Some(build.as_str());
+        let gf = game.as_ref().ok().filter(|_| here).map(|g| gamefiles::GameFiles::open(g, None));
+        let j = jsonout::Obj::new().str("from", &from).str("to", &build);
+        match mod_drift(&pak_paths, &from, &build, gf.as_ref()) {
+            Ok(md) if md.bad() > 0 => {
+                return Err(Stop::Refused(format!(
+                    "{}: these bytes were proven on {from}, and their contract broke between {from} and {build}: {}. A proof on {build} would not make them work: a look in game answers a re-prove, and a break is fixed only by new bytes (rebuild against build {build}, install, run the pass, prove those). Nothing was recorded",
+                    ctx.label(),
+                    md.broken_text(3)
+                )));
+            }
+            Ok(md) => drift_json = Some(j.str("state", md.state()).int("changed", md.changed() as i64).int("rig", md.rig() as i64).build()),
+            Err(e) => {
+                drift_note = Some(format!("not compared with {from}, the build these bytes were proven on before: {e}"));
+                drift_json = Some(j.str("state", "unknown").str("why", &e).build());
+            }
+        }
+    }
     let evidence = match flag(args, "--evidence") {
         None => None,
         Some(e) => {
@@ -576,7 +607,6 @@ pub fn cmd_prove(args: &[String]) -> R {
     let text = std::fs::read_to_string(&ctx.toml).map_err(|e| format!("{}: {e}", ctx.toml.display()))?;
     // The summary first, so a mod.toml it cannot be written into refuses before anything changes.
     let summary = patchday::add_proven(&text, &build)?;
-    let mut ledger = proofs::Ledger::for_toml(&ctx.toml)?;
     let before = ledger.text();
     let id = ledger.add(&build, &date, &files, evidence.as_ref().map(|(p, s)| (p.as_str(), s.as_deref()))).map_err(Stop::Refused)?;
     let lpath = ctx.toml.with_file_name(proofs::FILE);
@@ -607,6 +637,9 @@ pub fn cmd_prove(args: &[String]) -> R {
     if let Some(i) = installed.as_ref().filter(|i| **i != build) {
         say!("  note: build {build} is not the installed build {i}: recorded as given");
     }
+    if let Some(n) = &drift_note {
+        say!("  note: {n}");
+    }
     say!("  these bytes are proven on {}; [proven] builds lists {}{}", binding.bound_text(), claimed.join(", "), if binding.unbound().is_empty() { String::new() } else { format!("; {}", binding.unbound_note()) });
     if json_mode() {
         let rows = files.iter().map(|f| jsonout::Obj::new().str("owner", &f.owner).str("file", &f.file).str("crc", &f.crc).str("sha256", &f.sha256).build());
@@ -623,6 +656,7 @@ pub fn cmd_prove(args: &[String]) -> R {
             .opt_str("evidence_sha256", evidence.as_ref().and_then(|(_, s)| s.as_deref()))
             .strs("proven", &binding.bound)
             .strs("unbound", &binding.unbound())
+            .raw("drift", drift_json.unwrap_or_else(|| "null".into()))
             .build();
         outln!("{doc}");
     }

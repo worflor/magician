@@ -439,10 +439,30 @@ fn a_break_only_drift_sees_survives_a_proof_of_the_same_bytes_on_the_new_build()
     let (code, doc) = check_doc(&d, &ts, &game);
     assert_eq!(code, Some(1), "{doc}");
     assert!(doc.contains("\"verdict\":\"broken\"") && doc.contains("{\"step\":\"drift\",\"state\":\"broken\",\"from\":\"6864\",\"to\":\"6865\",\"problems\":1,"), "{doc}");
-    // a proof of the same bytes on 6865: the proof is real, and the break is still there
-    let ledger = std::fs::read_to_string(d.join("proofs.tsv")).unwrap();
+    // prove refuses a proof of these bytes on 6865: no look in game fixes a break, and a proof would move the next
+    // drift past it. Nothing is written.
+    let (ledger, manifest) = (std::fs::read_to_string(d.join("proofs.tsv")).unwrap(), std::fs::read_to_string(&toml).unwrap());
     let o = magician(&d, &["prove", &ts, "--game", &game, "--date", "2026-11-26"]);
-    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    println!("prove, exit {:?}:\n{}\n", o.status.code(), String::from_utf8_lossy(&o.stderr).trim_end().replace(&*d.to_string_lossy(), "<scratch>"));
+    assert_eq!(o.status.code(), Some(3), "{}", text(&o));
+    assert!(text(&o).contains("mod-a: these bytes were proven on 6864, and their contract broke between 6864 and 6865: models/heroes/x/x.vnmskel_c: bone 'spine_1' is now 'spine_1_renamed' (renamed)"), "{}", text(&o));
+    assert!(text(&o).contains("a break is fixed only by new bytes") && text(&o).contains("Nothing was recorded"), "{}", text(&o));
+    assert_eq!(std::fs::read_to_string(d.join("proofs.tsv")).unwrap(), ledger, "the ledger is unchanged");
+    assert_eq!(std::fs::read_to_string(&toml).unwrap(), manifest, "[proven] builds is unchanged");
+    let o = magician(&d, &["prove", &ts, "--game", &game, "--json"]);
+    assert!(o.status.code() == Some(3) && String::from_utf8_lossy(&o.stdout).starts_with("{\"schema\":\"magician.error/1\""), "{}", text(&o));
+    // a proof of the same bytes on 6865 made where 6864's baseline is not on record (another machine, an older
+    // Magician), merged in: prove says it could not compare, and the proof is real; the break is still there
+    let elsewhere = Command::new(env!("CARGO_BIN_EXE_magician"))
+        .args(["prove", &ts, "--game", &game, "--date", "2026-11-26"])
+        .env("MAGICIAN_REFERENCE", d.join("elsewhere"))
+        .env("MAGICIAN_CONFIG", d.join("config.txt"))
+        .env("MAGICIAN_NO_CACHE", "1")
+        .env_remove("MAGICIAN_POLICY")
+        .output()
+        .unwrap();
+    assert_eq!(elsewhere.status.code(), Some(0), "{}", text(&elsewhere));
+    assert!(text(&elsewhere).contains("note: not compared with 6864, the build these bytes were proven on before: no baseline for build 6864"), "{}", text(&elsewhere));
     assert_ne!(std::fs::read_to_string(d.join("proofs.tsv")).unwrap(), ledger);
     let (code, doc) = check_doc(&d, &ts, &game);
     assert_eq!(code, Some(1), "{doc}");
@@ -466,8 +486,9 @@ fn a_break_only_drift_sees_survives_a_proof_of_the_same_bytes_on_the_new_build()
     let (code, doc) = check_doc(&d, &ts, &game);
     assert_eq!(code, Some(4), "{doc}");
     assert!(doc.contains("\"verdict\":\"re-prove\"") && doc.contains("{\"step\":\"drift\",\"state\":\"re-prove\",\"from\":\"6864\",\"to\":\"6865\",\"problems\":0,\"changed\":1,"), "{doc}");
-    let o = magician(&d, &["prove", &ts, "--game", &game, "--date", "2026-11-26"]);
-    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let o = magician(&d, &["prove", &ts, "--game", &game, "--date", "2026-11-26", "--json"]);
+    assert_eq!(o.status.code(), Some(0), "a re-prove is what a proof answers: {}", text(&o));
+    assert!(String::from_utf8_lossy(&o.stdout).contains("\"drift\":{\"from\":\"6864\",\"to\":\"6865\",\"state\":\"re-prove\",\"changed\":1,\"rig\":0}"), "{}", text(&o));
     let (code, doc) = check_doc(&d, &ts, &game);
     assert_eq!(code, Some(0), "{doc}");
     assert!(doc.contains("\"verdict\":\"ok\"") && doc.contains("{\"step\":\"drift\",\"state\":\"current\",\"from\":\"6864\",\"to\":\"6865\",\"proven_here\":true,\"compared\":\"re-prove\",\"problems\":0,\"changed\":1,"), "{doc}");
