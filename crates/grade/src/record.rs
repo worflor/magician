@@ -1,7 +1,7 @@
 //! The grade record: a measured claim about separate properties of a mod, and the label that projects it.
 //!
 //! ```text
-//! <Kind> (<groups>)[ · broken][ · freeform | · fair play not checked][ · stale(<last proven build>) | · unproven]
+//! <Kind> (<groups>)[ · broken] · ranked-safe | · freeform | · fair play not checked[ · stale(<last proven build>) | · unproven]
 //! not graded (<kind>)[ · broken][ · freeform | · fair play not checked][ · stale(<build>) | · unproven]
 //! ```
 //!
@@ -168,13 +168,14 @@ impl<'a> Record<'a> {
     }
 }
 
-/// The marks after the description, in label order: `broken`, fair play's, freshness's.
-fn marks(i: &Inputs) -> Vec<String> {
+/// The marks after the description, in label order: `broken`, fair play's, freshness's. A mod that is not a hero
+/// mod carries no `ranked-safe`: fair play's word is about how a hero reads.
+fn marks(i: &Inputs, graded: bool) -> Vec<String> {
     let mut m = Vec::new();
     if i.lint.broken() {
         m.push("broken".to_string());
     }
-    m.extend(i.fair_play.state.mark().map(str::to_string));
+    m.extend(i.fair_play.state.mark().filter(|w| graded || *w != "ranked-safe").map(str::to_string));
     m.extend(i.freshness.mark());
     m
 }
@@ -194,7 +195,7 @@ pub fn build(i: Inputs) -> Record {
         (Some(r), _) => format!("{} ({})", identity::word(i.identity.kind), r.description()),
         (None, kind) => format!("not graded ({})", kind.as_deref().unwrap_or("not a hero mod")),
     };
-    for m in marks(&i) {
+    for m in marks(&i, description.is_some()) {
         label.push_str(&format!(" · {m}"));
     }
     let mut blockers = Vec::new();
@@ -619,11 +620,11 @@ mod tests {
     #[test]
     fn a_complete_cleared_current_costume_says_so_and_passes_the_gate() {
         Case::complete().run(|r| {
-            assert_eq!(r.label, "Costume (look, effects, sound)");
+            assert_eq!(r.label, "Costume (look, effects, sound) · ranked-safe");
             assert!(r.gate_passes(), "{:?}", r.blockers);
             let j = r.json();
             assert!(j.starts_with("{\"schema\":\"magician.grade/3\",\"rules_version\":\"3.1.0\",\"toolchain\":\"magician test\",\"deadlock_build\":6864,"), "{j}");
-            assert!(j.contains("\"label\":\"Costume (look, effects, sound)\"}") && j.contains("\"release_gate\":{\"pass\":true,\"blockers\":[],\"warnings\":[]}"), "{j}");
+            assert!(j.contains("\"label\":\"Costume (look, effects, sound) · ranked-safe\"}") && j.contains("\"release_gate\":{\"pass\":true,\"blockers\":[],\"warnings\":[]}"), "{j}");
             assert!(j.contains("\"broken\":false,\"description\":{\"kind\":\"Costume\",\"rubric\":\"character\",\"says\":\"look, effects, sound\",\"groups\":[{\"id\":\"look\",\"state\":\"covered\",\"coverage\":1,\"criteria\":[\"model\",\"materials\",\"ui\",\"scenes\"],\"counted\":\"model, materials, UI art, scenes\"}"), "{j}");
             assert!(!j.contains("\"letter\"") && !j.contains("\"score\":9") && !j.contains("\"caps\""), "no letter, no overall score: {j}");
             assert_eq!(j, r.json(), "the record is deterministic");
@@ -636,12 +637,12 @@ mod tests {
     fn a_new_character_is_an_echo_whatever_it_has_made_its_own() {
         let mut c = Case::complete();
         c.signals = renamed();
-        c.run(|r| assert_eq!(r.label, "Echo (look, effects, sound)"));
+        c.run(|r| assert_eq!(r.label, "Echo (look, effects, sound) · ranked-safe"));
         let mut c = Case::complete();
         c.signals = renamed();
         c.paths.retain(|p| !p.contains("strike") && !p.contains("/vo/"));
         c.run(|r| {
-            assert_eq!(r.label, "Echo (look, some effects)");
+            assert_eq!(r.label, "Echo (look, some effects) · ranked-safe");
             let t = r.text(&|m| m.to_string());
             assert!(t.contains("  effects  Valve's ability VFX, animation\n  sound    Valve's\n"), "{t}");
             assert!(r.json().contains("\"identity\":{\"kind\":\"new\",\"signals\":[\"renamed\",\"new_hero_art\"],\"score\":2,\"required\":2"), "{}", r.json());
@@ -653,17 +654,17 @@ mod tests {
         let mut c = Case::complete();
         c.findings = vec![finding("M030", "needs 'x'")];
         c.run(|r| {
-            assert_eq!(r.label, "Costume (look, effects, sound) · broken");
+            assert_eq!(r.label, "Costume (look, effects, sound) · broken · ranked-safe");
             assert!(r.broken() && r.json().contains("\"broken\":true"), "{}", r.json());
             let t = r.text(&|m| format!("<{m}>"));
-            assert!(t.contains("  label: Costume (look, effects, sound) · <broken>\n"), "{t}");
+            assert!(t.contains("  label: Costume (look, effects, sound) · <broken> · <ranked-safe>\n"), "{t}");
             assert!(t.contains("<broken>: 1 lint error(s) that are not fair play (M030 x1): something won't load in game"), "{t}");
         });
         // a dropped dependency is a warning: a plain note, not a flag
         let mut c = Case::complete();
         c.findings = vec![finding("M061", "drops 'x'")];
         c.run(|r| {
-            assert_eq!(r.label, "Costume (look, effects, sound)");
+            assert_eq!(r.label, "Costume (look, effects, sound) · ranked-safe");
             assert!(r.text(&|m| m.to_string()).contains("  note: 1 dropped dependency (M061): effects or sounds of Valve's originals that no longer play\n"));
             assert!(r.json().contains("\"notes\":[\"1 dropped dependency (M061)"), "{}", r.json());
         });
@@ -755,14 +756,14 @@ mod tests {
         let mut c = Case::complete();
         c.target = "6865";
         c.run(|r| {
-            assert_eq!(r.label, "Costume (look, effects, sound) · stale(6864)");
+            assert_eq!(r.label, "Costume (look, effects, sound) · ranked-safe · stale(6864)");
             assert!(r.blockers.contains(&"freshness: not proven on 6865 (last proven on 6864)".to_string()), "{:?}", r.blockers);
             assert!(r.json().contains("\"freshness\":{\"proven\":[6864],\"last_proven\":6864,\"target\":6865,\"current\":false,\"unbound\":[]}"), "{}", r.json());
         });
         let mut c = Case::complete();
         c.proven = vec![];
         c.run(|r| {
-            assert_eq!(r.label, "Costume (look, effects, sound) · unproven");
+            assert_eq!(r.label, "Costume (look, effects, sound) · ranked-safe · unproven");
             assert!(r.text(&|m| format!("<{m}>")).contains("target 6864 (<unproven>)"));
             assert!(r.blockers.iter().any(|b| b.contains("no proven build on record")));
         });

@@ -65,10 +65,11 @@ impl State {
             State::Unknown => "fair play not checked",
         }
     }
-    /// The label's mark: `freeform`, `fair play not checked` or nothing (a ranked-safe skin adds no mark).
+    /// The label's mark: `ranked-safe`, `freeform` or `fair play not checked`. Every graded skin carries one, so a
+    /// player who cares reads it from the label either way.
     pub fn mark(self) -> Option<&'static str> {
         match self {
-            State::Pass => None,
+            State::Pass => Some("ranked-safe"),
             State::Fail => Some("freeform"),
             State::Unknown => Some("fair play not checked"),
         }
@@ -281,7 +282,7 @@ mod tests {
         let r = judge(&[], &[], Depth::Deep, Applicable { models: true, particles: true, sounds: true }, &Policy::default());
         assert_eq!(r.state, State::Pass);
         assert_eq!(r.checks_run, vec!["M062", "M063", "M081", "M082", "M124", "M129", "M130", "M131", "M140", "M152"]);
-        assert_eq!(r.state.mark(), None);
+        assert_eq!(r.state.mark(), Some("ranked-safe"));
     }
 
     #[test]

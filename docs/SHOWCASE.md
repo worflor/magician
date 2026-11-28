@@ -16,13 +16,13 @@ Deadlock Mod Manager from [its page](https://woflo.dev/deadlock-skins/maid-lash/
 `magician publish nexus` put it on [Nexus Mods](https://www.nexusmods.com/deadlock/mods/20).
 
 ```
-maid-lash: ok  Costume (look, effects, sound)  (build 6868)
+maid-lash: ok  Costume (look, effects, sound) · ranked-safe  (build 6868)
   lint   warn   0 error(s), 40 warning(s), 4 allowed (deep; fair play pass)
          on the hero    M111 floating-shell x8, M102 open-sheet-void x6, M108 z-fighting x5, M113 uv-degenerate x3, M104 normals-flipped x1, M105 degenerate-triangles x1, M107 backface-shading x1, M109 self-intersection x1, M110 shell-intersection x1, M117 skin-influences x1, M118 skin-distant-bone x1, M125 seam-crack x1, M136 albedo-range x1, M148 default-slot-literal x1
          frame cost     M122 lod-budget x2, M123 mesh-budget x1
          the pak        M100 mesh-unchecked x1
          advisory       M081 particle-energy x3, M130 hitbox-envelope-wide x1 (fair play's advisories: reported, never a violation)
-  grade  ok     Costume (look, effects, sound) for Lash (Costume: the same character, a new model); release gate pass
+  grade  ok     Costume (look, effects, sound) · ranked-safe for Lash (Costume: the same character, a new model); release gate pass
   proof  ok     these bytes proven on 6868; 6864, 6865, 6866 (claimed for other bytes or never recorded)
   drift  ok     proven on 6868, the installed build
   scene  ok     lash: the stock map matches the patch
@@ -86,12 +86,12 @@ Viscous, except a long-haired calico has got into the diving suit. The goo is mi
 new character on Viscous's rig, 468 files, and it is not released yet.
 
 ```
-loops-viscous: ok  Echo (look, effects, sound)  (build 6868)
+loops-viscous: ok  Echo (look, effects, sound) · ranked-safe  (build 6868)
   lint   warn   0 error(s), 17 warning(s), 14 allowed (deep; fair play pass)
          on the hero    M102 open-sheet-void x6, M107 backface-shading x1, M113 uv-degenerate x1, M125 seam-crack x1, M136 albedo-range x1
          other heroes   M090 shared-file x4
          frame cost     M122 lod-budget x2, M123 mesh-budget x1
-  grade  ok     Echo (look, effects, sound) for Viscous (Echo: a new character); release gate pass
+  grade  ok     Echo (look, effects, sound) · ranked-safe for Viscous (Echo: a new character); release gate pass
   proof  ok     these bytes proven on 6868
   drift  ok     proven on 6868, the installed build
   scene  ok     viscous: the stock map matches the patch

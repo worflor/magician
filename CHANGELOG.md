@@ -2,6 +2,10 @@
 
 Newest first. Each release says whether the lint rules, the grading rubric or the built-in policy changed, since that is what `magician update --check` tells you to re-run `lint` and `grade` for. The measurements behind each judgement change are in [docs/research/rule-calibration-6871.md](docs/research/rule-calibration-6871.md).
 
+## Unreleased
+
+- A ranked-safe skin's grade label says `· ranked-safe`, as a freeform one says `· freeform`.
+
 ## 0.4.0 (2026-11-27)
 
 **Judgement changed in the lint rules (91 rules, revision 9) and the grading rubric (M152 is fair play).** Run `magician index` once on each build, then `lint` and `check` on every mod.

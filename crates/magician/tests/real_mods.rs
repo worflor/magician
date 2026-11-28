@@ -136,7 +136,7 @@ fn maid_lash_is_a_costume_of_look_effects_and_sound_with_its_m140_allowance_list
     // This test is about the released pak. A rebuild installed while it is being worked on has no proof yet, so its
     // label and gate carry `unproven`: not this test's subject.
     need!((!r.contains("\"freshness\":{\"proven\":[]")).then_some(()), "the installed maid_lash pak has no proof on record (a rebuild under test)");
-    assert!(r.contains("\"label\":\"Costume (look, effects, sound)\""), "{r}");
+    assert!(r.contains("\"label\":\"Costume (look, effects, sound) · ranked-safe\""), "{r}");
     assert!(r.contains("\"broken\":false") && !r.contains("\"letter\"") && !r.contains("\"caps\""), "{r}");
     assert!(r.contains("\"identity\":{\"kind\":\"same\""), "Valve's head, still Lash: {r}");
     assert!(r.contains("\"fair_play\":{\"state\":\"pass\""), "{r}");
@@ -150,7 +150,7 @@ fn maid_lash_is_a_costume_of_look_effects_and_sound_with_its_m140_allowance_list
     assert_eq!(record(std::slice::from_ref(&pak), &toml, Some(&allow), None), r);
     // with only --mod the grade finds the mod's own allowance file: the same label, not an unexplained freeform
     let found = record(std::slice::from_ref(&pak), &toml, None, None);
-    assert!(found.contains("\"label\":\"Costume (look, effects, sound)\"") && found.contains("\"fair_play\":{\"state\":\"pass\",\"name\":\"ranked-safe\""), "{found}");
+    assert!(found.contains("\"label\":\"Costume (look, effects, sound) · ranked-safe\"") && found.contains("\"fair_play\":{\"state\":\"pass\",\"name\":\"ranked-safe\""), "{found}");
 
     // A policy that moves the M140 allowance limit: just under the bell's worst point it is freeform; at it, or just over,
     // the allowance holds. The record names the policy by fingerprint.
