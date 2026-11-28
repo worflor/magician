@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/vpk", "crates/resource", "crates/mesh", "crates/geom", "crates/lint", "crates/grade", "crates/expr", "crates/mark", "crates/magician", "crates/fuzz"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/worflor/magician"   # where `magician update` looks for releases when no source is set
