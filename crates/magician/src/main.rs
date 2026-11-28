@@ -120,9 +120,9 @@ either is not there):
                                                 that needs it gets a vanilla pass (when the build has no baseline) and
                                                 its own pass, and one report gives each a state (exit 0 ready, 4 look,
                                                 1 failed); `accept` records a pass that was looked at with `prove`
-  magician bundle <bundle.json> [--zip] [--out DIR]
+  magician bundle <bundle.json> [--zip] [--out DIR] [--target divine]
                                                 tools/bundle.py: a player release bundle (mod-interchange.json, files,
-                                                previews, the scene installers); `magician bundle --help`
+                                                previews, the scene installers), or a Divine Skins kit; `magician bundle --help`
   magician source <source.json> [--out DIR] [--prune]
                                                 tools/source.py: a static Deadlock Mod Manager mod source from bundles;
                                                 `magician source --help`

@@ -131,7 +131,7 @@ Everything goes through `magician`. The parts written in Python run through it t
 |---|---|---|
 | `magician session qa --mod <folder> --out <dir>` | `ingame/mod_session.py` | a mod's in-game session: seat, install, launch, scenarios, takes, stop, contact sheets (`up`, `run`, `film`, `down`, `all`, `qa`) |
 | `magician reprove [--plan]`, `magician reprove accept <pass>` | `ingame/reprove.py` | patch day in game: every mod that needs a re-prove gets its pass, one report says where to look; `accept` records a pass that was looked at |
-| `magician bundle <bundle.json> [--zip]` | `tools/bundle.py` | a player release bundle with `mod-interchange.json` and the scene installers |
+| `magician bundle <bundle.json> [--zip] [--target divine]` | `tools/bundle.py` | a player release bundle with `mod-interchange.json` and the scene installers; `--target divine`, a Divine Skins upload kit ([docs/reference/divine-skins.md](docs/reference/divine-skins.md)) |
 | `magician source <source.json>` | `tools/source.py` | a static Deadlock Mod Manager mod source, with its pages, from bundles |
 | `magician publish nexus <bundle.json> [--dry-run]` | `tools/publish.py` | a bundle's zip onto a Nexus Mods page made on the site (its first file, then a version per release; `--page` sets its text), past the release gate ([docs/reference/nexus-mods.md](docs/reference/nexus-mods.md)) |
 
@@ -448,7 +448,7 @@ docs/     design, status, the showcase, the patch-day runbook, engine and publis
 - [docs/TDD.md](docs/TDD.md): how it is built.
 - [docs/PATCH-DAY.md](docs/PATCH-DAY.md): the patch-day runbook.
 - [docs/reference/engine.md](docs/reference/engine.md): the Deadlock, compiler and Source 2 Viewer facts Magician relies on.
-- [docs/reference/mod-source.md](docs/reference/mod-source.md): publishing through Deadlock Mod Manager from your own site. [docs/reference/nexus-mods.md](docs/reference/nexus-mods.md): publishing to Nexus Mods.
+- [docs/reference/mod-source.md](docs/reference/mod-source.md): publishing through Deadlock Mod Manager from your own site. [docs/reference/nexus-mods.md](docs/reference/nexus-mods.md): publishing to Nexus Mods. [docs/reference/divine-skins.md](docs/reference/divine-skins.md): an upload kit for Divine Skins.
 - [docs/STATUS.md](docs/STATUS.md): current state and loose ends. [CHANGELOG.md](CHANGELOG.md): history.
 - [CONTRIBUTING.md](CONTRIBUTING.md): working inside the repository.
 

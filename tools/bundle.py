@@ -1,6 +1,6 @@
 """Assemble a release bundle for mod managers from a bundle.json spec. Python stdlib plus Pillow (previews only).
 
-    python bundle.py <bundle.json> [--out DIR] [--zip] [--magician EXE] [--no-valve-check]
+    python bundle.py <bundle.json> [--out DIR] [--zip] [--target dmm|divine] [--magician EXE] [--no-valve-check]
 
 The bundle is a folder a player can import into Deadlock Mod Manager (it reads mod-interchange.json,
 https://docs.deadlockmods.app/developer-docs/mod-interchange) or copy by hand:
@@ -42,6 +42,23 @@ and every source exists; no path lives in two paks unless listed in `allowed_ove
 byte-identical to Valve's file at the same path (crc against pak01_dir.vpk), so a Valve file can never ride along.
 Only compiled mod paks are bundled. The bundle is built beside `out` and swapped in when it is complete, and an
 existing `out` is replaced only when it is a bundle (it holds mod-interchange.json) or empty.
+
+--target divine writes a Divine Skins upload kit instead (docs/reference/divine-skins.md), from the spec's `divine`
+block and the same paks, after the same pak checks. Into `divine.out` (or --out):
+
+    <zip>.zip        the upload: the paks and readme.txt at the top level, nothing else (Divine takes no scripts, so
+                     no scene; under 300 MB)
+    thumbnail.jpg    16:9, 1920x1080 when the source allows, never under 960x540
+    gallery/NN-<name>.jpg   at least two in-game screenshots; renders only as extras, labelled
+    description.md   the page text, for Divine's Markdown editor
+    listing.txt      every form field in the form's order, ready to paste, with the AI answers
+    SHA256SUMS.txt
+
+divine keys: out, title, category (default "Hero Skins"), hero, theme, features [..], tags [..], license (default
+"CC BY-NC 4.0"), file_name (default "Main"), zip, thumbnail {src, crop}, gallery [{src, crop, out, caption,
+kind: "game"|"render"}], youtube, short, description (a Markdown file), conflicts, tested, readme_notes [..],
+links [{label, url}], changelog [{tag: added|fixed|changed|removed|improved, text}], ai {art, models, sound, voice,
+code, text, page: none|helped|partly|mostly; tools [Divine's ids, e.g. "claude"]; tools_other; notes [..]}.
 """
 import datetime, hashlib, json, os, re, shutil, subprocess, sys, zipfile, zlib
 
@@ -133,7 +150,7 @@ def plain_name(v):
     return isinstance(v, str) and v not in ("", ".", "..") and not re.search(r'[/\\:\x00-\x1f]', v)
 
 
-def check_spec(spec, base, args):
+def check_spec(spec, base, args, target="dmm"):
     """Everything the bundle will read, before anything is written: a spec that fails later would leave a half-built
     bundle where the last good one was."""
     if not isinstance(spec, dict):
@@ -169,8 +186,231 @@ def check_spec(spec, base, args):
             datetime.date.fromisoformat(spec["date"])
         except (TypeError, ValueError):
             sys.exit(f"date {spec['date']!r} is not YYYY-MM-DD")
-    if "out" not in spec and "--out" not in args:
+    out = spec.get("divine", {}).get("out") if target == "divine" and isinstance(spec.get("divine"), dict) else spec.get("out")
+    if out is None and "--out" not in args:
         sys.exit("the spec has no out and no --out was given")
+
+
+# Divine Skins, read from its wiki, Content Rules and upload form (2026-11-27): docs/reference/divine-skins.md.
+DIVINE_MAX_ZIP = 300 * 1000 * 1000          # "up to 300 MB"; the decimal reading, so a kit never sits on the edge
+DIVINE_THUMB_MIN = (960, 540)
+DIVINE_GALLERY_MAX = 5 * 1024 * 1024        # the form refuses a gallery image over 5 MB, other images over 10 MB
+DIVINE_THUMB_MAX = 10 * 1024 * 1024
+DIVINE_AREAS = (("art", "Art"), ("models", "Models"), ("sound", "Sound"), ("voice", "Voice"), ("code", "Code"),
+                ("text", "Text"), ("page", "Mod page"))
+DIVINE_LEVELS = {"none": "No AI", "helped": "AI helped", "partly": "Partly AI-made", "mostly": "Mostly AI-made"}
+DIVINE_TOOLS = {"chatgpt": "ChatGPT", "claude": "Claude", "gemini": "Gemini", "copilot": "GitHub Copilot",
+                "cursor": "Cursor", "midjourney": "Midjourney", "stable_diffusion": "Stable Diffusion / Flux",
+                "firefly": "Adobe Firefly / Generative Fill", "nano_banana": "Nano Banana", "leonardo": "Leonardo",
+                "meshy": "Meshy", "tripo": "Tripo", "hunyuan3d": "Hunyuan3D", "topaz": "Topaz",
+                "upscayl": "Upscayl / ESRGAN", "elevenlabs": "ElevenLabs", "rvc": "RVC", "suno": "Suno",
+                "stable_audio": "Stable Audio", "other": "Other"}
+DIVINE_TAGS = ("added", "fixed", "changed", "removed", "improved")
+
+
+def check_divine(spec, base):
+    """The `divine` block, before anything is written: what Divine's form or review would refuse is refused here."""
+    d = spec.get("divine")
+    if not isinstance(d, dict):
+        sys.exit("--target divine needs a divine block in the spec")
+    for k in ("title", "short", "description", "thumbnail", "gallery", "ai"):
+        if not d.get(k):
+            sys.exit(f"divine needs {k}")
+    if not os.path.isfile(resolve(base, d["description"])):
+        sys.exit(f"divine description {resolve(base, d['description'])} does not exist")
+    if d.get("zip") is not None and not plain_name(d["zip"]):
+        sys.exit(f"divine zip {d['zip']!r} must be a plain name")
+    release = str(spec.get("release") or spec["version"])
+    if len(release) > 32 or re.search(r"[<>\x00-\x1f]", release):
+        sys.exit(f"version {release!r}: Divine takes 32 characters at most, without < or >")
+    imgs = [d["thumbnail"]] + list(d["gallery"])
+    for im in imgs:
+        if not isinstance(im, dict) or not os.path.isfile(resolve(base, str(im.get("src", "")))):
+            sys.exit(f"each divine image needs a src that exists: {im!r}")
+    for g in d["gallery"]:
+        if g.get("kind") not in ("game", "render"):
+            sys.exit(f"each gallery image is kind game or render: {g!r}")
+        if g.get("out") is not None and not plain_name(g["out"]):
+            sys.exit(f"gallery out {g['out']!r} must be a plain name")
+    if sum(g["kind"] == "game" for g in d["gallery"]) < 2:
+        sys.exit("divine gallery needs at least two in-game screenshots (kind game): Divine sends nothing to review "
+                 "with fewer, and renders count only as extras")
+    ai = d["ai"]
+    for area, _ in DIVINE_AREAS:
+        if ai.get(area, "none") not in DIVINE_LEVELS:
+            sys.exit(f"divine ai {area}: one of {', '.join(DIVINE_LEVELS)}")
+    tools = ai.get("tools", [])
+    if any(t not in DIVINE_TOOLS for t in tools):
+        sys.exit(f"divine ai tools: Divine's ids only ({', '.join(DIVINE_TOOLS)})")
+    if any(ai.get(a) in ("partly", "mostly") for a, _ in DIVINE_AREAS) and not tools:
+        sys.exit("divine ai: a part that is partly or mostly AI-made needs the tools")
+    if "other" in tools and not (0 < len(str(ai.get("tools_other", "")).strip()) <= 80):
+        sys.exit("divine ai: tool other needs tools_other, 80 characters at most")
+    cl = d.get("changelog", [{"tag": "added", "text": "First release."}])
+    if not 0 < len(cl) <= 30 or any(c.get("tag") not in DIVINE_TAGS or not 0 < len(str(c.get("text", "")).strip()) <= 200 for c in cl):
+        sys.exit(f"divine changelog: 1 to 30 lines, each a tag ({', '.join(DIVINE_TAGS)}) and 200 characters at most")
+
+
+def divine_image(src, crop, dst, max_bytes, thumb=False):
+    """One picture as Divine takes it: JPEG, the thumbnail cropped to 16:9 and no wider than 1920, a gallery image no
+    longer than 2560 on its long side; quality stepped down until it fits the form's limit. Returns the size."""
+    from PIL import Image
+    with Image.open(src) as f:
+        im = f.convert("RGB")
+    if crop:
+        im = im.crop(tuple(crop))
+    if thumb:
+        w, h = im.size
+        if w * 9 > h * 16:
+            nw = h * 16 // 9
+            im = im.crop(((w - nw) // 2, 0, (w - nw) // 2 + nw, h))
+        elif w * 9 < h * 16:
+            nh = w * 9 // 16
+            im = im.crop((0, (h - nh) // 2, w, (h - nh) // 2 + nh))
+        if im.size[0] < DIVINE_THUMB_MIN[0] or im.size[1] < DIVINE_THUMB_MIN[1]:
+            sys.exit(f"thumbnail {src}: {im.size[0]}x{im.size[1]} after the 16:9 crop; Divine wants at least 960x540")
+        if im.size[0] > 1920:
+            im = im.resize((1920, 1080), Image.LANCZOS)
+    elif max(im.size) > 2560:
+        im.thumbnail((2560, 2560), Image.LANCZOS)
+    for q in (92, 88, 84, 80, 75, 70):
+        im.save(dst, "JPEG", quality=q, optimize=True, progressive=False)
+        if os.path.getsize(dst) <= max_bytes:
+            return im.size
+    sys.exit(f"{src}: over {max_bytes // (1024 * 1024)} MB even at quality 70")
+
+
+def divine_readme(spec, d):
+    """readme.txt in the zip: what Divine's guide asks of it (the pak number, conflicts, how to install by hand)."""
+    paks = [f["name"] for m in sorted(spec["mods"], key=lambda m: m["order"]) for f in m["files"]]
+    release = spec.get("release") or spec["version"]
+    out = [f"{d['title']} {release}", f"by {spec['author']}", "", d["short"], "", "Install", "-------",
+           "With Deadlock Mod Manager: the Install with Deadlock Mod Manager button on the Divine page, or add this zip "
+           "in the manager. It picks the pak number itself.",
+           "",
+           "By hand:",
+           "1. Close Deadlock.",
+           f"2. Copy {' and '.join(paks)} into Deadlock/game/citadel/addons/ (make the folder if it is not there).",
+           "   Any free name from pak01_dir.vpk to pak99_dir.vpk works: rename it if the number is taken.",
+           "3. Deadlock/game/citadel/gameinfo.gi needs the line  Game citadel/addons  above  Game citadel  in its",
+           "   SearchPaths block. A mod manager adds it; a Steam update removes it again.",
+           "4. Start the game.",
+           "",
+           "Uninstall: delete the pak, or remove the mod in the manager.",
+           ""]
+    if d.get("conflicts"):
+        out += ["Conflicts", "---------", d["conflicts"], ""]
+    built = f"Built for Deadlock build {spec['game_build']}." if spec.get("game_build") else ""
+    tested = f" Tested in game on builds {d['tested']}." if d.get("tested") else ""
+    if built or tested:
+        out += [(built + tested).strip(), "A game update can break a mod: if it looks wrong after a patch, turn it off "
+                "until a new version is out.", ""]
+    out += list(d.get("readme_notes", []))
+    while out and out[-1] == "":
+        out.pop()
+    return "\r\n".join(out) + "\r\n"
+
+
+def divine_listing(spec, d, zip_name, zip_size, zip_sha, thumb, gallery, description):
+    """listing.txt: Divine's upload form, field by field in its order, with the text to paste."""
+    release = spec.get("release") or spec["version"]
+    ai = d["ai"]
+    used = [a for a, _ in DIVINE_AREAS if ai.get(a, "none") != "none"]
+    L = [f"Divine Skins listing: {d['title']}",
+         "Written by magician bundle --target divine. Paste field by field; nothing here has been submitted.", "",
+         "== New mod", "Game: Deadlock", f"Mod name: {d['title']}", "",
+         "== Basic info", f"Category: {d.get('category', 'Hero Skins')}", f"Hero: {d.get('hero', spec['hero'])}",
+         f"Theme: {d['theme']}" if d.get("theme") else "Theme: (pick one on the form if one fits)",
+         f"Feature: {', '.join(d['features'])}" if d.get("features") else "Feature: (pick on the form)",
+         f"Tags (type each, press Enter): {', '.join(d.get('tags', spec.get('tags', [])))}",
+         f"License: {d.get('license', 'CC BY-NC 4.0')}", "",
+         "== Files", f"File name: {d.get('file_name', 'Main')}",
+         f"Upload: {zip_name} ({zip_size / 1e6:.1f} MB, sha256 {zip_sha})",
+         f"Version (if the form asks): {release}",
+         "Changelog (if the form asks):"]
+    L += [f"  {c['tag'].capitalize()}: {c['text']}" for c in d.get("changelog", [{"tag": "added", "text": "First release."}])]
+    L += ["", "== Media", f"Thumbnail: thumbnail.jpg ({thumb[0]}x{thumb[1]})", "Gallery, in this order:"]
+    L += [f"  {name} ({w}x{h}, {'in-game screenshot' if g['kind'] == 'game' else 'render, say so in its caption'})"
+          + (f": {g['caption']}" if g.get("caption") else "") for name, (w, h), g in gallery]
+    L += [f"YouTube: {d['youtube']}" if d.get("youtube") else "YouTube: (none)", "",
+          "== Content labels", f"Is this mod NSFW (18+)? {'Yes' if spec.get('nsfw') else 'No'}",
+          f"Did AI make or help make any part of this mod or its page? {'Yes' if used else 'No'}"]
+    if used:
+        L += [f"  {label}: {DIVINE_LEVELS[ai.get(a, 'none')]}" for a, label in DIVINE_AREAS]
+        tools = [DIVINE_TOOLS[t] for t in ai.get("tools", [])]
+        L += [f"  AI tools: {', '.join(tools)}" if tools else "  AI tools: (none asked)"]
+        if "other" in ai.get("tools", []):
+            L.append(f"  Other tool: {ai['tools_other']}")
+    L += ["  Notes for whoever fills the form (not a form field):"] + [f"    {n}" for n in ai.get("notes", [])] if ai.get("notes") else []
+    L += ["", "== Description", "Short (no field for it on the documented form; for a post, or a field the form adds):",
+          d["short"], "", "Links:"]
+    L += [f"  {l['label']}: {l['url']}" for l in d.get("links", [])] or ["  (none)"]
+    L += ["", "Description (description.md, between the lines; Markdown):", "-" * 72, description.rstrip("\n"), "-" * 72]
+    return "\n".join(L) + "\n"
+
+
+def build_divine(spec, base, out, lists):
+    """The Divine kit: built beside `out` and swapped in when complete, like the bundle."""
+    d = spec["divine"]
+    if spec.get("scenes"):
+        print("divine: the scene is left out (its installer is a script, and Divine takes none)")
+    final, out = out, out + ".partial"
+    if os.path.isdir(out):
+        shutil.rmtree(out)
+    os.makedirs(os.path.join(out, "gallery"))
+    sums = []
+    release = spec.get("release") or spec["version"]
+    name = d.get("zip") or f"{spec['slug']}-{release}"
+    stamp = tuple(map(int, spec["date"].split("-"))) + (12, 0, 0) if spec.get("date") else (1980, 1, 1, 0, 0, 0)
+    members = []
+    for m in sorted(spec["mods"], key=lambda m: m["order"]):
+        for f in m["files"]:
+            members.append((f["name"], f["_src"]))
+            print(f"  {f['name']}  {os.path.getsize(f['_src']) / 1e6:.1f} MB  {len(lists[(m['slug'], f['name'])])} files")
+    if len({n.lower() for n, _ in members}) != len(members):
+        sys.exit("two paks share a name; in the Divine zip they sit side by side")
+    zpath = os.path.join(out, name + ".zip")
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for n, src in sorted(members) + [("readme.txt", None)]:
+            info = zipfile.ZipInfo(n, date_time=stamp)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            setattr(info, "compress_level" if hasattr(info, "compress_level") else "_compresslevel", 9)
+            info.external_attr = 0o100644 << 16
+            if src is None:
+                z.writestr(info, divine_readme(spec, d).encode("utf-8"))
+            else:
+                with open(src, "rb") as s, z.open(info, "w") as w:
+                    shutil.copyfileobj(s, w, 1 << 20)
+    zsize = os.path.getsize(zpath)
+    if zsize > DIVINE_MAX_ZIP:
+        sys.exit(f"{name}.zip is {zsize / 1e6:.1f} MB; Divine takes 300 MB at most")
+    zsha = sha256(zpath)
+    sums.append(f"{zsha}  {name}.zip")
+    t = d["thumbnail"]
+    thumb = divine_image(resolve(base, t["src"]), t.get("crop"), os.path.join(out, "thumbnail.jpg"), DIVINE_THUMB_MAX, thumb=True)
+    sums.append(f"{sha256(os.path.join(out, 'thumbnail.jpg'))}  thumbnail.jpg")
+    gallery = []
+    for i, g in enumerate(d["gallery"], 1):
+        stem = os.path.splitext(g.get("out") or os.path.basename(g["src"]))[0]
+        gname = f"{i:02d}-{stem}.jpg"
+        size = divine_image(resolve(base, g["src"]), g.get("crop"), os.path.join(out, "gallery", gname), DIVINE_GALLERY_MAX)
+        gallery.append((f"gallery/{gname}", size, g))
+        sums.append(f"{sha256(os.path.join(out, 'gallery', gname))}  gallery/{gname}")
+    description = open(resolve(base, d["description"]), encoding="utf-8-sig").read().replace("\r\n", "\n")
+    with open(os.path.join(out, "description.md"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(description)
+    sums.append(f"{sha256(os.path.join(out, 'description.md'))}  description.md")
+    with open(os.path.join(out, "listing.txt"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(divine_listing(spec, d, name + ".zip", zsize, zsha, thumb, gallery, description))
+    sums.append(f"{sha256(os.path.join(out, 'listing.txt'))}  listing.txt")
+    with open(os.path.join(out, "SHA256SUMS.txt"), "w", newline="\n") as f:
+        f.write("\n".join(sorted(sums, key=lambda s: s.split("  ", 1)[1])) + "\n")
+    if os.path.isdir(final):
+        shutil.rmtree(final)
+    os.replace(out, final)
+    print(f"upload  {name}.zip ({zsize / 1e6:.1f} MB)")
+    print(f"thumbnail {thumb[0]}x{thumb[1]}, gallery {len(gallery)} ({sum(g['kind'] == 'game' for _, _, g in gallery)} in game)")
+    print("divine kit ->", final)
 
 
 def main():
@@ -195,16 +435,23 @@ def main():
             sys.exit(f"{k} needs a value")
         return args[i + 1]
 
-    check_spec(spec, base, args)
+    target = flag("--target") or "dmm"
+    if target not in ("dmm", "divine"):
+        sys.exit(f"--target {target}: dmm (the default, a Deadlock Mod Manager bundle) or divine (a Divine Skins kit)")
+    check_spec(spec, base, args, target)
+    if target == "divine":
+        check_divine(spec, base)
     exe = flag("--magician") or gamepaths.magician()
-    out = os.path.abspath(resolve(base, flag("--out") or spec["out"]))
-    if spec.get("bundle_magician") and not os.path.isfile(exe):
+    out = os.path.abspath(resolve(base, flag("--out") or (spec["divine"]["out"] if target == "divine" else spec["out"])))
+    if spec.get("bundle_magician") and not os.path.isfile(exe) and target == "dmm":
         sys.exit(f"bundle_magician: no {exe}")
     # `out` is replaced at the end: never a folder that is not a bundle, and never one that holds the spec
-    if os.path.isdir(out) and os.listdir(out) and not os.path.isfile(os.path.join(out, "mod-interchange.json")):
+    if target == "dmm" and os.path.isdir(out) and os.listdir(out) and not os.path.isfile(os.path.join(out, "mod-interchange.json")):
         sys.exit(f"refusing to replace {out}: it is not empty and not a bundle (no mod-interchange.json)")
     if os.path.normcase(base + os.sep).startswith(os.path.normcase(out + os.sep)):
         sys.exit(f"refusing to build into {out}: it holds the spec")
+    if target == "divine" and os.path.isdir(out) and os.listdir(out) and not os.path.isfile(os.path.join(out, "listing.txt")):
+        sys.exit(f"refusing to replace {out}: it is not empty and not a Divine kit (no listing.txt)")
 
     lists = {}
     for m in spec["mods"]:
@@ -228,6 +475,9 @@ def main():
         print("valve check: no file is byte-identical to the game's")
     for pth in sorted(allowed):
         print("overlap allowed (lower order wins):", pth)
+    if target == "divine":
+        build_divine(spec, base, out, lists)
+        return
 
     scenes = []
     for sc in spec.get("scenes", []):

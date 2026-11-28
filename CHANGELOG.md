@@ -5,6 +5,7 @@ Newest first. Each release says whether the lint rules, the grading rubric or th
 ## Unreleased
 
 - A ranked-safe skin's grade label says `· ranked-safe`, as a freeform one says `· freeform`.
+- `magician bundle --target divine` writes a Divine Skins upload kit from the same `bundle.json`.
 
 ## 0.4.0 (2026-11-27)
 

@@ -106,6 +106,72 @@ class Bundle(unittest.TestCase):
             bundle.copy_text(src, dst, "\r\n")
             self.assertEqual(open(dst, "rb").read(), b"a\r\nb\r\n", given)
 
+    def divine_spec(self, **over):
+        from PIL import Image
+        for name, size in (("wide.png", (2560, 1440)), ("tall.png", (1000, 1800)), ("shot.png", (3840, 2160))):
+            Image.new("RGB", size, (200, 120, 40)).save(os.path.join(self.spec_dir, name))
+        with open(os.path.join(self.spec_dir, "divine.md"), "w", encoding="utf-8") as f:
+            f.write("# Test\n\nA skin.\n")
+        d = {"out": os.path.join(self.d, "divine"), "title": "Test Lash", "short": "A skin.", "description": "divine.md",
+             "thumbnail": {"src": "tall.png"},
+             "gallery": [{"src": "shot.png", "kind": "game", "out": "front"}, {"src": "wide.png", "kind": "game"},
+                         {"src": "tall.png", "kind": "render", "caption": "A render"}],
+             "ai": {"art": "mostly", "models": "partly", "page": "helped", "tools": ["claude"]}}
+        d.update(over)
+        return self.spec(release="1.0.0", scenes=[], divine=d)
+
+    def test_a_divine_kit_holds_what_divine_takes_and_rebuilds_the_same(self):
+        import zipfile
+        from PIL import Image
+        r = self.run_bundle(self.divine_spec(thumbnail={"src": "shot.png"}), "--target", "divine")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        kit = os.path.join(self.d, "divine")
+        with zipfile.ZipFile(os.path.join(kit, "test-1.0.0.zip")) as z:
+            self.assertEqual(sorted(z.namelist()), ["pak10_dir.vpk", "readme.txt"], "the paks and a readme, at the top")
+            self.assertIn("pak10_dir.vpk", z.read("readme.txt").decode())
+        with Image.open(os.path.join(kit, "thumbnail.jpg")) as im:
+            self.assertEqual(im.size, (1920, 1080))
+        self.assertEqual(sorted(os.listdir(os.path.join(kit, "gallery"))), ["01-front.jpg", "02-wide.jpg", "03-tall.jpg"])
+        with Image.open(os.path.join(kit, "gallery", "01-front.jpg")) as im:
+            self.assertEqual(im.size, (2560, 1440))
+        listing = self.text(kit, "listing.txt")
+        for line in ("Mod name: Test Lash", "Art: Mostly AI-made", "Models: Partly AI-made", "Voice: No AI",
+                     "AI tools: Claude", "Is this mod NSFW (18+)? No", "render, say so in its caption): A render"):
+            self.assertIn(line, listing)
+        first = self.text(kit, "SHA256SUMS.txt")
+        r = self.run_bundle(self.divine_spec(thumbnail={"src": "shot.png"}), "--target", "divine")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.text(kit, "SHA256SUMS.txt"), first, "the same inputs, the same kit")
+
+    def test_the_thumbnail_is_cropped_to_16_9_and_refused_when_too_small(self):
+        from PIL import Image
+        r = self.run_bundle(self.divine_spec(), "--target", "divine")     # 1000x1800 -> 1000x562
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        with Image.open(os.path.join(self.d, "divine", "thumbnail.jpg")) as im:
+            self.assertEqual(im.size, (1000, 562))
+        r = self.run_bundle(self.divine_spec(thumbnail={"src": "tall.png", "crop": [0, 0, 800, 800]}), "--target", "divine")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("at least 960x540", r.stderr)
+
+    def test_divine_refuses_what_its_form_or_review_would(self):
+        g = self.divine_spec()["divine"]["gallery"]
+        for over, why in (({"gallery": [g[0], g[2]]}, "at least two in-game"),
+                          ({"ai": {"art": "lots"}}, "divine ai art"),
+                          ({"ai": {"art": "mostly"}}, "needs the tools"),
+                          ({"ai": {"art": "partly", "tools": ["other"]}}, "tools_other"),
+                          ({"changelog": [{"tag": "new", "text": "x"}]}, "divine changelog")):
+            r = self.run_bundle(self.divine_spec(**over), "--target", "divine")
+            self.assertNotEqual(r.returncode, 0, why)
+            self.assertIn(why, r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.d, "divine")))
+        os.makedirs(os.path.join(self.d, "divine"))
+        with open(os.path.join(self.d, "divine", "notes.txt"), "w") as f:
+            f.write("mine")
+        r = self.run_bundle(self.divine_spec(), "--target", "divine")
+        self.assertIn("not a Divine kit", r.stderr)
+        r = self.run_bundle(self.spec(), "--target", "gamebanana")
+        self.assertIn("--target gamebanana", r.stderr)
+
     def test_a_flag_without_its_value_is_an_error(self):
         r = self.run_bundle(self.spec(), "--out")
         self.assertNotEqual(r.returncode, 0)
